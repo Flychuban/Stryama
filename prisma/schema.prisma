@@ -23,21 +23,23 @@ model User {
     aiGenerations AIGeneration[]
 
     @@index([clerkId])
-    @@index([email])
 }
 
 // Project model - represents user projects
 model Project {
-    id          String   @id @default(cuid())
-    name        String
-    description String?
-    userId      String
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @updatedAt
+    id            String   @id @default(cuid())
+    name          String
+    description   String?
+    fileStructure Json?
+    userId        String
+    createdAt     DateTime @default(now())
+    updatedAt     DateTime @updatedAt
 
     // Relations
-    user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-    files File[]
+    user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+    files         File[]
+    sandboxes     Sandbox[]
+    aiGenerations AIGeneration[]
 
     @@index([userId])
 }
@@ -45,17 +47,17 @@ model Project {
 // File model - represents files in projects
 model File {
     id        String   @id @default(cuid())
-    name      String
     path      String
     content   String   @db.Text
+    language  String?
     projectId String
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
 
     // Relations
-    project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-    aiGenerations AIGeneration[]
+    project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+    @@unique([projectId, path])
     @@index([projectId])
 }
 
@@ -64,15 +66,38 @@ model AIGeneration {
     id        String   @id @default(cuid())
     prompt    String   @db.Text
     response  String   @db.Text
-    model     String
+    tokens    Int?
+    duration  Int?
     userId    String
-    fileId    String?
+    projectId String?
     createdAt DateTime @default(now())
 
     // Relations
-    user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-    file File? @relation(fields: [fileId], references: [id], onDelete: SetNull)
+    user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+    project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
     @@index([userId])
-    @@index([fileId])
+    @@index([projectId])
+}
+
+// Sandbox status enum for type safety
+enum SandboxStatus {
+    ACTIVE
+    STOPPED
+    ERROR
+}
+
+// Sandbox model - tracks E2B sandbox environments
+model Sandbox {
+    id        String        @id @default(cuid())
+    e2bId     String        @unique
+    status    SandboxStatus @default(ACTIVE)
+    projectId String
+    createdAt DateTime      @default(now())
+    updatedAt DateTime      @updatedAt
+
+    // Relations
+    project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+    @@index([projectId])
 }
