@@ -49,12 +49,12 @@ const config = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline'", // Next.js requires unsafe-eval and unsafe-inline for dev
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.clerk.accounts.dev https://challenges.cloudflare.com", // Clerk JS SDK and Turnstile
               "style-src 'self' 'unsafe-inline'", // Tailwind and CSS-in-JS require unsafe-inline
-              "img-src 'self' data: blob: https:",
+              "img-src 'self' data: blob: https: https://img.clerk.com", // Clerk avatar images
               "font-src 'self' data:",
-              "connect-src 'self' https://api.anthropic.com https://api.e2b.dev https://*.clerk.accounts.dev",
-              "frame-src 'self' https://*.clerk.accounts.dev",
+              "connect-src 'self' https://api.anthropic.com https://api.e2b.dev https://*.clerk.accounts.dev https://clerk.topical-mammoth-51.lcl.dev wss://*.clerk.accounts.dev",
+              "frame-src 'self' https://*.clerk.accounts.dev https://challenges.cloudflare.com",
               "object-src 'none'",
               "base-uri 'self'",
               "form-action 'self'",

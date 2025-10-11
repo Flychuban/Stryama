@@ -5,33 +5,17 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Starting database seed...');
 
-  // Create test users
-  const user1 = await prisma.user.upsert({
-    where: { email: 'test@example.com' },
-    update: {},
-    create: {
-      clerkId: 'user_test123',
-      email: 'test@example.com',
-    },
-  });
+  const testClerkUserId1 = 'user_test123_clerk_id';
+  const testClerkUserId2 = 'user_dev456_clerk_id';
 
-  const user2 = await prisma.user.upsert({
-    where: { email: 'developer@example.com' },
-    update: {},
-    create: {
-      clerkId: 'user_dev456',
-      email: 'developer@example.com',
-    },
-  });
-
-  console.log('✅ Created users:', { user1: user1.email, user2: user2.email });
+  console.log('✅ Using Clerk user IDs for seeding');
 
   // Create test projects
   const project1 = await prisma.project.create({
     data: {
       name: 'Sample React App',
       description: 'A sample React application for testing',
-      userId: user1.id,
+      clerkUserId: testClerkUserId1,
       fileStructure: {
         src: {
           'App.tsx': 'file',
@@ -49,7 +33,7 @@ async function main() {
     data: {
       name: 'Node.js API',
       description: 'A Node.js REST API project',
-      userId: user2.id,
+      clerkUserId: testClerkUserId2,
       fileStructure: {
         src: {
           'server.ts': 'file',
@@ -137,7 +121,7 @@ app.listen(PORT, () => {
       response: 'Here is a React button component...',
       tokens: 150,
       duration: 1200,
-      userId: user1.id,
+      clerkUserId: testClerkUserId1,
       projectId: project1.id,
     },
   });
@@ -148,7 +132,7 @@ app.listen(PORT, () => {
       response: 'Dependency injection is a design pattern...',
       tokens: 250,
       duration: 1800,
-      userId: user2.id,
+      clerkUserId: testClerkUserId2,
     },
   });
 

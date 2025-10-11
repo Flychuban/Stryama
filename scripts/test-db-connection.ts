@@ -1,4 +1,4 @@
-import { db } from '../src/lib/db.js';
+import { db } from '../src/server/db.js';
 
 async function testConnection() {
   try {
@@ -7,9 +7,10 @@ async function testConnection() {
     console.log('✓ Database connection successful');
 
     // Test creating a simple query to verify schema
-    const userCount = await db.user.count();
+    // Note: We use Clerk for users, so we test the Project table instead
+    const projectCount = await db.project.count();
     console.log(
-      `✓ Schema verified - User table accessible (count: ${userCount})`
+      `✓ Schema verified - Project table accessible (count: ${projectCount})`
     );
 
     await db.$disconnect();
