@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+
+# Cache
+.eslintcache
+.prettierCache
+
+# Database
+prisma/migrations/
+
+# Env files
+.env*
+!.env.example
+
+# Misc
+.DS_Store
+*.log

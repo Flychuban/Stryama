@@ -101,6 +101,9 @@ web_modules/
 # Optional eslint cache
 .eslintcache
 
+# Prettier cache
+.prettierCache
+
 # Optional stylelint cache
 .stylelintcache
 
@@ -172,6 +175,11 @@ dist
 
 # Stores VSCode versions used for testing VSCode extensions
 .vscode-test
+
+# IDE-specific files
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 
 # yarn v3
 .pnp.*
