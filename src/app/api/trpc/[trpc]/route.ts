@@ -1,7 +1,8 @@
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
-import { type NextRequest } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 
 import { env } from '~/env';
+import { applyCorsHeaders, handleCorsPreflightRequest } from '~/lib/cors';
 import { appRouter } from '~/server/api/root';
 import { createTRPCContext } from '~/server/api/trpc';
 
@@ -15,8 +16,16 @@ const createContext = async (req: NextRequest) => {
   });
 };
 
-const handler = (req: NextRequest) =>
-  fetchRequestHandler({
+const handler = async (req: NextRequest) => {
+  const origin = req.headers.get('origin');
+
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return handleCorsPreflightRequest(req);
+  }
+
+  // Handle tRPC request
+  const response = await fetchRequestHandler({
     endpoint: '/api/trpc',
     req,
     router: appRouter,
@@ -31,4 +40,14 @@ const handler = (req: NextRequest) =>
         : undefined,
   });
 
-export { handler as GET, handler as POST };
+  // Apply CORS headers to response
+  const nextResponse = new NextResponse(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+
+  return applyCorsHeaders(nextResponse, origin);
+};
+
+export { handler as GET, handler as POST, handler as OPTIONS };
