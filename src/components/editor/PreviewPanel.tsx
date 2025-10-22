@@ -16,11 +16,11 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 
-interface PreviewPanelProps {
+type PreviewPanelProps = {
   status: 'idle' | 'loading' | 'success' | 'error';
   content: string;
   onRefresh: () => void;
-}
+};
 
 type DeviceType = 'desktop' | 'tablet' | 'mobile';
 

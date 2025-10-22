@@ -7,11 +7,11 @@ import {
 } from '@/components/ui/dialog';
 import { Lightbulb } from 'lucide-react';
 
-interface ExamplePromptsProps {
+type ExamplePromptsProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelectPrompt: (prompt: string) => void;
-}
+};
 
 const examples = [
   {

@@ -1,13 +1,20 @@
 'use client';
 
+// 1. External libraries
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
 import { Plus, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+
+// 2. Internal utilities
+import { api } from '@/trpc/react';
+
+// 4. UI components
+import { Button } from '@/components/ui/button';
+
+// 6. Local components
 import { ProjectGrid } from '@/components/dashboard/ProjectGrid';
 import { EmptyState } from '@/components/dashboard/EmptyState';
 import { AppHeader } from '@/components/shared/AppHeader';
-import { api } from '@/trpc/react';
-import { toast } from 'sonner';
 
 export default function DashboardPage() {
   const router = useRouter();

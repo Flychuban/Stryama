@@ -1,21 +1,26 @@
+// 1. External libraries
 import { useState } from 'react';
+import { Sparkles, History, ChevronDown } from 'lucide-react';
+
+// 4. UI components
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Sparkles, History, ChevronDown } from 'lucide-react';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+
+// 6. Local components
 import ExamplePrompts from './ExamplePrompts';
 import PromptHistory from './PromptHistory';
 
-interface PromptPanelProps {
+type PromptPanelProps = {
   prompt: string;
   onPromptChange: (value: string) => void;
   onGenerate: () => void;
   isLoading: boolean;
-}
+};
 
 const MAX_CHARS = 2000;
 

@@ -1,13 +1,16 @@
 'use client';
 
+// 1. External libraries
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { Code2, Copy, Trash2 } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+
+// 4. UI components
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Code2, Copy, Trash2 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
 import {
   AlertDialog,
   AlertDialogAction,

@@ -1,6 +1,6 @@
 import { MessageSquare, Eye, Code2, Zap, Download } from 'lucide-react';
 
-interface Feature {
+type Feature = {
   icon: React.ReactNode;
   title: string;
   description: string;
@@ -9,7 +9,7 @@ interface Feature {
   iconBg: string;
   visual?: React.ReactNode;
   span?: string;
-}
+};
 
 const features: Feature[] = [
   {

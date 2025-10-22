@@ -5,10 +5,10 @@ import { Button } from '@/components/ui/button';
 import { FileCode, Copy, Check } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
-interface CodeViewProps {
+type CodeViewProps = {
   code: string;
   filename?: string;
-}
+};
 
 const CodeView = ({ code, filename = 'component.tsx' }: CodeViewProps) => {
   const [copied, setCopied] = useState(false);

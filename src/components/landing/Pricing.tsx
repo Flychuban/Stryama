@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 
-interface PricingTier {
+type PricingTier = {
   name: string;
   price: number;
   period: string;
@@ -13,7 +13,7 @@ interface PricingTier {
   badge?: string;
   icon: typeof Sparkles;
   cta: string;
-}
+};
 
 const tiers: PricingTier[] = [
   {

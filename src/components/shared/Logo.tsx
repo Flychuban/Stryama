@@ -1,9 +1,9 @@
-interface LogoProps {
+type LogoProps = {
   size?: number;
   className?: string;
   showText?: boolean;
   variant?: 'default' | 'white' | 'dark';
-}
+};
 
 export function Logo({
   size = 32,

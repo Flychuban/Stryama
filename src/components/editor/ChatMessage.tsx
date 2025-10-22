@@ -1,12 +1,12 @@
 import { User, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-interface ChatMessageProps {
+type ChatMessageProps = {
   role: 'user' | 'assistant';
   content: string;
   thinking?: string[];
   files?: string[];
-}
+};
 
 const ChatMessage = ({ role, content, thinking, files }: ChatMessageProps) => {
   const isUser = role === 'user';

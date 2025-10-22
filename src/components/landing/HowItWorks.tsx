@@ -1,9 +1,9 @@
-interface Step {
+type Step = {
   number: string;
   title: string;
   description: string;
   gradient: string;
-}
+};
 
 const steps: Step[] = [
   {
@@ -29,10 +29,10 @@ const steps: Step[] = [
   },
 ];
 
-interface Stat {
+type Stat = {
   value: string;
   label: string;
-}
+};
 
 const stats: Stat[] = [
   { value: '10,000+', label: 'Apps Built' },
