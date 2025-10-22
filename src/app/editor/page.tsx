@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -29,7 +29,7 @@ type Message = {
 type ViewMode = 'preview' | 'code';
 type DeviceMode = 'desktop' | 'mobile';
 
-export default function EditorPage() {
+function EditorContent() {
   const searchParams = useSearchParams();
   const projectId = searchParams.get('id');
 
@@ -367,5 +367,13 @@ export default function Component() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function EditorPage() {
+  return (
+    <Suspense fallback={<AILoadingAnimation />}>
+      <EditorContent />
+    </Suspense>
   );
 }

@@ -11,6 +11,13 @@ const config = {
   poweredByHeader: false,
   compress: true,
 
+  // Workaround for Clerk + Next.js 15 build error with static error pages
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '2mb',
+    },
+  },
+
   // Security headers
   async headers() {
     return [
