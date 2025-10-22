@@ -34,14 +34,14 @@ const features: Feature[] = [
     iconBg:
       'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400',
     visual: (
-      <div className="dark:bg-background/50 border-border/40 mt-6 rounded-lg border bg-white p-4">
+      <div className="mt-6 rounded-lg border border-border/40 bg-white p-4 dark:bg-background/50">
         <div className="mb-3 flex gap-1.5">
           <div className="h-2.5 w-2.5 rounded-full bg-red-400" />
           <div className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
           <div className="h-2.5 w-2.5 rounded-full bg-green-400" />
         </div>
         <div className="space-y-2">
-          <div className="bg-muted h-2 w-3/4 rounded" />
+          <div className="h-2 w-3/4 rounded bg-muted" />
           <div className="h-8 rounded bg-gradient-to-r from-[#8B5CF6] to-[#A855F7]" />
         </div>
       </div>
@@ -93,13 +93,13 @@ const features: Feature[] = [
 
 export function FeatureGrid() {
   return (
-    <section id="features" className="px-4 py-24">
+    <section className="px-4 py-24">
       <div className="mx-auto max-w-7xl">
         <div className="grid gap-6 md:grid-cols-3">
           {features.map((feature, index) => (
             <div
               key={index}
-              className={`${feature.span ?? ''} ${feature.bgColor} ${feature.textColor} border-border/40 rounded-3xl border p-8 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg`}
+              className={`${feature.span ?? ''} ${feature.bgColor} ${feature.textColor} rounded-3xl border border-border/40 p-8 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg`}
             >
               {/* Icon */}
               <div
@@ -110,7 +110,7 @@ export function FeatureGrid() {
 
               {/* Content */}
               <h3 className="mb-3 text-2xl font-semibold">{feature.title}</h3>
-              <p className="text-muted-foreground leading-relaxed">
+              <p className="leading-relaxed text-muted-foreground">
                 {feature.description}
               </p>
 

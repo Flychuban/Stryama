@@ -43,17 +43,14 @@ const stats: Stat[] = [
 
 export function HowItWorks() {
   return (
-    <section
-      id="how-it-works"
-      className="from-background via-muted/20 to-background bg-gradient-to-b px-4 py-24"
-    >
+    <section className="bg-gradient-to-b from-background via-muted/20 to-background px-4 py-24">
       <div className="mx-auto max-w-7xl">
         {/* Header */}
         <div className="mb-20 text-center">
           <h2 className="mb-4 text-4xl font-bold md:text-5xl">
             Why Choose Stryama?
           </h2>
-          <p className="text-muted-foreground text-lg">
+          <p className="text-lg text-muted-foreground">
             The fastest way to turn your ideas into reality
           </p>
         </div>
@@ -62,7 +59,7 @@ export function HowItWorks() {
         <div className="relative mb-24 grid gap-8 md:grid-cols-3">
           {/* Connector lines */}
           <div
-            className="via-border absolute top-16 right-1/6 left-1/6 hidden h-px bg-gradient-to-r from-transparent to-transparent md:block"
+            className="left-1/6 right-1/6 absolute top-16 hidden h-px bg-gradient-to-r from-transparent via-border to-transparent md:block"
             style={{ left: '20%', right: '20%', top: '4rem' }}
           />
 
@@ -77,7 +74,7 @@ export function HowItWorks() {
 
               {/* Content */}
               <h3 className="mb-4 text-2xl font-semibold">{step.title}</h3>
-              <p className="text-muted-foreground mx-auto max-w-sm leading-relaxed">
+              <p className="mx-auto max-w-sm leading-relaxed text-muted-foreground">
                 {step.description}
               </p>
             </div>
@@ -85,13 +82,13 @@ export function HowItWorks() {
         </div>
 
         {/* Stats */}
-        <div className="border-border/40 grid grid-cols-2 gap-8 border-t pt-12 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-8 border-t border-border/40 pt-12 md:grid-cols-4">
           {stats.map((stat, index) => (
             <div key={index} className="text-center">
               <div className="mb-2 bg-gradient-to-r from-[#8B5CF6] to-[#10B981] bg-clip-text text-4xl font-bold text-transparent md:text-5xl">
                 {stat.value}
               </div>
-              <div className="text-muted-foreground text-sm">{stat.label}</div>
+              <div className="text-sm text-muted-foreground">{stat.label}</div>
             </div>
           ))}
         </div>

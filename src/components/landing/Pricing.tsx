@@ -1,5 +1,3 @@
-'use client';
-
 import { Check, Sparkles, Zap, Crown, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,7 +13,6 @@ interface PricingTier {
   badge?: string;
   icon: typeof Sparkles;
   cta: string;
-  ctaLink: string;
 }
 
 const tiers: PricingTier[] = [
@@ -33,7 +30,6 @@ const tiers: PricingTier[] = [
       'Standard exports',
     ],
     cta: 'Start Free',
-    ctaLink: '/sign-up',
   },
   {
     name: 'Pro',
@@ -54,7 +50,6 @@ const tiers: PricingTier[] = [
       'API access',
     ],
     cta: 'Start Pro Trial',
-    ctaLink: '/sign-up',
   },
   {
     name: 'Enterprise',
@@ -73,7 +68,6 @@ const tiers: PricingTier[] = [
       'White-label options',
     ],
     cta: 'Contact Sales',
-    ctaLink: '/contact',
   },
 ];
 
@@ -82,8 +76,8 @@ export function Pricing() {
     <section id="pricing" className="relative overflow-hidden px-4 py-32">
       {/* Background Effects */}
       <div className="absolute inset-0 -z-10">
-        <div className="bg-primary/10 absolute top-1/4 left-1/4 h-96 w-96 rounded-full blur-3xl" />
-        <div className="bg-accent/10 absolute right-1/4 bottom-1/4 h-96 w-96 rounded-full blur-3xl" />
+        <div className="absolute left-1/4 top-1/4 h-96 w-96 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 h-96 w-96 rounded-full bg-accent/10 blur-3xl" />
       </div>
 
       <div className="mx-auto max-w-7xl">
@@ -95,10 +89,10 @@ export function Pricing() {
           >
             Pricing Plans
           </Badge>
-          <h2 className="from-foreground via-foreground to-foreground/70 mb-6 bg-gradient-to-r bg-clip-text text-5xl font-bold text-transparent md:text-6xl">
+          <h2 className="mb-6 bg-gradient-to-r from-foreground via-foreground to-foreground/70 bg-clip-text text-5xl font-bold text-transparent md:text-6xl">
             Choose Your Plan
           </h2>
-          <p className="text-muted-foreground text-xl">
+          <p className="text-xl text-muted-foreground">
             Start free, upgrade as you grow. All plans include core features.
           </p>
         </div>
@@ -116,7 +110,7 @@ export function Pricing() {
               >
                 {tier.badge && (
                   <div className="absolute -top-5 left-1/2 z-10 -translate-x-1/2">
-                    <Badge className="from-primary to-accent border-0 bg-gradient-to-r px-4 py-1.5 text-white shadow-lg">
+                    <Badge className="border-0 bg-gradient-to-r from-primary to-accent px-4 py-1.5 text-white shadow-lg">
                       {tier.badge}
                     </Badge>
                   </div>
@@ -125,15 +119,15 @@ export function Pricing() {
                 <div
                   className={`relative h-full rounded-2xl p-8 transition-all duration-300 ${
                     tier.highlight
-                      ? 'from-card to-card/50 border-primary/50 shadow-primary/20 border-2 bg-gradient-to-b shadow-2xl'
-                      : 'bg-card/50 border-border/50 hover:border-primary/30 border backdrop-blur-sm hover:shadow-xl'
+                      ? 'border-2 border-primary/50 bg-gradient-to-b from-card to-card/50 shadow-2xl shadow-primary/20'
+                      : 'border border-border/50 bg-card/50 backdrop-blur-sm hover:border-primary/30 hover:shadow-xl'
                   }`}
                 >
                   {/* Icon */}
                   <div
                     className={`mb-6 inline-flex rounded-xl p-3 ${
                       tier.highlight
-                        ? 'from-primary to-accent bg-gradient-to-br'
+                        ? 'bg-gradient-to-br from-primary to-accent'
                         : 'bg-primary/10'
                     }`}
                   >
@@ -150,7 +144,7 @@ export function Pricing() {
                   {/* Price */}
                   <div className="mb-4">
                     <div className="flex items-baseline gap-2">
-                      <span className="from-foreground to-foreground/70 bg-gradient-to-r bg-clip-text text-5xl font-bold text-transparent">
+                      <span className="bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-5xl font-bold text-transparent">
                         ${tier.price}
                       </span>
                       <span className="text-muted-foreground">
@@ -160,7 +154,7 @@ export function Pricing() {
                   </div>
 
                   {/* Description */}
-                  <p className="text-muted-foreground mb-8 min-h-[48px]">
+                  <p className="mb-8 min-h-[48px] text-muted-foreground">
                     {tier.description}
                   </p>
 
@@ -168,13 +162,15 @@ export function Pricing() {
                   <Button
                     className={`group/btn mb-8 w-full ${
                       tier.highlight
-                        ? 'from-primary to-accent hover:shadow-primary/25 bg-gradient-to-r text-white hover:shadow-lg'
+                        ? 'bg-gradient-to-r from-primary to-accent text-white hover:shadow-lg hover:shadow-primary/25'
                         : 'bg-primary/10 text-primary hover:bg-primary hover:text-white'
                     }`}
                     size="lg"
                     asChild
                   >
-                    <Link href={tier.ctaLink}>
+                    <Link
+                      href={tier.price === 0 ? '/auth/signup' : '/checkout'}
+                    >
                       {tier.cta}
                       <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover/btn:translate-x-1" />
                     </Link>
@@ -208,7 +204,7 @@ export function Pricing() {
 
         {/* Trust Signals */}
         <div className="text-center">
-          <p className="text-muted-foreground mb-4 text-sm">
+          <p className="mb-4 text-sm text-muted-foreground">
             Trusted by 10,000+ creators worldwide
           </p>
           <div className="flex flex-wrap items-center justify-center gap-8 opacity-60">

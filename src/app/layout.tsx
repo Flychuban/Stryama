@@ -1,39 +1,39 @@
-import '~/styles/globals.css';
-
-import { type Metadata } from 'next';
-import { Geist } from 'next/font/google';
+import type { Metadata } from 'next';
+import { GeistSans } from 'geist/font/sans';
 import { ClerkProvider } from '@clerk/nextjs';
-
-import { TRPCReactProvider } from '~/trpc/react';
-import { Header } from '~/components/layout/header';
-import { ThemeProvider } from '~/components/theme-provider';
+import { ThemeProvider } from '@/components/providers/theme-provider';
+import { Toaster } from '@/components/ui/sonner';
+import { TRPCReactProvider } from '@/trpc/react';
+import '../styles/globals.css';
 
 export const metadata: Metadata = {
-  title: 'Stryama',
-  description: 'AI-powered development platform',
+  title: 'Stryama - Shape your ideas into apps that work',
+  description:
+    'Transform your words into working applications. No code. No limits. Just pure creation.',
   icons: [{ rel: 'icon', url: '/favicon.ico' }],
 };
-
-const geist = Geist({
-  subsets: ['latin'],
-  variable: '--font-geist-sans',
-});
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <ClerkProvider>
-      <html lang="en" className={`${geist.variable}`} suppressHydrationWarning>
+      <html
+        lang="en"
+        className={`${GeistSans.variable}`}
+        suppressHydrationWarning
+      >
         <body>
           <ThemeProvider
             attribute="class"
-            defaultTheme="system"
+            defaultTheme="light"
             enableSystem
             disableTransitionOnChange
           >
-            <Header />
-            <TRPCReactProvider>{children}</TRPCReactProvider>
+            <TRPCReactProvider>
+              {children}
+              <Toaster />
+            </TRPCReactProvider>
           </ThemeProvider>
         </body>
       </html>

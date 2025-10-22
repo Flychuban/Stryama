@@ -1,14 +1,6 @@
-@import "tailwindcss";
-
-@theme {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif,
-    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-
-  /* Radius */
-  --radius-lg: 0.5rem;
-  --radius-md: calc(var(--radius-lg) - 2px);
-  --radius-sm: calc(var(--radius-lg) - 4px);
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 @layer base {
   :root {
@@ -49,6 +41,8 @@
     --input: 220 13% 91%;
     --ring: 239 84% 67%;
 
+    --radius: 0.5rem;
+
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
     --sidebar-primary: 240 5.9% 10%;
@@ -65,52 +59,6 @@
     --chart-5: 27 87% 67%;
   }
 
-  .dark {
-    --background: 222 47% 11%;
-    --foreground: 0 0% 98%;
-
-    --card: 222 47% 11%;
-    --card-foreground: 0 0% 98%;
-
-    --popover: 222 47% 11%;
-    --popover-foreground: 0 0% 98%;
-
-    --primary: 239 84% 67%;
-    --primary-hover: 243 75% 59%;
-    --primary-foreground: 0 0% 100%;
-
-    --accent: 158 64% 52%;
-    --accent-hover: 160 84% 39%;
-    --accent-foreground: 0 0% 100%;
-
-    --secondary: 217 33% 17%;
-    --secondary-foreground: 0 0% 98%;
-
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 72%;
-
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 0 0% 98%;
-
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 239 84% 67%;
-
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
-
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
-  }
 
   * {
     border-color: hsl(var(--border));
@@ -119,7 +67,7 @@
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: var(--font-sans), 'Inter', system-ui, -apple-system, sans-serif;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -217,10 +165,16 @@ button {
 }
 
 .gradient-mesh {
-  background: radial-gradient(at 27% 37%, hsla(215, 98%, 61%, 0.15) 0px, transparent 50%),
-              radial-gradient(at 97% 21%, hsla(125, 98%, 72%, 0.15) 0px, transparent 50%),
-              radial-gradient(at 52% 99%, hsla(354, 98%, 61%, 0.15) 0px, transparent 50%),
-              radial-gradient(at 10% 29%, hsla(256, 96%, 67%, 0.15) 0px, transparent 50%);
+  background: radial-gradient(at 27% 37%, hsla(239, 84%, 67%, 0.25) 0px, transparent 50%),
+              radial-gradient(at 97% 21%, hsla(158, 64%, 52%, 0.2) 0px, transparent 50%),
+              radial-gradient(at 52% 99%, hsla(239, 84%, 67%, 0.15) 0px, transparent 50%),
+              radial-gradient(at 10% 29%, hsla(158, 64%, 52%, 0.25) 0px, transparent 50%);
   background-size: 400% 400%;
+  animation: gradient-shift 15s ease infinite;
+}
+
+/* Animation utility classes */
+.animate-gradient-shift {
+  background-size: 200% auto;
   animation: gradient-shift 15s ease infinite;
 }

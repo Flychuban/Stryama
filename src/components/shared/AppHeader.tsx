@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { User } from 'lucide-react';
 import Link from 'next/link';
 import { useUser, useClerk } from '@clerk/nextjs';
-import { Logo } from '@/components/shared/logo';
+import { Logo } from '@/components/shared/Logo';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,21 +12,21 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 export function AppHeader() {
-  const { user } = useUser();
+  const { user, isLoaded } = useUser();
   const { signOut } = useClerk();
 
   return (
-    <header className="bg-background/60 border-border/40 fixed top-0 right-0 left-0 z-50 border-b backdrop-blur-xl">
+    <header className="fixed left-0 right-0 top-0 z-50 border-b border-border/40 bg-background/60 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
         <Link href="/" className="flex items-center">
           <Logo size={32} showText={true} />
         </Link>
 
         <nav className="flex items-center gap-4">
-          {user ? (
+          {isLoaded && user ? (
             <>
               <Button variant="ghost" size="sm" asChild>
                 <Link href="/dashboard">Dashboard</Link>
@@ -36,7 +36,11 @@ export function AppHeader() {
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="sm" className="gap-2">
                     <Avatar className="h-6 w-6">
-                      <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                      <AvatarImage
+                        src={user.imageUrl}
+                        alt={user.firstName ?? ''}
+                      />
+                      <AvatarFallback className="bg-primary/10 text-xs text-primary">
                         {user.firstName?.[0]}
                         {user.lastName?.[0]}
                       </AvatarFallback>
@@ -54,7 +58,7 @@ export function AppHeader() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={() => signOut()}
-                    className="text-destructive cursor-pointer"
+                    className="cursor-pointer text-destructive"
                   >
                     Sign Out
                   </DropdownMenuItem>

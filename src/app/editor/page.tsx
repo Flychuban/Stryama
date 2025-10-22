@@ -1,124 +1,371 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowUp, Code2, Eye } from 'lucide-react';
-import { AppHeader } from '@/components/shared/app-header';
-import { Card } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Plus, Send, Monitor, Smartphone, Code2, Eye } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
+import { AppHeader } from '@/components/shared/AppHeader';
+import ChatMessage from '@/components/editor/ChatMessage';
+import AILoadingAnimation from '@/components/editor/AILoadingAnimation';
+import CodeView from '@/components/editor/CodeView';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { api } from '@/trpc/react';
 
-export default function Editor() {
-  const [prompt, setPrompt] = useState('');
+type Message = {
+  role: 'user' | 'assistant';
+  content: string;
+  thinking?: string[];
+  files?: string[];
+};
+
+type ViewMode = 'preview' | 'code';
+type DeviceMode = 'desktop' | 'mobile';
+
+export default function EditorPage() {
+  const searchParams = useSearchParams();
+  const projectId = searchParams.get('id');
+
+  // Fetch project data if ID is provided
+  const { data: project } = api.project.getById.useQuery(
+    { id: projectId! },
+    { enabled: !!projectId }
+  );
+
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('preview');
+  const [deviceMode, setDeviceMode] = useState<DeviceMode>('desktop');
+  const [previewContent, setPreviewContent] = useState<string>('');
 
-  const handleGenerate = () => {
-    if (!prompt.trim()) return;
+  // Update document title with project name
+  useEffect(() => {
+    if (project) {
+      document.title = `${project.name} - Stryama Editor`;
+    }
+  }, [project]);
+
+  const handleSend = async () => {
+    if (!input.trim()) return;
+
+    const userMessage: Message = {
+      role: 'user',
+      content: input,
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setInput('');
     setIsGenerating(true);
+
+    // Simulate AI response
     setTimeout(() => {
+      const aiMessage: Message = {
+        role: 'assistant',
+        content:
+          "I'll help you build that! Let me start by understanding the requirements and creating the necessary components.",
+        thinking: [
+          'Read attached files',
+          'Explored codebase structure',
+          'Generated design brief',
+          'Building landing page',
+        ],
+        files: ['layout.tsx', 'header.tsx', 'globals.css'],
+      };
+
+      setMessages((prev) => [...prev, aiMessage]);
+
+      setPreviewContent(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <style>
+              body {
+                font-family: system-ui;
+                padding: 2rem;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 100vh;
+                margin: 0;
+              }
+              .container { text-align: center; }
+              h1 { font-size: 2.5rem; margin-bottom: 1rem; }
+              p { font-size: 1.2rem; opacity: 0.9; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>Generated Application</h1>
+              <p>${input}</p>
+            </div>
+          </body>
+        </html>
+      `);
+
       setIsGenerating(false);
-    }, 2000);
+    }, 5000);
   };
 
+  const sampleCode = `import { Button } from "@/components/ui/button";
+
+export default function Component() {
   return (
-    <div className="bg-background min-h-screen">
+    <div className="min-h-screen bg-background">
+      <header className="border-b">
+        <div className="container mx-auto p-4">
+          <h1 className="text-2xl font-bold">My App</h1>
+        </div>
+      </header>
+
+      <main className="container mx-auto p-8">
+        <h2 className="text-3xl font-bold mb-4">
+          Welcome to your application
+        </h2>
+        <Button>Get Started</Button>
+      </main>
+    </div>
+  );
+}`;
+
+  return (
+    <div className="flex h-screen flex-col overflow-hidden bg-background">
       <AppHeader />
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Panel - Chat Interface (35%) */}
+        <div className="relative flex w-full flex-col lg:w-[35%]">
+          {/* Subtle gradient overlay */}
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-primary/[0.02] to-transparent" />
 
-      {/* Animated Background */}
-      <div className="fixed inset-0 -z-10">
-        <div className="gradient-mesh animate-gradient-shift absolute inset-0 opacity-40" />
-      </div>
-
-      {/* Main Content */}
-      <main className="mx-auto max-w-[1800px] px-6 pt-24 pb-12">
-        <div className="grid h-[calc(100vh-8rem)] grid-cols-1 gap-6 lg:grid-cols-2">
-          {/* Left Panel - Prompt */}
-          <div className="flex flex-col gap-4">
-            <Card className="bg-card/50 border-border/50 flex-1 p-6 backdrop-blur-sm">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="bg-primary/10 rounded-lg p-2">
-                  <Code2 className="text-primary h-5 w-5" />
-                </div>
-                <h2 className="text-xl font-semibold">Start Building</h2>
-              </div>
-
-              <p className="text-muted-foreground mb-6 text-sm">
-                Describe what you want to build and I&apos;ll help you create it
-                step by step
-              </p>
-
-              <div className="space-y-4">
-                <div className="group relative">
-                  <div className="from-primary to-accent absolute -inset-1 rounded-2xl bg-gradient-to-r opacity-20 blur transition-opacity group-hover:opacity-30" />
-                  <div className="bg-background/80 border-border/50 relative rounded-2xl border p-2 shadow-xl backdrop-blur-xl">
-                    <div className="flex items-end gap-2">
-                      <Textarea
-                        value={prompt}
-                        onChange={(e) => setPrompt(e.target.value)}
-                        placeholder="Describe what you want to build..."
-                        className="placeholder:text-muted-foreground/60 min-h-[400px] resize-none border-0 bg-transparent text-base focus-visible:ring-0 focus-visible:ring-offset-0"
-                        disabled={isGenerating}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            handleGenerate();
-                          }
-                        }}
-                      />
-                      <Button
-                        onClick={handleGenerate}
-                        disabled={isGenerating || !prompt.trim()}
-                        size="icon"
-                        className="mb-2 h-12 w-12 flex-shrink-0 rounded-full shadow-lg transition-all hover:scale-105 hover:shadow-xl"
-                      >
-                        <ArrowUp className="h-5 w-5" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          {/* Right Panel - Preview */}
-          <div className="flex flex-col gap-4">
-            <Card className="bg-card/50 border-border/50 flex-1 p-6 backdrop-blur-sm">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="bg-accent/10 rounded-lg p-2">
-                  <Eye className="text-accent h-5 w-5" />
-                </div>
-                <h2 className="text-xl font-semibold">
-                  Preview will appear here
-                </h2>
-              </div>
-
-              <Tabs defaultValue="preview" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="preview">Preview</TabsTrigger>
-                  <TabsTrigger value="code">Code</TabsTrigger>
-                </TabsList>
-                <TabsContent value="preview" className="mt-4">
-                  <div className="bg-background/50 border-border/50 flex min-h-[400px] items-center justify-center rounded-lg border">
-                    <div className="space-y-3 text-center">
-                      <div className="bg-muted/50 inline-flex rounded-2xl p-4">
-                        <Eye className="text-muted-foreground h-8 w-8" />
+          {/* Chat Messages */}
+          <ScrollArea className="relative flex-1 p-6">
+            <div className="space-y-6">
+              {messages.length === 0 ? (
+                <div className="flex h-[calc(100vh-220px)] items-center justify-center px-8 text-center">
+                  <div className="max-w-sm space-y-6">
+                    <div className="relative">
+                      <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl border border-primary/10 bg-gradient-to-br from-primary/10 via-accent/5 to-transparent backdrop-blur-sm">
+                        <Code2 className="h-9 w-9 text-primary" />
                       </div>
-                      <p className="text-muted-foreground max-w-sm text-sm">
-                        Start a conversation to generate your application
+                      <div className="absolute -inset-2 -z-10 rounded-2xl bg-gradient-to-r from-primary/20 to-accent/20 opacity-30 blur-xl" />
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="text-xl font-semibold tracking-tight">
+                        Start Building
+                      </h3>
+                      <p className="text-sm leading-relaxed text-muted-foreground">
+                        Describe what you want to build and I&apos;ll help you
+                        create it step by step
                       </p>
                     </div>
                   </div>
-                </TabsContent>
-                <TabsContent value="code" className="mt-4">
-                  <div className="min-h-[400px] rounded-lg bg-[#1e1e1e] p-4 font-mono text-sm text-gray-300">
-                    <p>{`// Your generated code will appear here...`}</p>
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </Card>
+                </div>
+              ) : (
+                messages.map((message, i) => (
+                  <ChatMessage key={i} {...message} />
+                ))
+              )}
+            </div>
+          </ScrollArea>
+
+          {/* Input Area */}
+          <div className="relative border-t border-border/50 bg-background/80 p-4 backdrop-blur-xl">
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-background via-background/95 to-transparent" />
+            <div className="relative flex gap-3">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-12 w-12 flex-shrink-0 rounded-xl border-border/50 transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
+              >
+                <Plus className="h-5 w-5" />
+              </Button>
+              <Textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Describe what you want to build..."
+                className="max-h-[120px] min-h-[48px] resize-none rounded-xl border-border/50 bg-background/50 backdrop-blur-sm transition-all duration-200 focus-visible:border-primary/50 focus-visible:ring-primary/20"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void handleSend();
+                  }
+                }}
+              />
+              <Button
+                size="icon"
+                onClick={handleSend}
+                disabled={!input.trim() || isGenerating}
+                className="to-primary-hover h-12 w-12 flex-shrink-0 rounded-xl bg-gradient-to-br from-primary transition-all duration-200 hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50"
+              >
+                <Send className="h-5 w-5" />
+              </Button>
+            </div>
           </div>
         </div>
-      </main>
+
+        {/* Divider */}
+        <div className="w-px bg-gradient-to-b from-transparent via-border to-transparent" />
+
+        {/* Right Panel - Preview/Code (65%) */}
+        <div className="relative flex flex-1 flex-col bg-muted/20">
+          {/* Control Bar */}
+          <div className="relative z-10 flex items-center justify-between border-b border-border/50 bg-background/60 px-6 py-4 backdrop-blur-xl">
+            <div className="flex items-center gap-1 rounded-lg border border-border/30 bg-muted/40 p-1 backdrop-blur-sm">
+              <Button
+                variant={viewMode === 'preview' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('preview')}
+                className={cn(
+                  'rounded-md transition-all duration-200',
+                  viewMode === 'preview'
+                    ? 'bg-background shadow-sm hover:bg-background'
+                    : 'hover:bg-background/50'
+                )}
+              >
+                <Eye className="mr-2 h-4 w-4" />
+                Preview
+              </Button>
+              <Button
+                variant={viewMode === 'code' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('code')}
+                className={cn(
+                  'rounded-md transition-all duration-200',
+                  viewMode === 'code'
+                    ? 'bg-background shadow-sm hover:bg-background'
+                    : 'hover:bg-background/50'
+                )}
+              >
+                <Code2 className="mr-2 h-4 w-4" />
+                Code
+              </Button>
+            </div>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-lg border-border/50 transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
+                >
+                  {deviceMode === 'desktop' ? (
+                    <>
+                      <Monitor className="mr-2 h-4 w-4" />
+                      Desktop
+                    </>
+                  ) : (
+                    <>
+                      <Smartphone className="mr-2 h-4 w-4" />
+                      Mobile
+                    </>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="rounded-lg">
+                <DropdownMenuItem
+                  onClick={() => setDeviceMode('desktop')}
+                  className="rounded-md"
+                >
+                  <Monitor className="mr-2 h-4 w-4" />
+                  Desktop
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setDeviceMode('mobile')}
+                  className="rounded-md"
+                >
+                  <Smartphone className="mr-2 h-4 w-4" />
+                  Mobile
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
+          {/* Content Area */}
+          <div className="flex-1 overflow-auto p-8">
+            {isGenerating ? (
+              <AILoadingAnimation />
+            ) : viewMode === 'code' ? (
+              <CodeView code={sampleCode} filename="component.tsx" />
+            ) : (
+              <div className="flex h-full items-center justify-center">
+                <div
+                  className={cn(
+                    'relative overflow-hidden rounded-2xl border border-border/50 bg-background shadow-2xl transition-all duration-500',
+                    deviceMode === 'mobile' && 'ring-8 ring-muted/30'
+                  )}
+                  style={{
+                    width: deviceMode === 'desktop' ? '100%' : '375px',
+                    height: deviceMode === 'desktop' ? '100%' : '667px',
+                    maxWidth: '100%',
+                  }}
+                >
+                  {/* Browser-style header */}
+                  {deviceMode === 'desktop' && (
+                    <div className="flex h-10 items-center gap-2 border-b border-border/50 bg-muted/50 px-4">
+                      <div className="flex gap-2">
+                        <div className="h-3 w-3 rounded-full bg-destructive/70" />
+                        <div className="h-3 w-3 rounded-full bg-accent/70" />
+                        <div className="h-3 w-3 rounded-full bg-primary/70" />
+                      </div>
+                      <div className="flex flex-1 justify-center">
+                        <div className="rounded-md border border-border/30 bg-background/50 px-4 py-1 font-mono text-xs text-muted-foreground">
+                          localhost:5173
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div
+                    className={cn(
+                      'w-full',
+                      deviceMode === 'desktop'
+                        ? 'h-[calc(100%-40px)]'
+                        : 'h-full'
+                    )}
+                  >
+                    {previewContent ? (
+                      <iframe
+                        srcDoc={previewContent}
+                        className="h-full w-full border-0"
+                        title="Preview"
+                        sandbox="allow-scripts"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center p-8 text-center">
+                        <div className="space-y-6">
+                          <div className="relative">
+                            <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-2xl border border-primary/10 bg-gradient-to-br from-primary/10 via-accent/5 to-transparent backdrop-blur-sm">
+                              <Monitor className="h-12 w-12 text-primary" />
+                            </div>
+                            <div className="absolute -inset-3 -z-10 rounded-2xl bg-gradient-to-r from-primary/20 to-accent/20 opacity-30 blur-2xl" />
+                          </div>
+                          <div className="space-y-2">
+                            <h3 className="text-xl font-semibold tracking-tight">
+                              Preview will appear here
+                            </h3>
+                            <p className="text-sm leading-relaxed text-muted-foreground">
+                              Start a conversation to generate your application
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
