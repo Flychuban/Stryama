@@ -33,6 +33,13 @@ export {
   getUserFriendlyErrorMessage,
 } from './errors';
 
+export { retryHandler, withRetry, RetryHandler } from './errors/retry-handler';
+export { FallbackStrategy } from './errors/fallback-strategies';
+
+export { ProjectContextGatherer } from './context/project-context';
+export { ConflictDetector, ConflictType } from './context/conflict-detector';
+export type { FileConflict } from './context/conflict-detector';
+
 // Types
 export {
   ClaudeModel,

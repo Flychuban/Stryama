@@ -13,8 +13,14 @@ import type {
   ServiceResult,
 } from './types';
 import { GenerationStatus } from './types';
-import { classifyError, getUserFriendlyErrorMessage } from './errors';
+import {
+  classifyError,
+  getUserFriendlyErrorMessage,
+  ClaudeGenerationError,
+} from './errors';
+import { ClaudeErrorType } from './types';
 import { CodeParser } from './parser';
+import { retryHandler } from './errors/retry-handler';
 
 export class ClaudeClient {
   private static instance: ClaudeClient;
@@ -33,6 +39,15 @@ export class ClaudeClient {
   async generateCode(
     request: AIGenerationRequest
   ): Promise<ServiceResult<AIGenerationResponse>> {
+    return retryHandler.executeWithRetry(
+      async () => this.performGeneration(request),
+      'AI Code Generation'
+    );
+  }
+
+  private async performGeneration(
+    request: AIGenerationRequest
+  ): Promise<ServiceResult<AIGenerationResponse>> {
     const startTime = Date.now();
     const generationId = this.generateId();
 
@@ -42,6 +57,9 @@ export class ClaudeClient {
       const enhancedPrompt = this.buildEnhancedPrompt(request);
 
       let resultText = '';
+      let sessionId: string | undefined;
+      let tokensUsed = 0;
+      let totalCost = 0;
 
       for await (const message of query({
         prompt: enhancedPrompt,
@@ -51,12 +69,60 @@ export class ClaudeClient {
           allowedTools: [...GENERATION_CONFIG.allowedTools],
         },
       })) {
-        if (message.type === 'result' && message.subtype === 'success') {
-          resultText = message.result;
+        if (message.type === 'system' && message.subtype === 'init') {
+          sessionId = message.session_id;
+          console.log(`[Claude] Session ${sessionId} initialized`);
+        }
+
+        if (message.type === 'result') {
+          if (message.subtype === 'success') {
+            resultText = message.result;
+            const usage = message.usage;
+            tokensUsed =
+              Number(usage.input_tokens) + Number(usage.output_tokens);
+            totalCost = Number(message.total_cost_usd);
+            console.log(
+              `[Claude] Success: ${tokensUsed} tokens, $${totalCost.toFixed(4)}`
+            );
+          } else if (message.subtype === 'error_max_turns') {
+            console.warn(`[Claude] Generation hit max turns limit`);
+            throw new ClaudeGenerationError(
+              'Generation exceeded maximum conversation turns. Try simplifying your prompt.',
+              ClaudeErrorType.TIMEOUT,
+              {
+                numTurns: message.num_turns,
+                sessionId: message.session_id,
+              } as Record<string, unknown>
+            );
+          } else if (message.subtype === 'error_during_execution') {
+            console.error(`[Claude] Error during execution`);
+            throw new ClaudeGenerationError(
+              'An error occurred during code generation. Please try again.',
+              ClaudeErrorType.API_ERROR,
+              { sessionId: message.session_id } as Record<string, unknown>
+            );
+          }
+        }
+
+        if (message.type === 'assistant') {
+          console.log(`[Claude] Assistant thinking...`);
         }
       }
 
-      const parsedResponse = this.parseResponse(resultText, generationId);
+      if (!resultText) {
+        throw new ClaudeGenerationError(
+          'No response received from AI. Please try again.',
+          ClaudeErrorType.INVALID_RESPONSE
+        );
+      }
+
+      const parsedResponse = this.parseResponse(
+        resultText,
+        generationId,
+        tokensUsed,
+        totalCost,
+        sessionId
+      );
 
       const duration = Date.now() - startTime;
       console.log(
@@ -118,12 +184,12 @@ export class ClaudeClient {
 
   private parseResponse(
     responseText: string,
-    generationId: string
+    generationId: string,
+    tokensUsed: number,
+    totalCost: number,
+    sessionId?: string
   ): Omit<AIGenerationResponse, 'duration'> {
     const files = CodeParser.parseClaudeResponse(responseText);
-
-    // Estimate tokens (4 characters per token is a common approximation)
-    const tokensUsed = Math.ceil(responseText.length / 4);
 
     return {
       id: generationId,
@@ -131,6 +197,8 @@ export class ClaudeClient {
       files,
       explanation: responseText,
       tokensUsed,
+      totalCost,
+      sessionId,
     };
   }
 

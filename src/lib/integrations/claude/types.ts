@@ -77,6 +77,8 @@ export type AIGenerationResponse = {
   readonly explanation?: string;
   readonly tokensUsed: number;
   readonly duration: number;
+  readonly sessionId?: string;
+  readonly totalCost?: number;
 };
 
 export type ServiceResult<T> = {

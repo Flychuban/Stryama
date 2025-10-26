@@ -11,8 +11,10 @@ import {
   claudeClient,
   rateLimiter,
   validatePrompt,
+  ProjectContextGatherer,
+  ConflictDetector,
 } from '~/lib/integrations/claude';
-import type { UserPlan } from '~/lib/integrations/claude';
+import type { UserPlan, ProjectContext } from '~/lib/integrations/claude';
 
 export const aiRouter = createTRPCRouter({
   generateCode: protectedProcedure
@@ -46,6 +48,7 @@ export const aiRouter = createTRPCRouter({
         });
       }
 
+      let context: ProjectContext | undefined;
       if (input.projectId) {
         const project = await ctx.db.project.findFirst({
           where: {
@@ -60,11 +63,18 @@ export const aiRouter = createTRPCRouter({
             message: 'Project not found or you do not have access to it',
           });
         }
+
+        const gatherer = new ProjectContextGatherer(ctx.db);
+        context = await gatherer.gatherContext(input.projectId, {
+          maxFiles: 5, // Limit for token efficiency
+          maxFileSize: 3000,
+        });
       }
 
       const result = await claudeClient.generateCode({
         prompt: input.prompt,
         projectId: input.projectId,
+        context,
       });
 
       if (!result.success || !result.data) {
@@ -72,6 +82,24 @@ export const aiRouter = createTRPCRouter({
           code: 'INTERNAL_SERVER_ERROR',
           message: result.error ?? 'Failed to generate code',
         });
+      }
+
+      let conflicts;
+      let warning;
+      if (context?.existingFiles && context.existingFiles.length > 0) {
+        conflicts = ConflictDetector.detectConflicts(
+          result.data.files,
+          context.existingFiles
+        );
+
+        const hasCriticalConflicts =
+          ConflictDetector.hasCriticalConflicts(conflicts);
+
+        if (hasCriticalConflicts) {
+          console.warn('[AI] Critical conflicts detected:', conflicts);
+          warning =
+            'Some generated files will overwrite existing files. Review carefully.';
+        }
       }
 
       const aiGeneration = await ctx.db.aIGeneration.create({
@@ -82,6 +110,8 @@ export const aiRouter = createTRPCRouter({
           duration: result.data.duration,
           clerkUserId: ctx.auth.userId,
           projectId: input.projectId ?? null,
+          sessionId: result.data.sessionId ?? null,
+          totalCost: result.data.totalCost ?? null,
         },
       });
 
@@ -90,6 +120,8 @@ export const aiRouter = createTRPCRouter({
       return {
         ...result.data,
         databaseId: aiGeneration.id,
+        conflicts,
+        warning,
       };
     }),
 

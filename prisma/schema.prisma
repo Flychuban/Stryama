@@ -58,6 +58,8 @@ model AIGeneration {
     duration    Int?
     clerkUserId String   // References Clerk's user ID directly
     projectId   String?
+    sessionId   String?  // Claude session ID for resumption
+    totalCost   Float?   // Cost in USD
     createdAt   DateTime @default(now())
 
     // Relations
@@ -65,6 +67,7 @@ model AIGeneration {
 
     @@index([clerkUserId])
     @@index([projectId])
+    @@index([sessionId])
 }
 
 // Sandbox status enum for type safety
