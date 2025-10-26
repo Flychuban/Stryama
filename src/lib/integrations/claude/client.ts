@@ -14,6 +14,7 @@ import type {
 } from './types';
 import { GenerationStatus } from './types';
 import { classifyError, getUserFriendlyErrorMessage } from './errors';
+import { CodeParser } from './parser';
 
 export class ClaudeClient {
   private static instance: ClaudeClient;
@@ -87,7 +88,6 @@ export class ClaudeClient {
   private buildEnhancedPrompt(request: AIGenerationRequest): string {
     let prompt = request.prompt;
 
-    // Add project context if available
     if (
       request.context?.existingFiles &&
       request.context.existingFiles.length > 0
@@ -116,26 +116,21 @@ export class ClaudeClient {
     return prompt;
   }
 
-  /**
-   * Parse Claude response into structured format
-   *
-   * TODO: Enhance this in Story 2.4 with proper file extraction
-   *
-   * @param responseText - Raw response from Claude
-   * @param generationId - Unique generation ID
-   * @returns Parsed generation response
-   */
   private parseResponse(
     responseText: string,
     generationId: string
   ): Omit<AIGenerationResponse, 'duration'> {
-    // Basic parsing - will be enhanced in Story 2.4
+    const files = CodeParser.parseClaudeResponse(responseText);
+
+    // Estimate tokens (4 characters per token is a common approximation)
+    const tokensUsed = Math.ceil(responseText.length / 4);
+
     return {
       id: generationId,
       status: GenerationStatus.SUCCESS,
-      files: [],
+      files,
       explanation: responseText,
-      tokensUsed: 0, // Will be calculated properly later
+      tokensUsed,
     };
   }
 

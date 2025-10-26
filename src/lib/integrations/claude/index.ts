@@ -3,6 +3,9 @@ export { claudeClient, ClaudeClient } from './client';
 export { rateLimiter, RateLimiter } from './rateLimiter';
 export type { UserPlan, RateLimitStatus } from './rateLimiter';
 
+export { CodeParser } from './parser';
+export type { ParsedCodeBlock } from './parser';
+
 export { PromptBuilder } from './prompts/builder';
 export { PROMPT_TEMPLATES } from './prompts/templates';
 export {
