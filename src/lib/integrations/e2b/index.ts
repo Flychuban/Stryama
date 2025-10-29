@@ -3,3 +3,9 @@ export { E2B_CONFIG, SANDBOX_TIMEOUTS } from './config';
 export * from './types';
 export * from './errors';
 export { sandboxManager } from './services/sandbox-manager';
+
+export { FileSync } from './services/file-sync';
+export { FileValidator } from './utils/file-validator';
+export { ConflictResolver } from './utils/conflict-resolver';
+export type { ValidationResult } from './utils/file-validator';
+export type { ConflictResolution } from './utils/conflict-resolver';

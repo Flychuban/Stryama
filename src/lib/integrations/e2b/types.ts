@@ -36,3 +36,23 @@ export type ServiceResult<T> = {
   readonly data: T | null;
   readonly error: string | null;
 };
+
+export type SyncResult = {
+  readonly totalFiles: number;
+  readonly syncedFiles: number;
+  readonly failedFiles: readonly FailedFile[];
+  readonly duration: number; // milliseconds
+  readonly timestamp: Date;
+};
+
+export type FailedFile = {
+  readonly path: string;
+  readonly reason: string;
+};
+
+export type SyncMetadata = {
+  lastSyncAt: string;
+  syncedFiles: readonly string[];
+  totalSyncs: number;
+  lastSyncResult: 'success' | 'partial' | 'failed';
+};
