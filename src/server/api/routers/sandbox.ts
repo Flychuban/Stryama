@@ -4,6 +4,11 @@ import { createTRPCRouter, protectedProcedure } from '~/server/api/trpc';
 import { sandboxManager } from '~/lib/integrations/e2b';
 import { E2B_CONFIG } from '~/lib/integrations/e2b';
 import { FileSync } from '~/lib/integrations/e2b/services/file-sync';
+import {
+  startPreviewServer,
+  getPreviewLogs,
+  restartPreviewServer,
+} from '~/lib/integrations/e2b/services/preview-manager';
 
 export const sandboxRouter = createTRPCRouter({
   /**
@@ -303,6 +308,280 @@ export const sandboxRouter = createTRPCRouter({
         failedFiles: syncResult.data.failedFiles,
         duration: syncResult.data.duration,
         timestamp: syncResult.data.timestamp,
+      };
+    }),
+
+  startPreview: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string().min(1, 'Project ID is required'),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Verify project ownership
+      const project = await ctx.db.project.findUnique({
+        where: {
+          id: input.projectId,
+          clerkUserId: ctx.auth.userId,
+        },
+        include: {
+          files: true,
+        },
+      });
+
+      if (!project) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Project not found or access denied',
+        });
+      }
+
+      // Get or create sandbox
+      const sandboxResult = await sandboxManager.getOrCreateSandbox(
+        ctx.db,
+        input.projectId,
+        ctx.auth.userId
+      );
+
+      if (!sandboxResult.success || !sandboxResult.data) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: sandboxResult.error ?? 'Failed to get/create sandbox',
+        });
+      }
+
+      // Start preview server
+      const previewResult = await startPreviewServer(
+        sandboxResult.data.instance,
+        input.projectId,
+        project.files
+      );
+
+      if (!previewResult.success || !previewResult.data) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: previewResult.error ?? 'Failed to start preview server',
+        });
+      }
+
+      // Get current sandbox metadata from database
+      const currentSandbox = await ctx.db.sandbox.findUnique({
+        where: { id: sandboxResult.data.id },
+        select: { metadata: true },
+      });
+
+      // Update sandbox with preview URL in database
+      await ctx.db.sandbox.update({
+        where: { id: sandboxResult.data.id },
+        data: {
+          previewUrl: previewResult.data.url,
+          metadata: {
+            ...(currentSandbox?.metadata as object | undefined),
+            previewFramework: previewResult.data.framework,
+            previewPort: previewResult.data.port,
+            previewStartedAt: previewResult.data.startTime.toISOString(),
+          },
+        },
+      });
+
+      return {
+        url: previewResult.data.url,
+        framework: previewResult.data.framework,
+        port: previewResult.data.port,
+        sandboxId: sandboxResult.data.id,
+      };
+    }),
+
+  /**
+   * Get existing preview URL for a project
+   */
+  getPreviewUrl: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string().min(1, 'Project ID is required'),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      // Verify project ownership and get sandbox
+      const project = await ctx.db.project.findUnique({
+        where: {
+          id: input.projectId,
+          clerkUserId: ctx.auth.userId,
+        },
+        include: {
+          sandboxes: {
+            where: {
+              status: 'ACTIVE',
+            },
+            orderBy: {
+              createdAt: 'desc',
+            },
+            take: 1,
+          },
+        },
+      });
+
+      if (!project) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Project not found or access denied',
+        });
+      }
+
+      const sandbox = project.sandboxes[0];
+
+      if (!sandbox?.previewUrl) {
+        return {
+          url: null,
+          framework: null,
+          port: null,
+        };
+      }
+
+      const metadata = sandbox.metadata as Record<string, unknown> | null;
+
+      return {
+        url: sandbox.previewUrl,
+        framework: metadata?.previewFramework as string | null,
+        port: metadata?.previewPort as number | null,
+      };
+    }),
+
+  /**
+   * Get preview server logs
+   */
+  getPreviewLogs: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string().min(1, 'Project ID is required'),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      // Verify project ownership
+      const project = await ctx.db.project.findUnique({
+        where: {
+          id: input.projectId,
+          clerkUserId: ctx.auth.userId,
+        },
+      });
+
+      if (!project) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Project not found or access denied',
+        });
+      }
+
+      // Get sandbox
+      const sandboxResult = await sandboxManager.getOrCreateSandbox(
+        ctx.db,
+        input.projectId,
+        ctx.auth.userId
+      );
+
+      if (!sandboxResult.success || !sandboxResult.data) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: sandboxResult.error ?? 'Failed to get sandbox',
+        });
+      }
+
+      // Get preview logs
+      const logsResult = await getPreviewLogs(sandboxResult.data.instance);
+
+      if (!logsResult.success || !logsResult.data) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: logsResult.error ?? 'Failed to get preview logs',
+        });
+      }
+
+      return {
+        logs: logsResult.data,
+      };
+    }),
+
+  /**
+   * Restart preview server
+   */
+  restartPreview: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string().min(1, 'Project ID is required'),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Verify project ownership
+      const project = await ctx.db.project.findUnique({
+        where: {
+          id: input.projectId,
+          clerkUserId: ctx.auth.userId,
+        },
+        include: {
+          files: true,
+        },
+      });
+
+      if (!project) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Project not found or access denied',
+        });
+      }
+
+      // Get sandbox
+      const sandboxResult = await sandboxManager.getOrCreateSandbox(
+        ctx.db,
+        input.projectId,
+        ctx.auth.userId
+      );
+
+      if (!sandboxResult.success || !sandboxResult.data) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: sandboxResult.error ?? 'Failed to get sandbox',
+        });
+      }
+
+      // Restart preview server
+      const previewResult = await restartPreviewServer(
+        sandboxResult.data.instance,
+        input.projectId,
+        project.files
+      );
+
+      if (!previewResult.success || !previewResult.data) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: previewResult.error ?? 'Failed to restart preview server',
+        });
+      }
+
+      // Get current sandbox metadata from database
+      const currentSandbox = await ctx.db.sandbox.findUnique({
+        where: { id: sandboxResult.data.id },
+        select: { metadata: true },
+      });
+
+      // Update sandbox with new preview URL
+      await ctx.db.sandbox.update({
+        where: { id: sandboxResult.data.id },
+        data: {
+          previewUrl: previewResult.data.url,
+          metadata: {
+            ...(currentSandbox?.metadata as object | undefined),
+            previewFramework: previewResult.data.framework,
+            previewPort: previewResult.data.port,
+            previewStartedAt: previewResult.data.startTime.toISOString(),
+          },
+        },
+      });
+
+      return {
+        url: previewResult.data.url,
+        framework: previewResult.data.framework,
+        port: previewResult.data.port,
+        sandboxId: sandboxResult.data.id,
       };
     }),
 });

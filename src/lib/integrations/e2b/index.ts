@@ -9,3 +9,15 @@ export { FileValidator } from './utils/file-validator';
 export { ConflictResolver } from './utils/conflict-resolver';
 export type { ValidationResult } from './utils/file-validator';
 export type { ConflictResolution } from './utils/conflict-resolver';
+
+export {
+  startPreviewServer,
+  stopPreviewServer,
+  restartPreviewServer,
+  getPreviewLogs,
+} from './services/preview-manager';
+export {
+  detectFramework,
+  getFrameworkPort,
+  getFrameworkCommand,
+} from './utils/framework-detector';

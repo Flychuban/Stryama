@@ -1,4 +1,5 @@
 import type { Sandbox as E2BSandbox } from '@e2b/code-interpreter';
+import type { FrameworkType } from '@/lib/integrations/claude/types';
 
 export type SandboxInfo = {
   sandboxId: string;
@@ -55,4 +56,21 @@ export type SyncMetadata = {
   syncedFiles: readonly string[];
   totalSyncs: number;
   lastSyncResult: 'success' | 'partial' | 'failed';
+};
+
+export type PreviewUrl = string;
+
+export type PreviewStatus = 'starting' | 'ready' | 'failed';
+
+export type PreviewConfig = {
+  readonly framework: FrameworkType;
+  readonly port: number;
+  readonly command: string;
+};
+
+export type PreviewResult = {
+  readonly url: PreviewUrl;
+  readonly framework: FrameworkType;
+  readonly port: number;
+  readonly startTime: Date;
 };

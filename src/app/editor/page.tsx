@@ -4,7 +4,16 @@ import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Send, Monitor, Smartphone, Code2, Eye } from 'lucide-react';
+import {
+  Plus,
+  Send,
+  Monitor,
+  Smartphone,
+  Code2,
+  Eye,
+  RefreshCw,
+  AlertCircle,
+} from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { AppHeader } from '@/components/shared/AppHeader';
@@ -44,7 +53,14 @@ function EditorContent() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('preview');
   const [deviceMode, setDeviceMode] = useState<DeviceMode>('desktop');
-  const [previewContent, setPreviewContent] = useState<string>('');
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  // tRPC mutations for E2B sandbox operations
+  const syncFilesMutation = api.sandbox.syncFiles.useMutation();
+  const startPreviewMutation = api.sandbox.startPreview.useMutation();
+  const restartPreviewMutation = api.sandbox.restartPreview.useMutation();
 
   // Update document title with project name
   useEffect(() => {
@@ -54,7 +70,7 @@ function EditorContent() {
   }, [project]);
 
   const handleSend = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || !projectId) return;
 
     const userMessage: Message = {
       role: 'user',
@@ -64,56 +80,82 @@ function EditorContent() {
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setIsGenerating(true);
+    setPreviewError(null);
 
     // Simulate AI response
     setTimeout(() => {
-      const aiMessage: Message = {
-        role: 'assistant',
-        content:
-          "I'll help you build that! Let me start by understanding the requirements and creating the necessary components.",
-        thinking: [
-          'Read attached files',
-          'Explored codebase structure',
-          'Generated design brief',
-          'Building landing page',
-        ],
-        files: ['layout.tsx', 'header.tsx', 'globals.css'],
-      };
+      void (async () => {
+        const aiMessage: Message = {
+          role: 'assistant',
+          content:
+            "I'll help you build that! Let me start by understanding the requirements and creating the necessary components.",
+          thinking: [
+            'Read attached files',
+            'Explored codebase structure',
+            'Generated design brief',
+            'Building landing page',
+          ],
+          files: ['layout.tsx', 'header.tsx', 'globals.css'],
+        };
 
-      setMessages((prev) => [...prev, aiMessage]);
+        setMessages((prev) => [...prev, aiMessage]);
+        setIsGenerating(false);
 
-      setPreviewContent(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <style>
-              body {
-                font-family: system-ui;
-                padding: 2rem;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                min-height: 100vh;
-                margin: 0;
-              }
-              .container { text-align: center; }
-              h1 { font-size: 2.5rem; margin-bottom: 1rem; }
-              p { font-size: 1.2rem; opacity: 0.9; }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <h1>Generated Application</h1>
-              <p>${input}</p>
-            </div>
-          </body>
-        </html>
-      `);
+        // After AI generates code, sync files and start preview
+        try {
+          setIsGeneratingPreview(true);
 
-      setIsGenerating(false);
+          // Step 1: Sync files to E2B sandbox
+          await syncFilesMutation.mutateAsync({
+            projectId,
+            syncType: 'all',
+          });
+
+          // Step 2: Start preview server
+          const previewResult = await startPreviewMutation.mutateAsync({
+            projectId,
+          });
+
+          setPreviewUrl(previewResult.url);
+          setPreviewError(null);
+        } catch (error) {
+          console.error('Failed to generate preview:', error);
+          setPreviewError(
+            error instanceof Error
+              ? error.message
+              : 'Failed to start preview server'
+          );
+          setPreviewUrl(null);
+        } finally {
+          setIsGeneratingPreview(false);
+        }
+      })();
     }, 5000);
+  };
+
+  const handleRestartPreview = async () => {
+    if (!projectId) return;
+
+    try {
+      setIsGeneratingPreview(true);
+      setPreviewError(null);
+
+      const previewResult = await restartPreviewMutation.mutateAsync({
+        projectId,
+      });
+
+      setPreviewUrl(previewResult.url);
+      setPreviewError(null);
+    } catch (error) {
+      console.error('Failed to restart preview:', error);
+      setPreviewError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to restart preview server'
+      );
+    } finally {
+      setIsGeneratingPreview(false);
+    }
   };
 
   const sampleCode = `import { Button } from "@/components/ui/button";
@@ -250,49 +292,86 @@ export default function Component() {
               </Button>
             </div>
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <div className="flex items-center gap-2">
+              {previewUrl && viewMode === 'preview' && (
                 <Button
                   variant="outline"
                   size="sm"
+                  onClick={handleRestartPreview}
+                  disabled={isGeneratingPreview}
                   className="rounded-lg border-border/50 transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
+                  title="Restart preview server"
                 >
-                  {deviceMode === 'desktop' ? (
-                    <>
-                      <Monitor className="mr-2 h-4 w-4" />
-                      Desktop
-                    </>
-                  ) : (
-                    <>
-                      <Smartphone className="mr-2 h-4 w-4" />
-                      Mobile
-                    </>
-                  )}
+                  <RefreshCw
+                    className={cn(
+                      'mr-2 h-4 w-4',
+                      isGeneratingPreview && 'animate-spin'
+                    )}
+                  />
+                  Restart Preview
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="rounded-lg">
-                <DropdownMenuItem
-                  onClick={() => setDeviceMode('desktop')}
-                  className="rounded-md"
-                >
-                  <Monitor className="mr-2 h-4 w-4" />
-                  Desktop
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setDeviceMode('mobile')}
-                  className="rounded-md"
-                >
-                  <Smartphone className="mr-2 h-4 w-4" />
-                  Mobile
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              )}
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-lg border-border/50 transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
+                  >
+                    {deviceMode === 'desktop' ? (
+                      <>
+                        <Monitor className="mr-2 h-4 w-4" />
+                        Desktop
+                      </>
+                    ) : (
+                      <>
+                        <Smartphone className="mr-2 h-4 w-4" />
+                        Mobile
+                      </>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="rounded-lg">
+                  <DropdownMenuItem
+                    onClick={() => setDeviceMode('desktop')}
+                    className="rounded-md"
+                  >
+                    <Monitor className="mr-2 h-4 w-4" />
+                    Desktop
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setDeviceMode('mobile')}
+                    className="rounded-md"
+                  >
+                    <Smartphone className="mr-2 h-4 w-4" />
+                    Mobile
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
 
           {/* Content Area */}
           <div className="flex-1 overflow-auto p-8">
-            {isGenerating ? (
-              <AILoadingAnimation />
+            {isGenerating || isGeneratingPreview ? (
+              <div className="flex h-full items-center justify-center">
+                <div className="space-y-4 text-center">
+                  <div className="mx-auto h-16 w-16 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
+                  <div>
+                    <h3 className="text-lg font-semibold">
+                      {isGeneratingPreview
+                        ? 'Starting preview server...'
+                        : 'Generating your application...'}
+                    </h3>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {isGeneratingPreview
+                        ? 'Installing dependencies and starting the development server'
+                        : 'This will take a few moments'}
+                    </p>
+                  </div>
+                </div>
+              </div>
             ) : viewMode === 'code' ? (
               <CodeView code={sampleCode} filename="component.tsx" />
             ) : (
@@ -318,7 +397,9 @@ export default function Component() {
                       </div>
                       <div className="flex flex-1 justify-center">
                         <div className="rounded-md border border-border/30 bg-background/50 px-4 py-1 font-mono text-xs text-muted-foreground">
-                          localhost:5173
+                          {previewUrl
+                            ? new URL(previewUrl).host
+                            : 'localhost:5173'}
                         </div>
                       </div>
                     </div>
@@ -332,12 +413,33 @@ export default function Component() {
                         : 'h-full'
                     )}
                   >
-                    {previewContent ? (
+                    {previewError ? (
+                      <div className="flex h-full items-center justify-center p-8 text-center">
+                        <div className="max-w-md space-y-4">
+                          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-destructive/20">
+                            <AlertCircle className="h-10 w-10 text-destructive" />
+                          </div>
+                          <h3 className="text-xl font-semibold">
+                            Preview Failed
+                          </h3>
+                          <p className="text-muted-foreground">
+                            {previewError}
+                          </p>
+                          <Button
+                            onClick={handleRestartPreview}
+                            variant="outline"
+                          >
+                            Restart Preview
+                          </Button>
+                        </div>
+                      </div>
+                    ) : previewUrl ? (
                       <iframe
-                        srcDoc={previewContent}
+                        src={previewUrl}
                         className="h-full w-full border-0"
-                        title="Preview"
-                        sandbox="allow-scripts"
+                        title="Live Preview"
+                        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                        allow="accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone"
                       />
                     ) : (
                       <div className="flex h-full items-center justify-center p-8 text-center">

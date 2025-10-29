@@ -18,13 +18,25 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 type PreviewPanelProps = {
   status: 'idle' | 'loading' | 'success' | 'error';
-  content: string;
+  content?: string;
+  previewUrl?: string | null; // E2B preview URL
+  isGeneratingPreview?: boolean;
+  previewError?: string | null;
   onRefresh: () => void;
+  onRestartPreview?: () => void;
 };
 
 type DeviceType = 'desktop' | 'tablet' | 'mobile';
 
-const PreviewPanel = ({ status, content, onRefresh }: PreviewPanelProps) => {
+const PreviewPanel = ({
+  status,
+  content,
+  previewUrl,
+  isGeneratingPreview = false,
+  previewError,
+  onRefresh,
+  onRestartPreview,
+}: PreviewPanelProps) => {
   const [device, setDevice] = useState<DeviceType>('desktop');
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -68,9 +80,23 @@ const PreviewPanel = ({ status, content, onRefresh }: PreviewPanelProps) => {
           size="icon"
           onClick={onRefresh}
           className="border-border/50 bg-background/60 backdrop-blur-sm hover:border-primary/50"
+          title="Regenerate code"
         >
           <RefreshCw className="h-4 w-4" />
         </Button>
+
+        {previewUrl && onRestartPreview && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRestartPreview}
+            className="border-border/50 bg-background/60 backdrop-blur-sm hover:border-primary/50"
+            title="Restart preview server"
+          >
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Restart Preview
+          </Button>
+        )}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -136,16 +162,20 @@ const PreviewPanel = ({ status, content, onRefresh }: PreviewPanelProps) => {
               </div>
             )}
 
-            {status === 'loading' && (
+            {(status === 'loading' || isGeneratingPreview) && (
               <div className="h-full space-y-4 p-8">
                 <div className="mb-8 flex items-center gap-4">
                   <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
                   <div>
                     <h3 className="text-lg font-semibold">
-                      Generating your application...
+                      {isGeneratingPreview
+                        ? 'Starting preview server...'
+                        : 'Generating your application...'}
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      This will take a few moments
+                      {isGeneratingPreview
+                        ? 'Installing dependencies and starting the development server'
+                        : 'This will take a few moments'}
                     </p>
                   </div>
                 </div>
@@ -156,31 +186,52 @@ const PreviewPanel = ({ status, content, onRefresh }: PreviewPanelProps) => {
               </div>
             )}
 
-            {status === 'error' && (
+            {(status === 'error' || previewError) && (
               <div className="flex h-full items-center justify-center p-8">
                 <div className="max-w-md space-y-4 text-center">
                   <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-destructive/20">
                     <AlertCircle className="h-10 w-10 text-destructive" />
                   </div>
-                  <h3 className="text-xl font-semibold">Generation Failed</h3>
+                  <h3 className="text-xl font-semibold">
+                    {previewError ? 'Preview Failed' : 'Generation Failed'}
+                  </h3>
                   <p className="text-muted-foreground">
-                    We couldn&apos;t generate your application. Please try again
-                    with a different prompt.
+                    {previewError ??
+                      "We couldn't generate your application. Please try again with a different prompt."}
                   </p>
-                  <Button onClick={onRefresh} variant="outline">
-                    Try Again
-                  </Button>
+                  <div className="flex justify-center gap-2">
+                    <Button onClick={onRefresh} variant="outline">
+                      Try Again
+                    </Button>
+                    {previewError && onRestartPreview && (
+                      <Button onClick={onRestartPreview} variant="outline">
+                        Restart Preview
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
 
-            {status === 'success' && content && (
-              <iframe
-                srcDoc={content}
-                className="h-full w-full border-0"
-                title="Preview"
-                sandbox="allow-scripts"
-              />
+            {status === 'success' && !isGeneratingPreview && (
+              <>
+                {previewUrl ? (
+                  <iframe
+                    src={previewUrl}
+                    className="h-full w-full border-0"
+                    title="Live Preview"
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                    allow="accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone"
+                  />
+                ) : content ? (
+                  <iframe
+                    srcDoc={content}
+                    className="h-full w-full border-0"
+                    title="Preview"
+                    sandbox="allow-scripts"
+                  />
+                ) : null}
+              </>
             )}
           </div>
         </div>
@@ -190,24 +241,38 @@ const PreviewPanel = ({ status, content, onRefresh }: PreviewPanelProps) => {
       <div className="flex items-center gap-3 border-t border-border/50 bg-background/60 p-4 backdrop-blur-md">
         <div
           className={`h-3 w-3 rounded-full ${
-            status === 'success'
+            status === 'success' && previewUrl && !isGeneratingPreview
               ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]'
-              : status === 'loading'
+              : status === 'loading' || isGeneratingPreview
                 ? 'animate-pulse bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]'
-                : status === 'error'
+                : status === 'error' || previewError
                   ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]'
                   : 'bg-muted'
           }`}
         />
         <span className="text-sm text-muted-foreground">
-          {status === 'success'
-            ? 'Ready'
-            : status === 'loading'
-              ? 'Generating...'
-              : status === 'error'
-                ? 'Error'
-                : 'Idle'}
+          {isGeneratingPreview
+            ? 'Starting preview...'
+            : status === 'success' && previewUrl
+              ? 'Live preview ready'
+              : status === 'success'
+                ? 'Ready'
+                : status === 'loading'
+                  ? 'Generating...'
+                  : status === 'error' || previewError
+                    ? 'Error'
+                    : 'Idle'}
         </span>
+        {previewUrl && (
+          <a
+            href={previewUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-auto text-xs text-primary hover:underline"
+          >
+            Open in new tab
+          </a>
+        )}
       </div>
     </div>
   );
