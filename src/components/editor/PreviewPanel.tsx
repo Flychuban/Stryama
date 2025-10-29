@@ -7,6 +7,7 @@ import {
   Tablet,
   Smartphone,
   AlertCircle,
+  Loader2,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -15,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 
 type PreviewPanelProps = {
   status: 'idle' | 'loading' | 'success' | 'error';
@@ -24,6 +26,12 @@ type PreviewPanelProps = {
   previewError?: string | null;
   onRefresh: () => void;
   onRestartPreview?: () => void;
+
+  queueStatus?: {
+    readonly isProcessing: boolean;
+    readonly pendingCount: number;
+    readonly processingCount: number;
+  };
 };
 
 type DeviceType = 'desktop' | 'tablet' | 'mobile';
@@ -36,6 +44,7 @@ const PreviewPanel = ({
   previewError,
   onRefresh,
   onRestartPreview,
+  queueStatus,
 }: PreviewPanelProps) => {
   const [device, setDevice] = useState<DeviceType>('desktop');
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -97,6 +106,19 @@ const PreviewPanel = ({
             Restart Preview
           </Button>
         )}
+
+        {queueStatus &&
+          (queueStatus.isProcessing || queueStatus.pendingCount > 0) && (
+            <Badge
+              variant="secondary"
+              className="ml-2 animate-pulse border-border/50 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+            >
+              <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+              {queueStatus.processingCount > 0
+                ? `Updating preview...`
+                : `${queueStatus.pendingCount} ${queueStatus.pendingCount === 1 ? 'update' : 'updates'} pending`}
+            </Badge>
+          )}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
