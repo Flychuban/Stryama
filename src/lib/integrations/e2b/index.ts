@@ -29,4 +29,3 @@ export {
 } from './utils/framework-detector';
 
 export { sandboxPool } from './services/sandbox-pool';
-export { cleanupScheduler } from './services/cleanup-scheduler';

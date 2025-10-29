@@ -43,12 +43,6 @@ export const env = createEnv({
         'E2B_API_KEY must start with e2b_'
       ),
 
-    // Cron job authentication for Sandbox Lifecycle
-    CRON_SECRET: z
-      .string()
-      .min(32, 'CRON_SECRET must be at least 32 characters for security')
-      .optional(),
-
     // Node environment
     NODE_ENV: z
       .enum(['development', 'test', 'production'])
@@ -95,7 +89,6 @@ export const env = createEnv({
     CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     E2B_API_KEY: process.env.E2B_API_KEY,
-    CRON_SECRET: process.env.CRON_SECRET,
     NODE_ENV: process.env.NODE_ENV,
 
     // Client
