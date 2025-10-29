@@ -1,5 +1,11 @@
 export { e2bClient } from './client';
-export { E2B_CONFIG, SANDBOX_TIMEOUTS } from './config';
+export {
+  E2B_CONFIG,
+  SANDBOX_TIMEOUTS,
+  POOL_CONFIG,
+  LIFECYCLE_CONFIG,
+  FEATURE_FLAGS,
+} from './config';
 export * from './types';
 export * from './errors';
 export { sandboxManager } from './services/sandbox-manager';
@@ -21,3 +27,6 @@ export {
   getFrameworkPort,
   getFrameworkCommand,
 } from './utils/framework-detector';
+
+export { sandboxPool } from './services/sandbox-pool';
+export { cleanupScheduler } from './services/cleanup-scheduler';

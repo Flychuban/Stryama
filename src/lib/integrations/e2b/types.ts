@@ -74,3 +74,53 @@ export type PreviewResult = {
   readonly port: number;
   readonly startTime: Date;
 };
+
+export type PoolMetadata = {
+  pooled: boolean;
+  releasedAt?: Date;
+  poolAssignments?: number;
+  lastFramework?: FrameworkType;
+};
+
+/**
+ * Extended sandbox metadata combining all phases
+ * Stored in sandbox.metadata JSON field
+ */
+export type SandboxMetadata = {
+  pool?: PoolMetadata;
+  sync?: SyncMetadata; // From Phase 2
+  preview?: {
+    // From Phase 3
+    lastPreviewUrl?: string;
+    lastFramework?: FrameworkType;
+    lastPort?: number;
+  };
+};
+
+export type PoolStatus = {
+  totalPooled: number;
+  available: number;
+  assigned: number;
+  metrics: {
+    poolHitRate: number;
+    avgResumeTime: number;
+    totalAssignments: number;
+    totalCreations: number;
+  };
+};
+
+export type CleanupStats = {
+  timestamp: Date;
+  sandboxesDestroyed: number;
+  sandboxesPaused: number;
+  poolSandboxesRemoved: number;
+  errors: number;
+  durationMs: number;
+};
+
+export type SessionRestoreResult = {
+  restored: boolean;
+  sandboxId: string;
+  source: 'resumed' | 'pool' | 'new';
+  resumeTimeMs?: number;
+};

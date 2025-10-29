@@ -1,10 +1,12 @@
 import type { PrismaClient } from '@prisma/client';
 import type { Sandbox as E2BSandbox } from '@e2b/code-interpreter';
+import { Sandbox } from '@e2b/code-interpreter';
 import { e2bClient } from '../client';
-import { E2B_CONFIG } from '../config';
+import { E2B_CONFIG, FEATURE_FLAGS } from '../config';
 import { SandboxTimeoutError, E2BSandboxError, E2BErrorType } from '../errors';
 import { withRetry } from '../errors/retry-handler';
 import type { ServiceResult, SandboxInstance } from '../types';
+import { sandboxPool } from './sandbox-pool';
 
 class SandboxManager {
   private activeSandboxes = new Map<string, E2BSandbox>();
@@ -71,7 +73,8 @@ class SandboxManager {
   }
 
   /**
-   * Get or create sandbox for a project
+   * Get or create sandbox for a project (Phase 4: Now with pool support!)
+   * Priority: Existing active → Resume paused → Pool → Create new
    */
   async getOrCreateSandbox(
     db: PrismaClient,
@@ -79,7 +82,6 @@ class SandboxManager {
     userId: string
   ): Promise<ServiceResult<SandboxInstance>> {
     try {
-      // Check for existing active sandbox
       const existingSandbox = await db.sandbox.findFirst({
         where: {
           projectId,
@@ -95,37 +97,106 @@ class SandboxManager {
 
       if (existingSandbox) {
         // Try to get cached instance
-        const instance = this.activeSandboxes.get(existingSandbox.id);
+        let instance = this.activeSandboxes.get(existingSandbox.id);
 
-        // If not cached, we can't reconnect (E2B limitation in Phase 1)
-        // So create a new one
-        if (!instance) {
+        if (!instance && FEATURE_FLAGS.usePersistence) {
           console.log(
-            '[Sandbox Manager] Active sandbox found but not cached, creating new one'
+            `[Sandbox Manager] Active sandbox ${existingSandbox.e2bId} found but not cached, attempting resume...`
           );
-          return this.createSandbox(db, projectId, userId);
+
+          try {
+            const startTime = Date.now();
+            instance = await Sandbox.connect(existingSandbox.e2bId, {
+              apiKey: E2B_CONFIG.apiKey,
+              timeoutMs: E2B_CONFIG.maxTimeoutMs,
+            });
+            const resumeTime = Date.now() - startTime;
+
+            // Cache the resumed instance
+            this.activeSandboxes.set(existingSandbox.id, instance);
+
+            console.log(
+              `[Sandbox Manager] Successfully resumed sandbox ${existingSandbox.e2bId} in ${resumeTime}ms`
+            );
+          } catch (resumeError) {
+            console.error(
+              `[Sandbox Manager] Failed to resume sandbox ${existingSandbox.e2bId}:`,
+              resumeError
+            );
+            // Fall through to pool/create logic
+            instance = undefined;
+          }
         }
 
-        // Update last activity
-        await db.sandbox.update({
-          where: { id: existingSandbox.id },
-          data: { lastActivity: new Date() },
-        });
+        if (instance) {
+          // Update last activity
+          await db.sandbox.update({
+            where: { id: existingSandbox.id },
+            data: { lastActivity: new Date() },
+          });
 
-        return {
-          success: true,
-          data: {
-            id: existingSandbox.id,
-            e2bId: existingSandbox.e2bId,
-            status: existingSandbox.status,
-            expiresAt: existingSandbox.expiresAt,
-            instance,
-          },
-          error: null,
-        };
+          return {
+            success: true,
+            data: {
+              id: existingSandbox.id,
+              e2bId: existingSandbox.e2bId,
+              status: existingSandbox.status,
+              expiresAt: existingSandbox.expiresAt,
+              instance,
+            },
+            error: null,
+          };
+        }
       }
 
-      // Create new sandbox
+      if (FEATURE_FLAGS.enablePooling) {
+        console.log('[Sandbox Manager] Trying to assign sandbox from pool...');
+        const poolResult = await sandboxPool.assignFromPool(
+          db,
+          projectId,
+          userId
+        );
+
+        if (poolResult.success && poolResult.data) {
+          console.log(
+            `[Sandbox Manager] Assigned sandbox from pool in ${poolResult.data.resumeTimeMs}ms`
+          );
+
+          // Get the updated sandbox from DB
+          const pooledSandbox = await db.sandbox.findFirst({
+            where: {
+              e2bId: poolResult.data.e2bId,
+              projectId,
+            },
+          });
+
+          if (pooledSandbox) {
+            // Connect to the resumed sandbox
+            const instance = await Sandbox.connect(poolResult.data.e2bId, {
+              apiKey: E2B_CONFIG.apiKey,
+              timeoutMs: E2B_CONFIG.maxTimeoutMs,
+            });
+
+            // Cache it
+            this.activeSandboxes.set(pooledSandbox.id, instance);
+
+            return {
+              success: true,
+              data: {
+                id: pooledSandbox.id,
+                e2bId: pooledSandbox.e2bId,
+                status: pooledSandbox.status,
+                expiresAt: pooledSandbox.expiresAt,
+                instance,
+              },
+              error: null,
+            };
+          }
+        }
+      }
+
+      // Step 3: Create new sandbox (fallback)
+      console.log('[Sandbox Manager] Creating new sandbox...');
       return this.createSandbox(db, projectId, userId);
     } catch (error) {
       console.error('[Sandbox Manager] getOrCreate failed:', error);
@@ -370,6 +441,196 @@ class SandboxManager {
           error instanceof Error ? error.message : 'Failed to update activity',
       };
     }
+  }
+
+  async pauseSandbox(
+    db: PrismaClient,
+    sandboxId: string
+  ): Promise<ServiceResult<void>> {
+    if (!FEATURE_FLAGS.usePersistence) {
+      return {
+        success: false,
+        data: null,
+        error: 'Persistence is disabled',
+      };
+    }
+
+    try {
+      const dbSandbox = await db.sandbox.findUnique({
+        where: { id: sandboxId },
+      });
+
+      if (!dbSandbox) {
+        return {
+          success: false,
+          data: null,
+          error: 'Sandbox not found',
+        };
+      }
+
+      const instance = this.activeSandboxes.get(sandboxId);
+      if (!instance) {
+        return {
+          success: false,
+          data: null,
+          error: 'Sandbox instance not found in cache',
+        };
+      }
+
+      // Pause using E2B API
+      await instance.betaPause();
+      console.log(`[Sandbox Manager] Paused sandbox ${dbSandbox.e2bId}`);
+
+      // Update database
+      await db.sandbox.update({
+        where: { id: sandboxId },
+        data: { lastActivity: new Date() },
+      });
+
+      // Keep in cache - can still resume
+      return {
+        success: true,
+        data: null,
+        error: null,
+      };
+    } catch (error) {
+      console.error('[Sandbox Manager] Pause failed:', error);
+      return {
+        success: false,
+        data: null,
+        error:
+          error instanceof Error ? error.message : 'Failed to pause sandbox',
+      };
+    }
+  }
+
+  async resumeSandbox(
+    db: PrismaClient,
+    sandboxId: string
+  ): Promise<ServiceResult<E2BSandbox>> {
+    if (!FEATURE_FLAGS.usePersistence) {
+      return {
+        success: false,
+        data: null,
+        error: 'Persistence is disabled',
+      };
+    }
+
+    try {
+      const dbSandbox = await db.sandbox.findUnique({
+        where: { id: sandboxId },
+      });
+
+      if (!dbSandbox) {
+        return {
+          success: false,
+          data: null,
+          error: 'Sandbox not found',
+        };
+      }
+
+      // Try to get from cache first
+      let instance = this.activeSandboxes.get(sandboxId);
+
+      if (!instance) {
+        // Connect (will auto-resume if paused)
+        const startTime = Date.now();
+        instance = await Sandbox.connect(dbSandbox.e2bId, {
+          apiKey: E2B_CONFIG.apiKey,
+          timeoutMs: E2B_CONFIG.maxTimeoutMs,
+        });
+        const resumeTime = Date.now() - startTime;
+
+        console.log(
+          `[Sandbox Manager] Resumed sandbox ${dbSandbox.e2bId} in ${resumeTime}ms`
+        );
+
+        // Cache the instance
+        this.activeSandboxes.set(sandboxId, instance);
+      }
+
+      // Update database
+      await db.sandbox.update({
+        where: { id: sandboxId },
+        data: { lastActivity: new Date() },
+      });
+
+      return {
+        success: true,
+        data: instance,
+        error: null,
+      };
+    } catch (error) {
+      console.error('[Sandbox Manager] Resume failed:', error);
+      return {
+        success: false,
+        data: null,
+        error:
+          error instanceof Error ? error.message : 'Failed to resume sandbox',
+      };
+    }
+  }
+
+  async releaseToPool(
+    db: PrismaClient,
+    sandboxId: string
+  ): Promise<ServiceResult<boolean>> {
+    try {
+      const dbSandbox = await db.sandbox.findUnique({
+        where: { id: sandboxId },
+      });
+
+      if (!dbSandbox) {
+        return {
+          success: false,
+          data: null,
+          error: 'Sandbox not found',
+        };
+      }
+
+      // Try to release to pool
+      const releaseResult = await sandboxPool.releaseToPool(
+        db,
+        sandboxId,
+        dbSandbox.e2bId
+      );
+
+      if (releaseResult.success) {
+        // Remove from active cache since it's now pooled
+        this.activeSandboxes.delete(sandboxId);
+        console.log(
+          `[Sandbox Manager] Released sandbox ${dbSandbox.e2bId} to pool`
+        );
+        return releaseResult;
+      }
+
+      // If release to pool failed (e.g., pool full), destroy instead
+      console.log(
+        `[Sandbox Manager] Failed to release to pool, destroying sandbox ${dbSandbox.e2bId}`
+      );
+      await this.destroySandbox(db, sandboxId);
+
+      return {
+        success: false,
+        data: null,
+        error: 'Released by destroying (pool unavailable)',
+      };
+    } catch (error) {
+      console.error('[Sandbox Manager] Release to pool failed:', error);
+      return {
+        success: false,
+        data: null,
+        error:
+          error instanceof Error ? error.message : 'Failed to release to pool',
+      };
+    }
+  }
+
+  /**
+   * Get cached E2B instance (for internal use)
+   */
+  getCachedInstance(sandboxId: string): E2BSandbox | undefined {
+    return this.activeSandboxes.get(sandboxId);
   }
 }
 

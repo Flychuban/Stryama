@@ -9,6 +9,7 @@ import {
   getPreviewLogs,
   restartPreviewServer,
 } from '~/lib/integrations/e2b/services/preview-manager';
+import { sandboxPool } from '~/lib/integrations/e2b/services/sandbox-pool';
 
 export const sandboxRouter = createTRPCRouter({
   /**
@@ -74,7 +75,11 @@ export const sandboxRouter = createTRPCRouter({
         include: { project: true },
       });
 
-      if (!sandbox || sandbox.project.clerkUserId !== ctx.auth.userId) {
+      if (
+        !sandbox ||
+        !sandbox.project ||
+        sandbox.project.clerkUserId !== ctx.auth.userId
+      ) {
         throw new TRPCError({
           code: 'NOT_FOUND',
           message: 'Sandbox not found or access denied',
@@ -109,7 +114,11 @@ export const sandboxRouter = createTRPCRouter({
         include: { project: true },
       });
 
-      if (!sandbox || sandbox.project.clerkUserId !== ctx.auth.userId) {
+      if (
+        !sandbox ||
+        !sandbox.project ||
+        sandbox.project.clerkUserId !== ctx.auth.userId
+      ) {
         throw new TRPCError({
           code: 'NOT_FOUND',
           message: 'Sandbox not found or access denied',
@@ -151,7 +160,11 @@ export const sandboxRouter = createTRPCRouter({
         include: { project: true },
       });
 
-      if (!sandbox || sandbox.project.clerkUserId !== ctx.auth.userId) {
+      if (
+        !sandbox ||
+        !sandbox.project ||
+        sandbox.project.clerkUserId !== ctx.auth.userId
+      ) {
         throw new TRPCError({
           code: 'NOT_FOUND',
           message: 'Sandbox not found or access denied',
@@ -192,7 +205,11 @@ export const sandboxRouter = createTRPCRouter({
         include: { project: true },
       });
 
-      if (!sandbox || sandbox.project.clerkUserId !== ctx.auth.userId) {
+      if (
+        !sandbox ||
+        !sandbox.project ||
+        sandbox.project.clerkUserId !== ctx.auth.userId
+      ) {
         throw new TRPCError({
           code: 'NOT_FOUND',
           message: 'Sandbox not found or access denied',
@@ -584,4 +601,134 @@ export const sandboxRouter = createTRPCRouter({
         sandboxId: sandboxResult.data.id,
       };
     }),
+
+  pause: protectedProcedure
+    .input(
+      z.object({
+        sandboxId: z.string().min(1, 'Sandbox ID is required'),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Verify ownership
+      const sandbox = await ctx.db.sandbox.findUnique({
+        where: { id: input.sandboxId },
+        include: { project: true },
+      });
+
+      if (
+        !sandbox ||
+        !sandbox.project ||
+        sandbox.project.clerkUserId !== ctx.auth.userId
+      ) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Sandbox not found or access denied',
+        });
+      }
+
+      const result = await sandboxManager.pauseSandbox(ctx.db, input.sandboxId);
+
+      if (!result.success) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: result.error ?? 'Failed to pause sandbox',
+        });
+      }
+
+      return { success: true };
+    }),
+
+  resume: protectedProcedure
+    .input(
+      z.object({
+        sandboxId: z.string().min(1, 'Sandbox ID is required'),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Verify ownership
+      const sandbox = await ctx.db.sandbox.findUnique({
+        where: { id: input.sandboxId },
+        include: { project: true },
+      });
+
+      if (
+        !sandbox ||
+        !sandbox.project ||
+        sandbox.project.clerkUserId !== ctx.auth.userId
+      ) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Sandbox not found or access denied',
+        });
+      }
+
+      const result = await sandboxManager.resumeSandbox(
+        ctx.db,
+        input.sandboxId
+      );
+
+      if (!result.success) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: result.error ?? 'Failed to resume sandbox',
+        });
+      }
+
+      return { success: true };
+    }),
+
+  release: protectedProcedure
+    .input(
+      z.object({
+        sandboxId: z.string().min(1, 'Sandbox ID is required'),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Verify ownership
+      const sandbox = await ctx.db.sandbox.findUnique({
+        where: { id: input.sandboxId },
+        include: { project: true },
+      });
+
+      if (
+        !sandbox ||
+        !sandbox.project ||
+        sandbox.project.clerkUserId !== ctx.auth.userId
+      ) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Sandbox not found or access denied',
+        });
+      }
+
+      const result = await sandboxManager.releaseToPool(
+        ctx.db,
+        input.sandboxId
+      );
+
+      if (!result.success) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: result.error ?? 'Failed to release sandbox to pool',
+        });
+      }
+
+      return { success: true, pooled: result.data ?? false };
+    }),
+
+  getPoolStatus: protectedProcedure.query(async ({ ctx }) => {
+    const status = await sandboxPool.getStatus(ctx.db);
+
+    return {
+      totalPooled: status.totalPooled,
+      available: status.available,
+      assigned: status.assigned,
+      metrics: {
+        poolHitRate: status.metrics.poolHitRate,
+        avgResumeTime: status.metrics.avgResumeTime,
+        totalAssignments: status.metrics.totalAssignments,
+        totalCreations: status.metrics.totalCreations,
+      },
+    };
+  }),
 });
