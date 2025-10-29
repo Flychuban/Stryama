@@ -79,15 +79,22 @@ enum SandboxStatus {
 
 // Sandbox model - tracks E2B sandbox environments
 model Sandbox {
-    id        String        @id @default(cuid())
-    e2bId     String        @unique
-    status    SandboxStatus @default(ACTIVE)
-    projectId String
-    createdAt DateTime      @default(now())
-    updatedAt DateTime      @updatedAt
+    id           String        @id @default(cuid())
+    e2bId        String        @unique
+    status       SandboxStatus @default(ACTIVE)
+    projectId    String
+    previewUrl   String?       // Live preview URL (for Phase 3)
+    templateId   String?       // E2B template identifier
+    lastActivity DateTime      @default(now()) // Track activity for cleanup
+    expiresAt    DateTime?     // Sandbox expiration timestamp
+    metadata     Json?         // Store E2B metadata (projectId, userId)
+    createdAt    DateTime      @default(now())
+    updatedAt    DateTime      @updatedAt
 
     // Relations
     project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
     @@index([projectId])
+    @@index([status])
+    @@index([expiresAt])
 }
