@@ -84,7 +84,8 @@ export function usePreviewQueue(
 
   // Debounced update trigger
   const debouncedProcessUpdate = useRef(
-    debounce((update: QueuedUpdate) => {
+    debounce((...args: unknown[]) => {
+      const update = args[0] as QueuedUpdate;
       void processUpdate(update);
     }, debounceMs)
   );

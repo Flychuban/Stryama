@@ -40,7 +40,7 @@ type DeviceMode = 'desktop' | 'mobile';
 
 function EditorContent() {
   const searchParams = useSearchParams();
-  const projectId = searchParams.get('id');
+  const projectId = searchParams?.get('id') ?? null;
 
   // Fetch project data if ID is provided
   const { data: project } = api.project.getById.useQuery(

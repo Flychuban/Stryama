@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Terminal,
   Trash2,
@@ -242,7 +242,7 @@ const ConsolePanel = ({
         <div className="flex items-center gap-2">
           <Tabs
             value={activeTab}
-            onValueChange={(v) => setActiveTab(v as typeof activeTab)}
+            onValueChange={(v: string) => setActiveTab(v as typeof activeTab)}
           >
             <TabsList className="h-8 bg-muted/50">
               <TabsTrigger value="all" className="text-xs">

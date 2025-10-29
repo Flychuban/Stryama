@@ -66,23 +66,19 @@ class LogStreamerService {
 
     try {
       await sandbox.commands.run(command, {
-        onStdout: (data: { line: string; timestamp: number }) => {
+        onStdout: (data: string) => {
           this.addLog(sandboxId, {
             level: 'stdout',
-            message: data.line,
-            timestamp: data.timestamp / 1000, // Convert microseconds to milliseconds
+            message: data,
+            timestamp: Date.now(),
             source,
           });
         },
-        onStderr: (data: {
-          line: string;
-          timestamp: number;
-          error: boolean;
-        }) => {
+        onStderr: (data: string) => {
           this.addLog(sandboxId, {
-            level: data.error ? 'error' : 'stderr',
-            message: data.line,
-            timestamp: data.timestamp / 1000,
+            level: 'stderr',
+            message: data,
+            timestamp: Date.now(),
             source,
           });
         },
