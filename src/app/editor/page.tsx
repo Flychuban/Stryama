@@ -56,6 +56,7 @@ function EditorContent() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [selectedFileIndex, setSelectedFileIndex] = useState(0);
 
   // tRPC mutations for E2B sandbox operations
   const syncFilesMutation = api.sandbox.syncFiles.useMutation();
@@ -158,26 +159,9 @@ function EditorContent() {
     }
   };
 
-  const sampleCode = `import { Button } from "@/components/ui/button";
-
-export default function Component() {
-  return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b">
-        <div className="container mx-auto p-4">
-          <h1 className="text-2xl font-bold">My App</h1>
-        </div>
-      </header>
-
-      <main className="container mx-auto p-8">
-        <h2 className="text-3xl font-bold mb-4">
-          Welcome to your application
-        </h2>
-        <Button>Get Started</Button>
-      </main>
-    </div>
-  );
-}`;
+  // Get files from project or use empty state
+  const projectFiles = project?.files ?? [];
+  const currentFile = projectFiles[selectedFileIndex] ?? null;
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
@@ -373,7 +357,47 @@ export default function Component() {
                 </div>
               </div>
             ) : viewMode === 'code' ? (
-              <CodeView code={sampleCode} filename="component.tsx" />
+              projectFiles.length > 0 && currentFile ? (
+                <div className="space-y-4">
+                  {/* File selector if multiple files */}
+                  {projectFiles.length > 1 && (
+                    <div className="flex gap-2 overflow-x-auto pb-2">
+                      {projectFiles.map((file, index) => (
+                        <Button
+                          key={file.id}
+                          variant={
+                            index === selectedFileIndex ? 'default' : 'outline'
+                          }
+                          size="sm"
+                          onClick={() => setSelectedFileIndex(index)}
+                          className="whitespace-nowrap"
+                        >
+                          {file.path}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                  <CodeView
+                    code={currentFile.content}
+                    filename={currentFile.path}
+                  />
+                </div>
+              ) : (
+                <div className="flex h-full items-center justify-center p-8 text-center">
+                  <div className="max-w-md space-y-4">
+                    <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-muted/50">
+                      <Code2 className="h-10 w-10 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-semibold">No Files Yet</h3>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Start a conversation with the AI to generate code files
+                        for your project.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )
             ) : (
               <div className="flex h-full items-center justify-center">
                 <div

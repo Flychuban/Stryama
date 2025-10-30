@@ -1,41 +1,20 @@
-// Project-related types
-export type Project = {
-  id: string;
-  name: string;
-  description: string | null;
-  clerkUserId: string;
-  createdAt: Date;
-  updatedAt: Date;
-};
+// Project-related types - using Prisma-generated types for consistency
+import type { Project, File, Sandbox, Framework } from '@prisma/client';
 
+// Re-export Prisma types for convenience
+export type { Project, File as ProjectFile, Sandbox, Framework };
+
+// Extended types with relations
 export type ProjectWithDetails = Project & {
-  files: ProjectFile[];
+  files: File[];
   sandboxes: Sandbox[];
 };
 
-export type ProjectFile = {
-  id: string;
-  projectId: string;
-  path: string;
-  content: string;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-export type Sandbox = {
-  id: string;
-  projectId: string;
-  sandboxId: string;
-  url: string | null;
-  status: string;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
+// UI-specific types
 export type ProjectCardData = {
   id: string;
   name: string;
-  framework: string;
+  framework: Framework;
   lastModified: Date;
   thumbnailUrl?: string;
 };

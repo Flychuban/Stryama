@@ -1,9 +1,11 @@
 'use client';
 
 // 1. External libraries
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { type Framework } from '@prisma/client';
 
 // 2. Internal utilities
 import { api } from '@/trpc/react';
@@ -15,9 +17,11 @@ import { Button } from '@/components/ui/button';
 import { ProjectGrid } from '@/components/dashboard/ProjectGrid';
 import { EmptyState } from '@/components/dashboard/EmptyState';
 import { AppHeader } from '@/components/shared/AppHeader';
+import { CreateProjectDialog } from '@/components/dashboard/CreateProjectDialog';
 
 export default function DashboardPage() {
   const router = useRouter();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   // Fetch projects from backend
   const { data: projects, isLoading } = api.project.getAll.useQuery();
@@ -29,6 +33,7 @@ export default function DashboardPage() {
     onSuccess: (newProject) => {
       toast.success('Project created successfully!');
       void utils.project.getAll.invalidate();
+      setIsDialogOpen(false);
       router.push(`/editor?id=${newProject.id}`);
     },
     onError: (error) => {
@@ -57,10 +62,15 @@ export default function DashboardPage() {
   });
 
   const handleNewProject = (): void => {
-    createProject.mutate({
-      name: 'Untitled Project',
-      description: 'A new project created with Stryama',
-    });
+    setIsDialogOpen(true);
+  };
+
+  const handleCreateProject = (data: {
+    name: string;
+    description?: string;
+    framework: Framework;
+  }): void => {
+    createProject.mutate(data);
   };
 
   const handleOpenProject = (id: string): void => {
@@ -73,6 +83,7 @@ export default function DashboardPage() {
       duplicateProject.mutate({
         name: `${projectToDuplicate.name} (Copy)`,
         description: projectToDuplicate.description ?? '',
+        framework: projectToDuplicate.framework,
       });
     }
   };
@@ -86,7 +97,7 @@ export default function DashboardPage() {
     projects?.map((project) => ({
       id: project.id,
       name: project.name,
-      framework: 'React' as const, // Default framework
+      framework: project.framework,
       lastModified: project.updatedAt,
       thumbnailUrl: undefined,
     })) ?? [];
@@ -157,6 +168,13 @@ export default function DashboardPage() {
           />
         )}
       </main>
+
+      <CreateProjectDialog
+        open={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+        onCreateProject={handleCreateProject}
+        isCreating={createProject.isPending}
+      />
     </div>
   );
 }

@@ -1,9 +1,10 @@
+import { type Framework } from '@prisma/client';
 import { ProjectCard } from './ProjectCard';
 
 type Project = {
   id: string;
   name: string;
-  framework: string;
+  framework: Framework;
   lastModified: Date;
   thumbnailUrl?: string;
 };

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Code2, Copy, Trash2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { Framework } from '@prisma/client';
 
 // 4. UI components
 import { Card, CardContent } from '@/components/ui/card';
@@ -25,9 +26,17 @@ import {
 type Project = {
   id: string;
   name: string;
-  framework: string;
+  framework: Framework;
   lastModified: Date;
   thumbnailUrl?: string;
+};
+
+// Framework display names
+const FRAMEWORK_LABELS: Record<Framework, string> = {
+  [Framework.REACT]: 'React',
+  [Framework.NEXTJS]: 'Next.js',
+  [Framework.VUE]: 'Vue',
+  [Framework.VANILLA]: 'Vanilla JS',
 };
 
 type ProjectCardProps = {
@@ -135,7 +144,7 @@ export function ProjectCard({
               variant="secondary"
               className="flex-shrink-0 border-primary/20 bg-primary/10 text-xs text-primary"
             >
-              {project.framework}
+              {FRAMEWORK_LABELS[project.framework]}
             </Badge>
           </div>
         </CardContent>

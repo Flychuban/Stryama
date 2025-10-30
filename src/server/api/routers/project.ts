@@ -1,5 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { Framework } from '@prisma/client';
 import { createTRPCRouter, protectedProcedure } from '~/server/api/trpc';
 
 export const projectRouter = createTRPCRouter({
@@ -48,6 +49,7 @@ export const projectRouter = createTRPCRouter({
       z.object({
         name: z.string().min(1).max(100),
         description: z.string().optional(),
+        framework: z.nativeEnum(Framework).optional().default(Framework.REACT),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -55,6 +57,7 @@ export const projectRouter = createTRPCRouter({
         data: {
           name: input.name,
           description: input.description,
+          framework: input.framework,
           clerkUserId: ctx.auth.userId,
         },
       });
@@ -69,6 +72,7 @@ export const projectRouter = createTRPCRouter({
         id: z.string(),
         name: z.string().min(1).max(100).optional(),
         description: z.string().optional(),
+        framework: z.nativeEnum(Framework).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -94,6 +98,7 @@ export const projectRouter = createTRPCRouter({
         data: {
           name: input.name,
           description: input.description,
+          framework: input.framework,
         },
       });
 

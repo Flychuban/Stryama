@@ -15,6 +15,7 @@ async function main() {
     data: {
       name: 'Sample React App',
       description: 'A sample React application for testing',
+      framework: 'REACT',
       clerkUserId: testClerkUserId1,
       fileStructure: {
         src: {
@@ -33,6 +34,7 @@ async function main() {
     data: {
       name: 'Node.js API',
       description: 'A Node.js REST API project',
+      framework: 'NEXTJS',
       clerkUserId: testClerkUserId2,
       fileStructure: {
         src: {
