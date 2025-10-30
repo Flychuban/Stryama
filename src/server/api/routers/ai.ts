@@ -15,6 +15,8 @@ import {
   ConflictDetector,
 } from '~/lib/integrations/claude';
 import type { UserPlan, ProjectContext } from '~/lib/integrations/claude';
+import { sandboxManager } from '~/lib/integrations/e2b/services/sandbox-manager';
+import { FileSync } from '~/lib/integrations/e2b/services/file-sync';
 
 export const aiRouter = createTRPCRouter({
   generateCode: protectedProcedure
@@ -117,11 +119,81 @@ export const aiRouter = createTRPCRouter({
 
       await rateLimiter.incrementCount(ctx.auth.userId);
 
+      let syncStatus: 'not_attempted' | 'success' | 'partial' | 'failed' =
+        'not_attempted';
+      if (input.projectId && result.data.files.length > 0) {
+        try {
+          // Get or create sandbox for project
+          const sandboxResult = await sandboxManager.getOrCreateSandbox(
+            ctx.db,
+            input.projectId,
+            ctx.auth.userId
+          );
+
+          if (sandboxResult.success && sandboxResult.data) {
+            console.log(
+              `[AI Router] Syncing ${result.data.files.length} generated file(s) to sandbox`
+            );
+
+            // Get the file IDs that were just generated
+            // Note: We need to fetch the files that were saved from this generation
+            const savedFiles = await ctx.db.file.findMany({
+              where: {
+                projectId: input.projectId,
+                path: {
+                  in: result.data.files.map((f) => f.path),
+                },
+              },
+            });
+
+            if (savedFiles.length > 0) {
+              // Sync the files to sandbox
+              const syncResult = await FileSync.syncIncrementalFiles(
+                sandboxResult.data.instance,
+                sandboxResult.data.id,
+                savedFiles.map((f) => f.id),
+                ctx.db
+              );
+
+              if (syncResult.success && syncResult.data) {
+                if (syncResult.data.failedFiles.length === 0) {
+                  syncStatus = 'success';
+                  console.log(
+                    `[AI Router] Successfully synced all ${syncResult.data.syncedFiles} file(s)`
+                  );
+                } else {
+                  syncStatus = 'partial';
+                  console.warn(
+                    `[AI Router] Partial sync: ${syncResult.data.syncedFiles} succeeded, ${syncResult.data.failedFiles.length} failed`
+                  );
+                }
+              } else {
+                syncStatus = 'failed';
+                console.error(
+                  '[AI Router] File sync failed:',
+                  syncResult.error
+                );
+              }
+            }
+          } else {
+            console.warn(
+              '[AI Router] Could not create/get sandbox for file sync:',
+              sandboxResult.error
+            );
+          }
+        } catch (error) {
+          // Don't fail AI generation if sync fails
+          console.error('[AI Router] Error during file sync:', error);
+          syncStatus = 'failed';
+        }
+      }
+
       return {
         ...result.data,
         databaseId: aiGeneration.id,
         conflicts,
         warning,
+        syncStatus, // Return sync status to frontend
       };
     }),
 

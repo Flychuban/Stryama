@@ -16,6 +16,7 @@ const config = {
     serverActions: {
       bodySizeLimit: '2mb',
     },
+    optimizePackageImports: ['@clerk/nextjs'],
   },
 
   // Security headers
