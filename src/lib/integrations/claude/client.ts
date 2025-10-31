@@ -11,8 +11,9 @@ import type {
   AIGenerationRequest,
   AIGenerationResponse,
   ServiceResult,
+  GeneratedFile,
 } from './types';
-import { GenerationStatus } from './types';
+import { GenerationStatus, ProgrammingLanguage } from './types';
 import {
   classifyError,
   getUserFriendlyErrorMessage,
@@ -61,6 +62,9 @@ export class ClaudeClient {
       let tokensUsed = 0;
       let totalCost = 0;
 
+      // Track files created via Write tool
+      const toolGeneratedFiles: Array<{ path: string; content: string }> = [];
+
       for await (const message of query({
         prompt: enhancedPrompt,
         options: {
@@ -104,8 +108,41 @@ export class ClaudeClient {
           }
         }
 
+        // CRITICAL FIX: Capture files from tool_use blocks
         if (message.type === 'assistant') {
           console.log(`[Claude] Assistant thinking...`);
+
+          // Extract tool use blocks from assistant message
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+          const content = message.message.content as unknown;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              // Type guard for tool_use blocks
+              if (
+                typeof block === 'object' &&
+                block !== null &&
+                'type' in block &&
+                (block as { type: string }).type === 'tool_use' &&
+                'name' in block &&
+                (block as { name: string }).name === 'Write' &&
+                'input' in block
+              ) {
+                const input = (block as { input: unknown }).input as {
+                  file_path?: string;
+                  content?: string;
+                };
+                if (input.file_path && input.content) {
+                  console.log(
+                    `[Claude] Capturing file from Write tool: ${input.file_path}`
+                  );
+                  toolGeneratedFiles.push({
+                    path: input.file_path,
+                    content: input.content,
+                  });
+                }
+              }
+            }
+          }
         }
       }
 
@@ -116,12 +153,17 @@ export class ClaudeClient {
         );
       }
 
+      console.log(
+        `[Claude] Tool-generated files: ${toolGeneratedFiles.length}`
+      );
+
       const parsedResponse = this.parseResponse(
         resultText,
         generationId,
         tokensUsed,
         totalCost,
-        sessionId
+        sessionId,
+        toolGeneratedFiles
       );
 
       const duration = Date.now() - startTime;
@@ -187,9 +229,28 @@ export class ClaudeClient {
     generationId: string,
     tokensUsed: number,
     totalCost: number,
-    sessionId?: string
+    sessionId?: string,
+    toolGeneratedFiles: Array<{ path: string; content: string }> = []
   ): Omit<AIGenerationResponse, 'duration'> {
-    const files = CodeParser.parseClaudeResponse(responseText);
+    let files: GeneratedFile[] = [];
+
+    // PRIORITY 1: Use files from tool_use (Write tool)
+    if (toolGeneratedFiles.length > 0) {
+      console.log(
+        `[Claude] Processing ${toolGeneratedFiles.length} tool-generated files`
+      );
+      files = toolGeneratedFiles.map((file) => ({
+        path: file.path,
+        content: file.content,
+        language: this.detectLanguageFromPath(file.path),
+      }));
+    } else {
+      // FALLBACK: Try to parse markdown code blocks from response text
+      console.log(`[Claude] No tool files found, attempting markdown parsing`);
+      files = CodeParser.parseClaudeResponse(responseText);
+    }
+
+    console.log(`[Claude] Final file count: ${files.length}`);
 
     return {
       id: generationId,
@@ -200,6 +261,35 @@ export class ClaudeClient {
       totalCost,
       sessionId,
     };
+  }
+
+  private detectLanguageFromPath(filePath: string): ProgrammingLanguage {
+    const extension = filePath.split('.').pop()?.toLowerCase() ?? '';
+
+    switch (extension) {
+      case 'ts':
+      case 'tsx':
+        return ProgrammingLanguage.TYPESCRIPT;
+      case 'js':
+      case 'jsx':
+        return ProgrammingLanguage.JAVASCRIPT;
+      case 'css':
+      case 'scss':
+      case 'sass':
+      case 'less':
+        return ProgrammingLanguage.CSS;
+      case 'html':
+      case 'htm':
+        return ProgrammingLanguage.HTML;
+      case 'json':
+        return ProgrammingLanguage.JSON;
+      case 'md':
+      case 'markdown':
+        return ProgrammingLanguage.MARKDOWN;
+      default:
+        // Default to TypeScript for code files
+        return ProgrammingLanguage.TYPESCRIPT;
+    }
   }
 
   private generateId(): string {

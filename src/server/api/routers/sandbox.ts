@@ -369,11 +369,12 @@ export const sandboxRouter = createTRPCRouter({
         });
       }
 
-      // Start preview server
+      // Start preview server with project framework
       const previewResult = await startPreviewServer(
         sandboxResult.data.instance,
         input.projectId,
-        project.files
+        project.files,
+        project.framework // Pass the framework from project settings
       );
 
       if (!previewResult.success || !previewResult.data) {
@@ -562,11 +563,12 @@ export const sandboxRouter = createTRPCRouter({
         });
       }
 
-      // Restart preview server
+      // Restart preview server with project framework
       const previewResult = await restartPreviewServer(
         sandboxResult.data.instance,
         input.projectId,
-        project.files
+        project.files,
+        project.framework // Pass the framework from project settings
       );
 
       if (!previewResult.success || !previewResult.data) {

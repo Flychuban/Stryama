@@ -119,6 +119,68 @@ export const aiRouter = createTRPCRouter({
 
       await rateLimiter.incrementCount(ctx.auth.userId);
 
+      // Enhanced logging for file generation
+      console.log(`[AI Router] Generation result:`, {
+        filesGenerated: result.data.files.length,
+        filesPaths: result.data.files.map((f) => f.path),
+        hasProjectId: !!input.projectId,
+      });
+
+      // Save generated files to database
+      if (input.projectId && result.data.files.length > 0) {
+        try {
+          console.log(
+            `[AI Router] Saving ${result.data.files.length} generated file(s) to database`
+          );
+
+          // Use upsert to handle both creation and updates
+          await Promise.all(
+            result.data.files.map((file) =>
+              ctx.db.file.upsert({
+                where: {
+                  projectId_path: {
+                    projectId: input.projectId!,
+                    path: file.path,
+                  },
+                },
+                create: {
+                  path: file.path,
+                  content: file.content,
+                  language: file.language,
+                  projectId: input.projectId!,
+                },
+                update: {
+                  content: file.content,
+                  language: file.language,
+                  updatedAt: new Date(),
+                },
+              })
+            )
+          );
+
+          console.log(
+            `[AI Router] ✅ Successfully saved ${result.data.files.length} file(s) to database`
+          );
+        } catch (error) {
+          console.error(
+            '[AI Router] ❌ Error saving files to database:',
+            error
+          );
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Failed to save generated files to database',
+          });
+        }
+      } else if (input.projectId && result.data.files.length === 0) {
+        console.warn(
+          '[AI Router] ⚠️ No files generated - nothing to save to database'
+        );
+      } else if (!input.projectId) {
+        console.log(
+          '[AI Router] No projectId provided - skipping database save'
+        );
+      }
+
       let syncStatus: 'not_attempted' | 'success' | 'partial' | 'failed' =
         'not_attempted';
       if (input.projectId && result.data.files.length > 0) {

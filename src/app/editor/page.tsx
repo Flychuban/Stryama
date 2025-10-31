@@ -58,10 +58,13 @@ function EditorContent() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
 
-  // tRPC mutations for E2B sandbox operations
-  const syncFilesMutation = api.sandbox.syncFiles.useMutation();
+  // tRPC mutations for AI and E2B sandbox operations
+  const generateCodeMutation = api.ai.generateCode.useMutation();
   const startPreviewMutation = api.sandbox.startPreview.useMutation();
   const restartPreviewMutation = api.sandbox.restartPreview.useMutation();
+
+  // Refetch project files after AI generation
+  const utils = api.useUtils();
 
   // Update document title with project name
   useEffect(() => {
@@ -83,55 +86,62 @@ function EditorContent() {
     setIsGenerating(true);
     setPreviewError(null);
 
-    // Simulate AI response
-    setTimeout(() => {
-      void (async () => {
-        const aiMessage: Message = {
-          role: 'assistant',
-          content:
-            "I'll help you build that! Let me start by understanding the requirements and creating the necessary components.",
-          thinking: [
-            'Read attached files',
-            'Explored codebase structure',
-            'Generated design brief',
-            'Building landing page',
-          ],
-          files: ['layout.tsx', 'header.tsx', 'globals.css'],
-        };
+    try {
+      const result = await generateCodeMutation.mutateAsync({
+        prompt: input.trim(),
+        projectId,
+      });
 
-        setMessages((prev) => [...prev, aiMessage]);
-        setIsGenerating(false);
+      // Create AI message with response
+      const aiMessage: Message = {
+        role: 'assistant',
+        content: result.explanation ?? "I've generated the code for you!",
+        files: result.files.map((f) => f.path),
+      };
 
-        // After AI generates code, sync files and start preview
-        try {
-          setIsGeneratingPreview(true);
+      setMessages((prev) => [...prev, aiMessage]);
 
-          // Step 1: Sync files to E2B sandbox
-          await syncFilesMutation.mutateAsync({
-            projectId,
-            syncType: 'all',
-          });
+      // Refetch project files to show the newly generated files
+      await utils.project.getById.invalidate({ id: projectId });
 
-          // Step 2: Start preview server
-          const previewResult = await startPreviewMutation.mutateAsync({
-            projectId,
-          });
+      setIsGenerating(false);
 
-          setPreviewUrl(previewResult.url);
-          setPreviewError(null);
-        } catch (error) {
-          console.error('Failed to generate preview:', error);
-          setPreviewError(
-            error instanceof Error
-              ? error.message
-              : 'Failed to start preview server'
-          );
-          setPreviewUrl(null);
-        } finally {
-          setIsGeneratingPreview(false);
-        }
-      })();
-    }, 5000);
+      // After AI generates code, start preview
+      try {
+        setIsGeneratingPreview(true);
+
+        // Files are already synced by the AI router, just start preview
+        const previewResult = await startPreviewMutation.mutateAsync({
+          projectId,
+        });
+
+        setPreviewUrl(previewResult.url);
+        setPreviewError(null);
+      } catch (error) {
+        console.error('Failed to generate preview:', error);
+        setPreviewError(
+          error instanceof Error
+            ? error.message
+            : 'Failed to start preview server'
+        );
+        setPreviewUrl(null);
+      } finally {
+        setIsGeneratingPreview(false);
+      }
+    } catch (error) {
+      console.error('Failed to generate code:', error);
+      setIsGenerating(false);
+
+      // Show error message
+      const errorMessage: Message = {
+        role: 'assistant',
+        content: `Sorry, I encountered an error: ${
+          error instanceof Error ? error.message : 'Unknown error occurred'
+        }`,
+      };
+
+      setMessages((prev) => [...prev, errorMessage]);
+    }
   };
 
   const handleRestartPreview = async () => {
@@ -458,13 +468,26 @@ function EditorContent() {
                         </div>
                       </div>
                     ) : previewUrl ? (
-                      <iframe
-                        src={previewUrl}
-                        className="h-full w-full border-0"
-                        title="Live Preview"
-                        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-                        allow="accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone"
-                      />
+                      <>
+                        <div className="absolute right-4 top-4 z-10">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => window.open(previewUrl, '_blank')}
+                            className="rounded-lg border-border/50 bg-background/80 backdrop-blur-sm transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
+                          >
+                            Open in New Tab
+                          </Button>
+                        </div>
+                        <iframe
+                          src={previewUrl}
+                          className="h-full w-full border-0"
+                          title="Live Preview"
+                          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-top-navigation"
+                          allow="accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; clipboard-read; clipboard-write"
+                          referrerPolicy="no-referrer-when-downgrade"
+                        />
+                      </>
                     ) : (
                       <div className="flex h-full items-center justify-center p-8 text-center">
                         <div className="space-y-6">
