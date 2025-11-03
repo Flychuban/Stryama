@@ -22,6 +22,8 @@ import {
 import { ClaudeErrorType } from './types';
 import { CodeParser } from './parser';
 import { retryHandler } from './errors/retry-handler';
+import { createE2BTools } from './tools/e2b-tools';
+import type { PrismaClient } from '@prisma/client';
 
 export class ClaudeClient {
   private static instance: ClaudeClient;
@@ -38,39 +40,83 @@ export class ClaudeClient {
   }
 
   async generateCode(
-    request: AIGenerationRequest
+    request: AIGenerationRequest,
+    db?: PrismaClient,
+    sandboxId?: string
   ): Promise<ServiceResult<AIGenerationResponse>> {
     return retryHandler.executeWithRetry(
-      async () => this.performGeneration(request),
+      async () => this.performGeneration(request, db, sandboxId),
       'AI Code Generation'
     );
   }
 
   private async performGeneration(
-    request: AIGenerationRequest
+    request: AIGenerationRequest,
+    db?: PrismaClient,
+    sandboxId?: string
   ): Promise<ServiceResult<AIGenerationResponse>> {
     const startTime = Date.now();
     const generationId = this.generateId();
 
     try {
       console.log(`[Claude] Starting generation ${generationId}`);
+      if (sandboxId) {
+        console.log(`[Claude] Using E2B sandbox mode with ID: ${sandboxId}`);
+      }
 
-      const enhancedPrompt = this.buildEnhancedPrompt(request);
+      const enhancedPrompt = this.buildEnhancedPrompt(request, sandboxId);
 
       let resultText = '';
       let sessionId: string | undefined;
       let tokensUsed = 0;
       let totalCost = 0;
 
-      // Track files created via Write tool
-      const toolGeneratedFiles: Array<{ path: string; content: string }> = [];
+      // Create MCP server for E2B tools if sandbox mode is enabled
+      const mcpServers =
+        sandboxId && db ? { 'e2b-sandbox': createE2BTools(db) } : undefined;
+
+      if (mcpServers) {
+        console.log(
+          `[Claude] ═══════════════════════════════════════════════════════`
+        );
+        console.log(
+          `[Claude] MCP Server created for E2B sandbox: ${sandboxId}`
+        );
+        console.log(
+          `[Claude] MCP Servers configured:`,
+          Object.keys(mcpServers)
+        );
+        console.log(
+          `[Claude] Disallowed tools: ${GENERATION_CONFIG.e2bMode.disallowedTools.join(', ')}`
+        );
+        console.log(
+          `[Claude] Allowed tools (${GENERATION_CONFIG.e2bMode.allowedTools.length}):`
+        );
+        GENERATION_CONFIG.e2bMode.allowedTools.forEach((tool, i) => {
+          console.log(`[Claude]   ${i + 1}. ${tool}`);
+        });
+        console.log(
+          `[Claude] ═══════════════════════════════════════════════════════`
+        );
+      } else {
+        console.log(`[Claude] No MCP server - using local mode`);
+        console.log(
+          `[Claude] Allowed tools: ${GENERATION_CONFIG.localMode.allowedTools.join(', ')}`
+        );
+      }
 
       for await (const message of query({
         prompt: enhancedPrompt,
         options: {
           model: request.options?.model ?? DEFAULT_MODEL,
           maxTurns: request.options?.maxTurns ?? GENERATION_CONFIG.maxTurns,
-          allowedTools: [...GENERATION_CONFIG.allowedTools],
+          mcpServers,
+          disallowedTools: sandboxId
+            ? [...GENERATION_CONFIG.e2bMode.disallowedTools]
+            : undefined,
+          allowedTools: sandboxId
+            ? [...GENERATION_CONFIG.e2bMode.allowedTools]
+            : [...GENERATION_CONFIG.localMode.allowedTools],
         },
       })) {
         if (message.type === 'system' && message.subtype === 'init') {
@@ -108,40 +154,21 @@ export class ClaudeClient {
           }
         }
 
-        // CRITICAL FIX: Capture files from tool_use blocks
+        // Log assistant messages for debugging
         if (message.type === 'assistant') {
           console.log(`[Claude] Assistant thinking...`);
+        }
 
-          // Extract tool use blocks from assistant message
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-          const content = message.message.content as unknown;
-          if (Array.isArray(content)) {
-            for (const block of content) {
-              // Type guard for tool_use blocks
-              if (
-                typeof block === 'object' &&
-                block !== null &&
-                'type' in block &&
-                (block as { type: string }).type === 'tool_use' &&
-                'name' in block &&
-                (block as { name: string }).name === 'Write' &&
-                'input' in block
-              ) {
-                const input = (block as { input: unknown }).input as {
-                  file_path?: string;
-                  content?: string;
-                };
-                if (input.file_path && input.content) {
-                  console.log(
-                    `[Claude] Capturing file from Write tool: ${input.file_path}`
-                  );
-                  toolGeneratedFiles.push({
-                    path: input.file_path,
-                    content: input.content,
-                  });
-                }
-              }
-            }
+        // Log stream events (includes tool usage)
+        if (message.type === 'stream_event') {
+          // Tool usage events will appear here in the stream
+          const eventData = JSON.stringify(message).toLowerCase();
+          if (
+            eventData.includes('e2b_write') ||
+            eventData.includes('e2b_bash') ||
+            eventData.includes('e2b_read')
+          ) {
+            console.log(`[Claude] 🔧 E2B MCP tool detected in stream`);
           }
         }
       }
@@ -153,17 +180,13 @@ export class ClaudeClient {
         );
       }
 
-      console.log(
-        `[Claude] Tool-generated files: ${toolGeneratedFiles.length}`
-      );
-
       const parsedResponse = this.parseResponse(
         resultText,
         generationId,
         tokensUsed,
         totalCost,
         sessionId,
-        toolGeneratedFiles
+        sandboxId // Pass sandbox ID to skip markdown parsing in E2B mode
       );
 
       const duration = Date.now() - startTime;
@@ -193,7 +216,10 @@ export class ClaudeClient {
     }
   }
 
-  private buildEnhancedPrompt(request: AIGenerationRequest): string {
+  private buildEnhancedPrompt(
+    request: AIGenerationRequest,
+    sandboxId?: string
+  ): string {
     let prompt = request.prompt;
 
     if (
@@ -221,6 +247,86 @@ export class ClaudeClient {
       prompt = `${prompt}\n\nAvailable Dependencies: ${depsContext}`;
     }
 
+    if (sandboxId) {
+      // E2B Sandbox Mode: Instruct Claude to use E2B tools
+      prompt += `\n\n---
+IMPORTANT INSTRUCTIONS FOR E2B SANDBOX INTEGRATION:
+
+You are working with an E2B sandbox environment (Sandbox ID: ${sandboxId}).
+
+**INFRASTRUCTURE ALREADY SET UP ✅:**
+The following files are ALREADY created and configured:
+- ✅ package.json (with all necessary dependencies)
+- ✅ vite.config.ts or next.config.js (properly configured for E2B)
+- ✅ tsconfig.json (TypeScript configuration)
+- ✅ node_modules (npm install ALREADY COMPLETED)
+
+**YOUR RESPONSIBILITIES - Create ALL Application Files:**
+1. Use E2B_Write to create ALL application/source files:
+   - index.html (entry point for Vite projects)
+   - src/main.tsx or src/main.ts (application entry point)
+   - src/App.tsx (main component)
+   - src/index.css or src/App.css (styles)
+   - All other components, utilities, and source files the user requested
+
+**DO NOT CREATE:**
+- ❌ package.json (already exists)
+- ❌ vite.config.ts, next.config.js, tsconfig.json (already exist)
+- ❌ DO NOT run "npm install" (already done)
+
+**Available Custom Tools:**
+1. **E2B_Write** - Write files to the sandbox
+   - Example: E2B_Write(sandbox_id="${sandboxId}", file_path="index.html", content="...")
+   - Example: E2B_Write(sandbox_id="${sandboxId}", file_path="src/App.tsx", content="...")
+
+2. **E2B_Bash** - Execute commands in the sandbox
+   - Use to start dev server: E2B_Bash(sandbox_id="${sandboxId}", command="npm run dev")
+   - Dev server runs in background automatically
+
+3. **E2B_GetPreviewURL** - Get the live preview URL
+   - For Vite: E2B_GetPreviewURL(sandbox_id="${sandboxId}", port=5173)
+   - For Next.js: E2B_GetPreviewURL(sandbox_id="${sandboxId}", port=3000)
+
+4. **E2B_Read** - Read existing files if needed
+5. **E2B_List** - List files in a directory if needed
+
+**Correct Workflow:**
+1. Create ALL application files using E2B_Write (index.html, src/*, etc.)
+2. Start the dev server using E2B_Bash: "npm run dev"
+3. Get the preview URL using E2B_GetPreviewURL
+4. Return the preview URL to the user
+
+**CRITICAL REMINDERS:**
+- Always use sandbox_id="${sandboxId}" in all E2B tool calls
+- Do NOT use the local Write, Edit, or Bash tools
+- Do NOT create package.json or config files (already exist)
+- Do NOT run npm install (already done)
+- Focus ONLY on creating application/source files
+
+Please generate the complete implementation and get it running in the sandbox!`;
+    } else {
+      // Local/Fallback Mode: Instruct Claude to use markdown code blocks
+      prompt += `\n\n---
+IMPORTANT INSTRUCTIONS FOR CODE GENERATION:
+1. Return ALL code files in markdown code blocks with the file path specified
+2. Use this exact format for each file:
+
+**File: path/to/file.tsx**
+\`\`\`typescript
+// file content here
+\`\`\`
+
+3. Examples:
+   - For React components: **File: src/components/Button.tsx**
+   - For styles: **File: src/styles/globals.css**
+   - For config: **File: package.json**
+
+4. Make sure to include the full file path relative to the project root
+5. Include all necessary files (components, styles, configs, etc.)
+
+Please generate the complete implementation following these guidelines.`;
+    }
+
     return prompt;
   }
 
@@ -230,27 +336,45 @@ export class ClaudeClient {
     tokensUsed: number,
     totalCost: number,
     sessionId?: string,
-    toolGeneratedFiles: Array<{ path: string; content: string }> = []
+    sandboxId?: string
   ): Omit<AIGenerationResponse, 'duration'> {
     let files: GeneratedFile[] = [];
 
-    // PRIORITY 1: Use files from tool_use (Write tool)
-    if (toolGeneratedFiles.length > 0) {
+    // PHASE 6: Skip markdown parsing in E2B mode
+    // When using E2B sandbox, files are written directly via MCP tools
+    if (sandboxId) {
       console.log(
-        `[Claude] Processing ${toolGeneratedFiles.length} tool-generated files`
+        `[Claude] E2B mode: files written directly to sandbox via MCP tools`
       );
-      files = toolGeneratedFiles.map((file) => ({
-        path: file.path,
-        content: file.content,
-        language: this.detectLanguageFromPath(file.path),
-      }));
+      console.log(
+        `[Claude] Skipping markdown parsing - files already in sandbox ${sandboxId}`
+      );
+      files = [];
     } else {
-      // FALLBACK: Try to parse markdown code blocks from response text
-      console.log(`[Claude] No tool files found, attempting markdown parsing`);
+      // Local mode: parse markdown code blocks from response text
+      console.log(
+        `[Claude] Local mode: parsing markdown code blocks from response`
+      );
       files = CodeParser.parseClaudeResponse(responseText);
-    }
 
-    console.log(`[Claude] Final file count: ${files.length}`);
+      console.log(`[Claude] Parsed ${files.length} files from response`);
+
+      if (files.length === 0) {
+        console.log(`[Claude] ⚠️ WARNING: No files parsed from response`);
+        console.log(`[Claude] This might indicate:`);
+        console.log(`[Claude]   1. Response format issue ❌`);
+        console.log(`[Claude]   2. Claude didn't generate any code ⚠️`);
+        console.log(
+          `[Claude] Response preview (first 500 chars):`,
+          responseText.substring(0, 500)
+        );
+      } else {
+        console.log(
+          `[Claude] ✅ Files parsed successfully:`,
+          files.map((f) => f.path).join(', ')
+        );
+      }
+    }
 
     return {
       id: generationId,

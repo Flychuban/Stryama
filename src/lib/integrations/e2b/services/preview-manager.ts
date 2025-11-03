@@ -134,7 +134,82 @@ function mapToFrameworkType(framework: Framework): FrameworkType {
 }
 
 /**
+ * Setup ONLY infrastructure files (package.json, vite.config.ts, tsconfig.json)
+ * This is called BEFORE Claude runs to prepare the sandbox
+ * Claude will create all application files (index.html, src/*, etc.)
+ */
+export async function setupInfrastructure(
+  sandbox: Sandbox,
+  framework: Framework,
+  projectName: string
+): Promise<ServiceResult<boolean>> {
+  try {
+    const workDir = '/project';
+
+    console.log(
+      `[Preview] Setting up ${framework} infrastructure files (package.json, configs)`
+    );
+
+    // Check if package.json already exists
+    const checkPackageJson = await sandbox.commands.run(
+      `test -f ${workDir}/package.json && echo "exists" || echo "missing"`
+    );
+    const packageJsonExists = checkPackageJson.stdout.trim() === 'exists';
+
+    // Generate and write package.json if it doesn't exist
+    if (!packageJsonExists) {
+      console.log('[Preview] Creating package.json');
+      const packageJsonContent = generatePackageJson(framework, {
+        name: projectName,
+      });
+
+      await sandbox.files.write(`${workDir}/package.json`, packageJsonContent);
+    } else {
+      console.log('[Preview] package.json already exists, skipping');
+    }
+
+    // Generate and write config files (vite.config, tsconfig, etc.)
+    const configFiles = generateConfigFiles(framework);
+
+    for (const [filename, content] of Object.entries(configFiles)) {
+      const checkConfig = await sandbox.commands.run(
+        `test -f ${workDir}/${filename} && echo "exists" || echo "missing"`
+      );
+      const configExists = checkConfig.stdout.trim() === 'exists';
+
+      if (!configExists) {
+        console.log(`[Preview] Creating ${filename}`);
+        await sandbox.files.write(`${workDir}/${filename}`, content);
+      } else {
+        console.log(`[Preview] ${filename} already exists, skipping`);
+      }
+    }
+
+    console.log(
+      '[Preview] ✅ Infrastructure setup complete - ready for Claude to generate application files'
+    );
+
+    return {
+      success: true,
+      data: true,
+      error: null,
+    };
+  } catch (error) {
+    console.error('[Preview] Failed to setup infrastructure:', error);
+    return {
+      success: false,
+      data: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : 'Failed to setup infrastructure',
+    };
+  }
+}
+
+/**
  * Setup project with package.json and config files
+ * @deprecated Use setupInfrastructure() instead - this function creates entry points that should be Claude's responsibility
  */
 async function setupProjectFiles(
   sandbox: Sandbox,
@@ -311,46 +386,123 @@ export async function startPreviewServer(
 
     const workDir = '/project';
 
-    // Step 1: Setup package.json, config files, and entry points
-    const setupResult = await setupProjectFiles(sandbox, framework, projectId);
+    // Check if dev server is already running (Claude might have started it)
+    const checkProcess = await sandbox.commands.run(
+      `lsof -ti:${port} || echo "none"`,
+      { timeoutMs: 5000 }
+    );
+    const existingPid = checkProcess.stdout.trim();
+    const serverAlreadyRunning = existingPid !== 'none' && existingPid !== '';
 
-    if (!setupResult.success) {
-      throw new PreviewServerStartError(
-        `Failed to setup project files: ${setupResult.error}`,
-        { projectId, framework }
+    if (serverAlreadyRunning) {
+      console.log(
+        `[Preview] Dev server already running on port ${port} (PID: ${existingPid})`
       );
+      console.log(
+        `[Preview] Skipping infrastructure setup and dev server start - Claude already handled it`
+      );
+    } else {
+      console.log(
+        `[Preview] No dev server running, setting up infrastructure and starting server`
+      );
+
+      // Check if dependencies are already installed (node_modules exists)
+      const checkNodeModules = await sandbox.commands.run(
+        `test -d ${workDir}/node_modules && echo "exists" || echo "missing"`,
+        { timeoutMs: 5000 }
+      );
+      const nodeModulesExists = checkNodeModules.stdout.trim() === 'exists';
+
+      if (nodeModulesExists) {
+        console.log(
+          `[Preview] ✅ Dependencies already installed (node_modules exists) - skipping setup`
+        );
+      } else {
+        console.log(`[Preview] Dependencies not found, running full setup...`);
+
+        // Step 1: Ensure infrastructure files exist (package.json, configs)
+        // Note: Claude should have already created all application files (index.html, src/*, etc.)
+        // We only create infrastructure if missing
+        const setupResult = await setupInfrastructure(
+          sandbox,
+          framework,
+          projectId
+        );
+
+        if (!setupResult.success) {
+          throw new PreviewServerStartError(
+            `Failed to setup infrastructure: ${setupResult.error}`,
+            { projectId, framework }
+          );
+        }
+
+        // Step 2: Install dependencies (only if needed)
+        const installResult = await installDependencies(sandbox);
+
+        if (!installResult.success) {
+          throw new PreviewServerStartError(
+            `Failed to install dependencies: ${installResult.error}`,
+            { projectId, framework }
+          );
+        }
+      }
+
+      // Step 3: Start the dev server
+      const process = await sandbox.commands.run(
+        `cd ${workDir} && ${command}`,
+        {
+          background: true,
+          envs: {
+            CI: 'true',
+            PORT: port.toString(),
+          },
+        }
+      );
+
+      previewProcesses.set(sandbox.sandboxId, {
+        pid: process.pid,
+        port: port,
+      });
+
+      console.log(`[Preview] Process started with PID ${process.pid}`);
     }
 
-    // Step 2: Install dependencies
-    const installResult = await installDependencies(sandbox);
-
-    if (!installResult.success) {
+    // CRITICAL: Validate E2B sandbox is accessible before generating preview URL
+    console.log('[Preview] Validating E2B sandbox is accessible...');
+    try {
+      const sandboxInfo = await sandbox.getInfo();
+      console.log(
+        `[Preview] ✅ Sandbox validated - E2B ID: ${sandboxInfo.sandboxId}, Status: running`
+      );
+    } catch (error) {
       throw new PreviewServerStartError(
-        `Failed to install dependencies: ${installResult.error}`,
-        { projectId, framework }
+        `E2B sandbox is not accessible. The sandbox may have been destroyed or expired. Please try regenerating your code.\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { sandboxId: sandbox.sandboxId, projectId, error }
       );
     }
-
-    // Step 3: Start the dev server
-    const process = await sandbox.commands.run(`cd ${workDir} && ${command}`, {
-      background: true,
-      envs: {
-        CI: 'true',
-        PORT: port.toString(),
-      },
-    });
-
-    previewProcesses.set(sandbox.sandboxId, {
-      pid: process.pid,
-      port: port,
-    });
-
-    console.log(`[Preview] Process started with PID ${process.pid}`);
 
     const host = sandbox.getHost(port);
     const previewUrl = `https://${host}`;
 
     console.log(`[Preview] Preview URL generated: ${previewUrl}`);
+
+    // Validate that essential application files exist before running health check
+    // This prevents waiting 30s for health check when files are clearly missing
+    console.log('[Preview] Validating application files exist in sandbox...');
+    const checkIndexHtml = await sandbox.commands.run(
+      `test -f ${workDir}/index.html && echo "exists" || echo "missing"`,
+      { timeoutMs: 5000 }
+    );
+    const indexHtmlExists = checkIndexHtml.stdout.trim() === 'exists';
+
+    if (!indexHtmlExists) {
+      throw new PreviewServerStartError(
+        'Application files not found in sandbox. index.html is missing. This usually means files were written to a different sandbox than the one being used for preview.',
+        { sandboxId: sandbox.sandboxId, projectId, framework }
+      );
+    }
+
+    console.log('[Preview] ✅ Application files validated - index.html exists');
 
     const healthCheckResult = await checkPreviewHealth(previewUrl);
 

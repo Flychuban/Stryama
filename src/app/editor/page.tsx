@@ -58,6 +58,13 @@ function EditorContent() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
 
+  // Proxied preview URL to bypass E2B iframe restrictions
+  // E2B's infrastructure adds X-Frame-Options headers that block iframe embedding
+  // Our proxy strips these headers so the preview can be embedded
+  const proxiedPreviewUrl = previewUrl
+    ? `/api/preview-proxy?url=${encodeURIComponent(previewUrl)}`
+    : null;
+
   // tRPC mutations for AI and E2B sandbox operations
   const generateCodeMutation = api.ai.generateCode.useMutation();
   const startPreviewMutation = api.sandbox.startPreview.useMutation();
@@ -111,8 +118,10 @@ function EditorContent() {
         setIsGeneratingPreview(true);
 
         // Files are already synced by the AI router, just start preview
+        // Pass sandboxId from AI generation to ensure we use the SAME sandbox
         const previewResult = await startPreviewMutation.mutateAsync({
           projectId,
+          sandboxId: result.sandboxId, // ✅ Use the sandbox where Claude wrote files
         });
 
         setPreviewUrl(previewResult.url);
@@ -480,11 +489,9 @@ function EditorContent() {
                           </Button>
                         </div>
                         <iframe
-                          src={previewUrl}
+                          src={proxiedPreviewUrl ?? undefined}
                           className="h-full w-full border-0"
                           title="Live Preview"
-                          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-top-navigation"
-                          allow="accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; clipboard-read; clipboard-write"
                           referrerPolicy="no-referrer-when-downgrade"
                         />
                       </>

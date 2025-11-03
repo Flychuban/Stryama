@@ -19,11 +19,22 @@ const config = {
     optimizePackageImports: ['@clerk/nextjs'],
   },
 
+  // Rewrites for preview proxy catch-all routing
+  async rewrites() {
+    return [
+      {
+        source: '/api/preview-proxy/:path*',
+        destination: '/api/preview-proxy',
+      },
+    ];
+  },
+
   // Security headers
   async headers() {
     return [
       {
-        source: '/:path*',
+        // Exclude preview proxy from CSP - it needs to pass through E2B's content unmodified
+        source: '/((?!api/preview-proxy).*)',
         headers: [
           {
             key: 'X-DNS-Prefetch-Control',
@@ -57,14 +68,14 @@ const config = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.clerk.accounts.dev https://challenges.cloudflare.com", // Clerk JS SDK and Turnstile
-              "style-src 'self' 'unsafe-inline'", // Tailwind and CSS-in-JS require unsafe-inline
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.clerk.accounts.dev https://challenges.cloudflare.com https://*.e2b.dev https://*.e2b.app", // Clerk JS SDK, Turnstile, and E2B sandboxes
+              "style-src 'self' 'unsafe-inline' https://*.e2b.dev https://*.e2b.app", // Tailwind, CSS-in-JS, and E2B sandboxes
               "img-src 'self' data: blob: https: https://img.clerk.com", // Clerk avatar images
               "font-src 'self' data:",
-              "connect-src 'self' https://api.anthropic.com https://api.e2b.dev https://*.clerk.accounts.dev https://clerk.topical-mammoth-51.lcl.dev wss://*.clerk.accounts.dev",
-              "frame-src 'self' https://*.clerk.accounts.dev https://challenges.cloudflare.com",
+              "connect-src 'self' https://api.anthropic.com https://api.e2b.dev https://*.e2b.app wss://*.e2b.app https://*.clerk.accounts.dev https://clerk.topical-mammoth-51.lcl.dev wss://*.clerk.accounts.dev",
+              "frame-src 'self' https://*.clerk.accounts.dev https://challenges.cloudflare.com https://*.e2b.dev https://*.e2b.app",
               "object-src 'none'",
-              "base-uri 'self'",
+              "base-uri 'self' https://*.e2b.dev https://*.e2b.app", // Allow base tag to point to E2B for proxied preview
               "form-action 'self'",
               "frame-ancestors 'self'",
               'upgrade-insecure-requests',

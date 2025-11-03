@@ -335,6 +335,17 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    strictPort: true,
+    allowedHosts: true, // Allow all hosts for E2B dynamic hostnames
+    hmr: {
+      clientPort: 5173,
+    },
+  },
+  preview: {
+    host: '0.0.0.0',
+    port: 5173,
+    strictPort: true,
+    allowedHosts: true,
   },
 })
 `;
@@ -413,6 +424,17 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    strictPort: true,
+    allowedHosts: true, // Allow all hosts for E2B dynamic hostnames
+    hmr: {
+      clientPort: 5173,
+    },
+  },
+  preview: {
+    host: '0.0.0.0',
+    port: 5173,
+    strictPort: true,
+    allowedHosts: true,
   },
 })
 `;
@@ -449,6 +471,17 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    strictPort: true,
+    allowedHosts: true, // Allow all hosts for E2B dynamic hostnames
+    hmr: {
+      clientPort: 5173,
+    },
+  },
+  preview: {
+    host: '0.0.0.0',
+    port: 5173,
+    strictPort: true,
+    allowedHosts: true,
   },
 })
 `;

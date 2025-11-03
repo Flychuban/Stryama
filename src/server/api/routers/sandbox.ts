@@ -10,7 +10,6 @@ import {
   getPreviewLogs,
   restartPreviewServer,
 } from '~/lib/integrations/e2b/services/preview-manager';
-import { sandboxPool } from '~/lib/integrations/e2b/services/sandbox-pool';
 import { logStreamer } from '~/lib/integrations/e2b/services/log-streamer';
 
 export const sandboxRouter = createTRPCRouter({
@@ -334,6 +333,7 @@ export const sandboxRouter = createTRPCRouter({
     .input(
       z.object({
         projectId: z.string().min(1, 'Project ID is required'),
+        sandboxId: z.string().optional(), // Optional: use existing sandbox from AI generation
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -355,12 +355,62 @@ export const sandboxRouter = createTRPCRouter({
         });
       }
 
-      // Get or create sandbox
-      const sandboxResult = await sandboxManager.getOrCreateSandbox(
-        ctx.db,
-        input.projectId,
-        ctx.auth.userId
-      );
+      let sandboxResult;
+
+      // If sandboxId provided (from AI generation), use that specific sandbox
+      // This prevents destroying the sandbox where Claude just wrote files
+      if (input.sandboxId) {
+        console.log(
+          `[Preview] Using specific sandbox from AI generation: ${input.sandboxId}`
+        );
+
+        const dbSandbox = await ctx.db.sandbox.findUnique({
+          where: { id: input.sandboxId },
+        });
+
+        if (!dbSandbox) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Sandbox not found',
+          });
+        }
+
+        // Get the cached instance or reconnect
+        let instance = sandboxManager.getCachedInstance(input.sandboxId);
+
+        if (!instance) {
+          // Reconnect to existing sandbox
+          const { Sandbox } = await import('@e2b/code-interpreter');
+          const { E2B_CONFIG } = await import('~/lib/integrations/e2b/config');
+
+          instance = await Sandbox.connect(dbSandbox.e2bId, {
+            apiKey: E2B_CONFIG.apiKey,
+            timeoutMs: E2B_CONFIG.maxTimeoutMs,
+          });
+        }
+
+        sandboxResult = {
+          success: true,
+          data: {
+            id: dbSandbox.id,
+            e2bId: dbSandbox.e2bId,
+            status: dbSandbox.status,
+            expiresAt: dbSandbox.expiresAt,
+            instance,
+          },
+          error: null,
+        };
+      } else {
+        // Fallback: Get or create sandbox (old behavior)
+        console.log(
+          `[Preview] No sandboxId provided, using getOrCreateSandbox`
+        );
+        sandboxResult = await sandboxManager.getOrCreateSandbox(
+          ctx.db,
+          input.projectId,
+          ctx.auth.userId
+        );
+      }
 
       if (!sandboxResult.success || !sandboxResult.data) {
         throw new TRPCError({
@@ -368,6 +418,12 @@ export const sandboxRouter = createTRPCRouter({
           message: sandboxResult.error ?? 'Failed to get/create sandbox',
         });
       }
+
+      // NOTE: When using E2B MCP tools, files are already in the sandbox
+      // No need to sync again - they were written directly during code generation
+      console.log(
+        `[Preview] Starting preview server (files already in sandbox from MCP tools)`
+      );
 
       // Start preview server with project framework
       const previewResult = await startPreviewServer(
@@ -563,6 +619,12 @@ export const sandboxRouter = createTRPCRouter({
         });
       }
 
+      // NOTE: When using E2B MCP tools, files are already in the sandbox
+      // Files are written directly during code generation via MCP tools
+      console.log(
+        `[Preview] Restarting preview server (files already in sandbox from MCP tools)`
+      );
+
       // Restart preview server with project framework
       const previewResult = await restartPreviewServer(
         sandboxResult.data.instance,
@@ -606,42 +668,6 @@ export const sandboxRouter = createTRPCRouter({
       };
     }),
 
-  pause: protectedProcedure
-    .input(
-      z.object({
-        sandboxId: z.string().min(1, 'Sandbox ID is required'),
-      })
-    )
-    .mutation(async ({ ctx, input }) => {
-      // Verify ownership
-      const sandbox = await ctx.db.sandbox.findUnique({
-        where: { id: input.sandboxId },
-        include: { project: true },
-      });
-
-      if (
-        !sandbox ||
-        !sandbox.project ||
-        sandbox.project.clerkUserId !== ctx.auth.userId
-      ) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Sandbox not found or access denied',
-        });
-      }
-
-      const result = await sandboxManager.pauseSandbox(ctx.db, input.sandboxId);
-
-      if (!result.success) {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: result.error ?? 'Failed to pause sandbox',
-        });
-      }
-
-      return { success: true };
-    }),
-
   resume: protectedProcedure
     .input(
       z.object({
@@ -680,61 +706,6 @@ export const sandboxRouter = createTRPCRouter({
 
       return { success: true };
     }),
-
-  release: protectedProcedure
-    .input(
-      z.object({
-        sandboxId: z.string().min(1, 'Sandbox ID is required'),
-      })
-    )
-    .mutation(async ({ ctx, input }) => {
-      // Verify ownership
-      const sandbox = await ctx.db.sandbox.findUnique({
-        where: { id: input.sandboxId },
-        include: { project: true },
-      });
-
-      if (
-        !sandbox ||
-        !sandbox.project ||
-        sandbox.project.clerkUserId !== ctx.auth.userId
-      ) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Sandbox not found or access denied',
-        });
-      }
-
-      const result = await sandboxManager.releaseToPool(
-        ctx.db,
-        input.sandboxId
-      );
-
-      if (!result.success) {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: result.error ?? 'Failed to release sandbox to pool',
-        });
-      }
-
-      return { success: true, pooled: result.data ?? false };
-    }),
-
-  getPoolStatus: protectedProcedure.query(async ({ ctx }) => {
-    const status = await sandboxPool.getStatus(ctx.db);
-
-    return {
-      totalPooled: status.totalPooled,
-      available: status.available,
-      assigned: status.assigned,
-      metrics: {
-        poolHitRate: status.metrics.poolHitRate,
-        avgResumeTime: status.metrics.avgResumeTime,
-        totalAssignments: status.metrics.totalAssignments,
-        totalCreations: status.metrics.totalCreations,
-      },
-    };
-  }),
 
   /**
    * Subscribe to real-time console logs for a sandbox

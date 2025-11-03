@@ -8,7 +8,27 @@ export const GENERATION_CONFIG = {
   temperature: 0.7,
   maxTokens: 4096,
   timeout: 240000, // 240 seconds
-  allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep'] as const,
+
+  // E2B Sandbox Mode (recommended for project code generation)
+  // Uses custom MCP tools that proxy to E2B sandboxes
+  e2bMode: {
+    disallowedTools: ['Write', 'Edit', 'Bash'] as const, // Block local filesystem operations
+    allowedTools: [
+      'Read',
+      'Glob',
+      'Grep',
+      'mcp__e2b-sandbox__E2B_Write',
+      'mcp__e2b-sandbox__E2B_Read',
+      'mcp__e2b-sandbox__E2B_Bash',
+      'mcp__e2b-sandbox__E2B_List',
+      'mcp__e2b-sandbox__E2B_GetPreviewURL',
+    ] as const,
+  },
+
+  // Local Mode (fallback for non-project or read-only operations)
+  localMode: {
+    allowedTools: ['Read', 'Edit', 'Glob', 'Grep', 'Bash'] as const,
+  },
 } as const;
 
 export const RATE_LIMIT_CONFIG = {

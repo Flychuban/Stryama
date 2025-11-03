@@ -16,7 +16,8 @@ import {
 } from '~/lib/integrations/claude';
 import type { UserPlan, ProjectContext } from '~/lib/integrations/claude';
 import { sandboxManager } from '~/lib/integrations/e2b/services/sandbox-manager';
-import { FileSync } from '~/lib/integrations/e2b/services/file-sync';
+import { setupInfrastructure } from '~/lib/integrations/e2b/services/preview-manager';
+import { E2B_CONFIG } from '~/lib/integrations/e2b/config';
 
 export const aiRouter = createTRPCRouter({
   generateCode: protectedProcedure
@@ -24,6 +25,7 @@ export const aiRouter = createTRPCRouter({
       z.object({
         prompt: z.string().min(1, 'Prompt cannot be empty'),
         projectId: z.string().optional(),
+        useSandbox: z.boolean().default(true), // Enable E2B sandbox mode by default
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -51,6 +53,8 @@ export const aiRouter = createTRPCRouter({
       }
 
       let context: ProjectContext | undefined;
+      let sandboxId: string | undefined;
+
       if (input.projectId) {
         const project = await ctx.db.project.findFirst({
           where: {
@@ -71,13 +75,80 @@ export const aiRouter = createTRPCRouter({
           maxFiles: 5, // Limit for token efficiency
           maxFileSize: 3000,
         });
+
+        // CRITICAL: Create E2B sandbox BEFORE calling Claude
+        // This allows Claude to write directly to the sandbox using MCP tools
+        if (input.useSandbox) {
+          console.log(
+            '[AI Router] Creating/getting E2B sandbox before generation'
+          );
+          const sandboxResult = await sandboxManager.getOrCreateSandbox(
+            ctx.db,
+            input.projectId,
+            ctx.auth.userId,
+            E2B_CONFIG.maxTimeoutMs // Use max timeout for AI generation (30 min)
+          );
+
+          if (sandboxResult.success && sandboxResult.data) {
+            sandboxId = sandboxResult.data.id;
+            console.log(`[AI Router] Using sandbox: ${sandboxId}`);
+
+            // PHASE 2: Setup infrastructure BEFORE Claude runs
+            // This creates package.json, vite.config.ts, tsconfig.json
+            // Claude will create ALL application files (index.html, src/*, etc.)
+            console.log('[AI Router] Setting up infrastructure in sandbox');
+            const infraResult = await setupInfrastructure(
+              sandboxResult.data.instance,
+              project.framework,
+              project.name
+            );
+
+            if (infraResult.success) {
+              console.log(
+                '[AI Router] ✅ Infrastructure ready - running npm install'
+              );
+
+              // Run npm install to prepare dependencies
+              try {
+                await sandboxResult.data.instance.commands.run(
+                  'cd /project && npm install',
+                  { timeoutMs: 180000 } // 3 minutes
+                );
+                console.log(
+                  '[AI Router] ✅ Dependencies installed - sandbox ready for Claude'
+                );
+              } catch (installError) {
+                console.warn(
+                  '[AI Router] npm install failed (will retry during preview):',
+                  installError
+                );
+                // Continue - preview manager will handle npm install if needed
+              }
+            } else {
+              console.warn(
+                `[AI Router] Failed to setup infrastructure: ${infraResult.error}`
+              );
+              // Continue - Claude can still work, preview manager will handle setup
+            }
+          } else {
+            console.warn(
+              `[AI Router] Failed to create sandbox: ${sandboxResult.error}`
+            );
+            // Continue without sandbox mode
+          }
+        }
       }
 
-      const result = await claudeClient.generateCode({
-        prompt: input.prompt,
-        projectId: input.projectId,
-        context,
-      });
+      // Generate code with optional sandbox integration
+      const result = await claudeClient.generateCode(
+        {
+          prompt: input.prompt,
+          projectId: input.projectId,
+          context,
+        },
+        ctx.db,
+        sandboxId
+      );
 
       if (!result.success || !result.data) {
         throw new TRPCError({
@@ -161,6 +232,9 @@ export const aiRouter = createTRPCRouter({
           console.log(
             `[AI Router] ✅ Successfully saved ${result.data.files.length} file(s) to database`
           );
+
+          // NOTE: When using E2B sandbox mode, files are written directly to the sandbox
+          // via MCP tools. No cleanup needed as files never touch the local filesystem.
         } catch (error) {
           console.error(
             '[AI Router] ❌ Error saving files to database:',
@@ -181,81 +255,16 @@ export const aiRouter = createTRPCRouter({
         );
       }
 
-      let syncStatus: 'not_attempted' | 'success' | 'partial' | 'failed' =
-        'not_attempted';
-      if (input.projectId && result.data.files.length > 0) {
-        try {
-          // Get or create sandbox for project
-          const sandboxResult = await sandboxManager.getOrCreateSandbox(
-            ctx.db,
-            input.projectId,
-            ctx.auth.userId
-          );
-
-          if (sandboxResult.success && sandboxResult.data) {
-            console.log(
-              `[AI Router] Syncing ${result.data.files.length} generated file(s) to sandbox`
-            );
-
-            // Get the file IDs that were just generated
-            // Note: We need to fetch the files that were saved from this generation
-            const savedFiles = await ctx.db.file.findMany({
-              where: {
-                projectId: input.projectId,
-                path: {
-                  in: result.data.files.map((f) => f.path),
-                },
-              },
-            });
-
-            if (savedFiles.length > 0) {
-              // Sync the files to sandbox
-              const syncResult = await FileSync.syncIncrementalFiles(
-                sandboxResult.data.instance,
-                sandboxResult.data.id,
-                savedFiles.map((f) => f.id),
-                ctx.db
-              );
-
-              if (syncResult.success && syncResult.data) {
-                if (syncResult.data.failedFiles.length === 0) {
-                  syncStatus = 'success';
-                  console.log(
-                    `[AI Router] Successfully synced all ${syncResult.data.syncedFiles} file(s)`
-                  );
-                } else {
-                  syncStatus = 'partial';
-                  console.warn(
-                    `[AI Router] Partial sync: ${syncResult.data.syncedFiles} succeeded, ${syncResult.data.failedFiles.length} failed`
-                  );
-                }
-              } else {
-                syncStatus = 'failed';
-                console.error(
-                  '[AI Router] File sync failed:',
-                  syncResult.error
-                );
-              }
-            }
-          } else {
-            console.warn(
-              '[AI Router] Could not create/get sandbox for file sync:',
-              sandboxResult.error
-            );
-          }
-        } catch (error) {
-          // Don't fail AI generation if sync fails
-          console.error('[AI Router] Error during file sync:', error);
-          syncStatus = 'failed';
-        }
-      }
+      // NOTE: When using E2B sandbox mode, files are written directly to the sandbox
+      // via Claude's MCP tools. No manual sync needed!
+      // The database save is optional and kept for history/versioning purposes.
 
       return {
         ...result.data,
         databaseId: aiGeneration.id,
+        sandboxId, // Return sandbox ID to frontend
         conflicts,
         warning,
-        syncStatus, // Return sync status to frontend
       };
     }),
 
