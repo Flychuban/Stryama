@@ -60,6 +60,11 @@ export class ClaudeClient {
 
     try {
       console.log(`[Claude] Starting generation ${generationId}`);
+      if (request.sessionId) {
+        console.log(`[Claude] Resuming session: ${request.sessionId}`);
+      } else {
+        console.log(`[Claude] Starting new conversation session`);
+      }
       if (sandboxId) {
         console.log(`[Claude] Using E2B sandbox mode with ID: ${sandboxId}`);
       }
@@ -117,11 +122,17 @@ export class ClaudeClient {
           allowedTools: sandboxId
             ? [...GENERATION_CONFIG.e2bMode.allowedTools]
             : [...GENERATION_CONFIG.localMode.allowedTools],
+          // Resume existing session if provided
+          resume: request.sessionId,
         },
       })) {
         if (message.type === 'system' && message.subtype === 'init') {
           sessionId = message.session_id;
-          console.log(`[Claude] Session ${sessionId} initialized`);
+          if (request.sessionId && sessionId === request.sessionId) {
+            console.log(`[Claude] ✅ Resumed session ${sessionId}`);
+          } else {
+            console.log(`[Claude] Session ${sessionId} initialized`);
+          }
         }
 
         if (message.type === 'result') {

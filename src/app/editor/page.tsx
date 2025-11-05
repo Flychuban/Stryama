@@ -183,7 +183,7 @@ function EditorContent() {
   const currentFile = projectFiles[selectedFileIndex] ?? null;
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background">
+    <div className="flex h-screen flex-col overflow-hidden bg-background pt-16">
       <AppHeader />
       <div className="flex flex-1 overflow-hidden">
         {/* Left Panel - Chat Interface (35%) */}

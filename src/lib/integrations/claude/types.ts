@@ -62,6 +62,7 @@ export type AIGenerationRequest = {
   readonly projectId?: string;
   readonly context?: ProjectContext;
   readonly options?: GenerationOptions;
+  readonly sessionId?: string;
 };
 
 export type GeneratedFile = {
