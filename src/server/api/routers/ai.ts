@@ -54,6 +54,7 @@ export const aiRouter = createTRPCRouter({
 
       let context: ProjectContext | undefined;
       let sandboxId: string | undefined;
+      let sessionId: string | undefined;
 
       if (input.projectId) {
         const project = await ctx.db.project.findFirst({
@@ -68,6 +69,25 @@ export const aiRouter = createTRPCRouter({
             code: 'NOT_FOUND',
             message: 'Project not found or you do not have access to it',
           });
+        }
+
+        // Retrieve the last session ID for conversation continuity
+        const lastGeneration = await ctx.db.aIGeneration.findFirst({
+          where: {
+            projectId: input.projectId,
+            sessionId: { not: null },
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { sessionId: true },
+        });
+
+        if (lastGeneration?.sessionId) {
+          sessionId = lastGeneration.sessionId;
+          console.log(`[AI Router] Resuming session: ${sessionId}`);
+        } else {
+          console.log(
+            '[AI Router] No previous session found - starting new conversation'
+          );
         }
 
         const gatherer = new ProjectContextGatherer(ctx.db);
@@ -145,6 +165,7 @@ export const aiRouter = createTRPCRouter({
           prompt: input.prompt,
           projectId: input.projectId,
           context,
+          sessionId,
         },
         ctx.db,
         sandboxId
