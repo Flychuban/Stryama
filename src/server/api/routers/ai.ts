@@ -5,6 +5,7 @@
  */
 
 import { TRPCError } from '@trpc/server';
+import { observable } from '@trpc/server/observable';
 import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '~/server/api/trpc';
 import {
@@ -15,6 +16,8 @@ import {
   ConflictDetector,
 } from '~/lib/integrations/claude';
 import type { UserPlan, ProjectContext } from '~/lib/integrations/claude';
+import type { StreamEvent } from '~/lib/integrations/claude/types/stream-events';
+import { createSandboxEvent } from '~/lib/integrations/claude/stream-manager';
 import { sandboxManager } from '~/lib/integrations/e2b/services/sandbox-manager';
 import { setupInfrastructure } from '~/lib/integrations/e2b/services/preview-manager';
 import { E2B_CONFIG } from '~/lib/integrations/e2b/config';
@@ -416,4 +419,227 @@ export const aiRouter = createTRPCRouter({
       dayRemaining: Math.max(0, stats.limits.requestsPerDay - stats.dayCount),
     };
   }),
+
+  /**
+   * Stream AI code generation with real-time events
+   *
+   * Provides live updates as Claude works, including:
+   * - Status updates (thinking, writing, executing)
+   * - Tool usage (file writes, commands)
+   * - Content streaming
+   * - Token usage updates
+   * - Completion/error notifications
+   */
+  streamGeneration: protectedProcedure
+    .input(
+      z.object({
+        prompt: z.string().min(1, 'Prompt cannot be empty'),
+        projectId: z.string().optional(),
+        useSandbox: z.boolean().default(true),
+      })
+    )
+    .subscription(async ({ ctx, input }) => {
+      // Validate prompt
+      const validation = validatePrompt(input.prompt);
+      if (!validation.valid) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: validation.errors[0] ?? 'Invalid prompt',
+        });
+      }
+
+      // Get user plan
+      const userPlan: UserPlan = 'free';
+
+      // Check rate limits
+      const rateLimit = await rateLimiter.checkRateLimit(
+        ctx.auth.userId,
+        userPlan
+      );
+
+      if (!rateLimit.allowed) {
+        throw new TRPCError({
+          code: 'TOO_MANY_REQUESTS',
+          message: `Rate limit exceeded. You can make ${rateLimit.limit} requests per minute. Try again after ${rateLimit.resetAt.toISOString()}`,
+        });
+      }
+
+      // Create observable stream
+      return observable<StreamEvent>((emit) => {
+        const streamGeneration = async () => {
+          try {
+            let context: ProjectContext | undefined;
+            let sessionId: string | undefined;
+            let sandboxId: string | undefined;
+            let sandboxInstance: Sandbox | undefined;
+
+            // Gather project context if project ID provided
+            if (input.projectId) {
+              const project = await ctx.db.project.findFirst({
+                where: {
+                  id: input.projectId,
+                  clerkUserId: ctx.auth.userId,
+                },
+              });
+
+              if (!project) {
+                emit.error(
+                  new TRPCError({
+                    code: 'NOT_FOUND',
+                    message:
+                      'Project not found or you do not have access to it',
+                  })
+                );
+                return;
+              }
+
+              // Get existing session ID for continuity
+              const lastGeneration = await ctx.db.aIGeneration.findFirst({
+                where: {
+                  projectId: input.projectId,
+                  sessionId: { not: null },
+                },
+                orderBy: { createdAt: 'desc' },
+                select: { sessionId: true },
+              });
+
+              sessionId = lastGeneration?.sessionId ?? undefined;
+
+              // Gather project context
+              const gatherer = new ProjectContextGatherer(ctx.db);
+              context = await gatherer.gatherContext(input.projectId, {
+                maxFiles: 5,
+                maxFileSize: 3000,
+              });
+
+              // Set up E2B sandbox if enabled
+              if (input.useSandbox) {
+                emit.next(
+                  createSandboxEvent(
+                    'creating',
+                    undefined,
+                    'Creating development environment'
+                  )
+                );
+
+                const sandboxResult = await sandboxManager.getOrCreateSandbox(
+                  ctx.db,
+                  input.projectId,
+                  ctx.auth.userId,
+                  E2B_CONFIG.maxTimeoutMs
+                );
+
+                if (!sandboxResult.success || !sandboxResult.data) {
+                  emit.error(
+                    new TRPCError({
+                      code: 'INTERNAL_SERVER_ERROR',
+                      message:
+                        sandboxResult.error ?? 'Failed to create sandbox',
+                    })
+                  );
+                  return;
+                }
+
+                sandboxId = sandboxResult.data.id;
+                sandboxInstance = sandboxResult.data.instance;
+
+                emit.next(
+                  createSandboxEvent('created', sandboxId, 'Environment ready')
+                );
+
+                // Set up infrastructure
+                emit.next(
+                  createSandboxEvent(
+                    'installing_deps',
+                    sandboxId,
+                    'Setting up project infrastructure'
+                  )
+                );
+
+                const infraResult = await setupInfrastructure(
+                  sandboxInstance,
+                  project.framework,
+                  project.name
+                );
+
+                if (infraResult.success) {
+                  // Run npm install
+                  try {
+                    await sandboxInstance.commands.run(
+                      'cd /project && npm install',
+                      { timeoutMs: 600000 } // 10 minutes
+                    );
+                    emit.next(
+                      createSandboxEvent(
+                        'deps_installed',
+                        sandboxId,
+                        'Dependencies installed'
+                      )
+                    );
+                  } catch (installError) {
+                    console.warn(
+                      '[AI Stream] npm install failed:',
+                      installError
+                    );
+                    emit.next(
+                      createSandboxEvent(
+                        'deps_installed',
+                        sandboxId,
+                        'Dependency installation pending'
+                      )
+                    );
+                  }
+                }
+
+                emit.next(
+                  createSandboxEvent(
+                    'setup_complete',
+                    sandboxId,
+                    'Environment ready'
+                  )
+                );
+              }
+            } else {
+              context = { existingFiles: [], dependencies: [] };
+            }
+
+            // Start streaming generation
+            const streamIterator = claudeClient.generateCodeStreaming(
+              {
+                prompt: input.prompt,
+                context,
+                sessionId,
+              },
+              ctx.db,
+              sandboxId
+            );
+
+            // Yield all events from the stream
+            for await (const event of streamIterator) {
+              emit.next(event);
+            }
+
+            // Mark as complete
+            emit.complete();
+          } catch (error) {
+            console.error('[AI Stream] Error:', error);
+            emit.error(
+              new TRPCError({
+                code: 'INTERNAL_SERVER_ERROR',
+                message:
+                  error instanceof Error ? error.message : 'Stream error',
+              })
+            );
+          }
+        };
+
+        // Start streaming
+        void streamGeneration();
+
+        // Cleanup function
+        return () => {
+          console.log('[AI Stream] Client disconnected');
+        };
+      });
+    }),
 });
