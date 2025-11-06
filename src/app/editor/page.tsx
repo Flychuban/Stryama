@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -43,10 +43,8 @@ function EditorContent() {
   const projectId = searchParams?.get('id') ?? null;
 
   // Fetch project data if ID is provided
-  const { data: project } = api.project.getById.useQuery(
-    { id: projectId! },
-    { enabled: !!projectId }
-  );
+  const { data: project, isLoading: isLoadingProject } =
+    api.project.getById.useQuery({ id: projectId! }, { enabled: !!projectId });
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -57,21 +55,25 @@ function EditorContent() {
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
+  const [isRegeneratingPreview, setIsRegeneratingPreview] = useState(false);
 
-  // Proxied preview URL to bypass E2B iframe restrictions
-  // E2B's infrastructure adds X-Frame-Options headers that block iframe embedding
-  // Our proxy strips these headers so the preview can be embedded
-  const proxiedPreviewUrl = previewUrl
-    ? `/api/preview-proxy?url=${encodeURIComponent(previewUrl)}`
-    : null;
+  // Track if we've already attempted auto-regeneration to prevent infinite loops
+  const hasAttemptedRegeneration = useRef(false);
 
   // tRPC mutations for AI and E2B sandbox operations
   const generateCodeMutation = api.ai.generateCode.useMutation();
   const startPreviewMutation = api.sandbox.startPreview.useMutation();
   const restartPreviewMutation = api.sandbox.restartPreview.useMutation();
+  const regeneratePreviewMutation = api.sandbox.regeneratePreview.useMutation();
 
   // Refetch project files after AI generation
   const utils = api.useUtils();
+
+  // Reusable error handler for preview operations
+  const handlePreviewError = (error: unknown, fallbackMessage: string) => {
+    console.error(fallbackMessage, error);
+    setPreviewError(error instanceof Error ? error.message : fallbackMessage);
+  };
 
   // Update document title with project name
   useEffect(() => {
@@ -79,6 +81,87 @@ function EditorContent() {
       document.title = `${project.name} - Stryama Editor`;
     }
   }, [project]);
+
+  // Load conversation history and preview URL when project loads
+  useEffect(() => {
+    if (!projectId) return;
+
+    // Wait for project data to load before attempting anything
+    if (isLoadingProject) return;
+
+    // If project doesn't exist, don't proceed
+    if (!project) return;
+
+    // Reset regeneration flag when projectId changes (new project loaded)
+    hasAttemptedRegeneration.current = false;
+
+    const loadProjectState = async () => {
+      try {
+        // Fetch conversation history using utils
+        const history = await utils.ai.getHistory.fetch({
+          projectId,
+          limit: 100,
+        });
+
+        // Convert AIGenerations to Message format (reverse to show oldest first)
+        const conversationMessages: Message[] = history
+          .reverse()
+          .flatMap((gen) => [
+            { role: 'user' as const, content: gen.prompt },
+            { role: 'assistant' as const, content: gen.response ?? '' },
+          ]);
+
+        setMessages(conversationMessages);
+
+        // Check if project has an active sandbox and if it's expired
+        const sandboxStatus = await utils.sandbox.getProjectStatus.fetch({
+          projectId,
+        });
+
+        // If no active sandbox or sandbox expired, check if we should auto-regenerate
+        if (sandboxStatus.isExpired || !sandboxStatus.hasActiveSandbox) {
+          // Check if project has files AND we haven't attempted regeneration yet
+          if (
+            project.files &&
+            project.files.length > 0 &&
+            !hasAttemptedRegeneration.current
+          ) {
+            hasAttemptedRegeneration.current = true;
+            setIsRegeneratingPreview(true);
+
+            try {
+              const regenerateResult =
+                await regeneratePreviewMutation.mutateAsync({
+                  projectId,
+                });
+
+              setPreviewUrl(regenerateResult.url);
+              setPreviewError(null);
+            } catch (error) {
+              handlePreviewError(error, 'Failed to regenerate preview');
+            } finally {
+              setIsRegeneratingPreview(false);
+            }
+          }
+        } else {
+          // Sandbox is active, fetch preview URL
+          const previewData = await utils.sandbox.getPreviewUrl.fetch({
+            projectId,
+          });
+
+          if (previewData.url) {
+            setPreviewUrl(previewData.url);
+          }
+        }
+      } catch (error) {
+        console.error('[Editor] ❌ Failed to load project state:', error);
+      }
+    };
+
+    void loadProjectState();
+    // Removed regeneratePreviewMutation from dependencies to prevent infinite loop
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, utils, project, isLoadingProject]);
 
   const handleSend = async () => {
     if (!input.trim() || !projectId) return;
@@ -127,12 +210,7 @@ function EditorContent() {
         setPreviewUrl(previewResult.url);
         setPreviewError(null);
       } catch (error) {
-        console.error('Failed to generate preview:', error);
-        setPreviewError(
-          error instanceof Error
-            ? error.message
-            : 'Failed to start preview server'
-        );
+        handlePreviewError(error, 'Failed to start preview server');
         setPreviewUrl(null);
       } finally {
         setIsGeneratingPreview(false);
@@ -141,12 +219,33 @@ function EditorContent() {
       console.error('Failed to generate code:', error);
       setIsGenerating(false);
 
+      // Determine error message based on error type
+      let errorContent = 'Unknown error occurred';
+
+      if (error instanceof Error) {
+        // Check if it's an authentication error
+        if (
+          error.message.includes('session has expired') ||
+          error.message.includes('Unauthorized') ||
+          error.message.includes('Authentication required')
+        ) {
+          errorContent = 'Your session has expired. Redirecting to sign in...';
+          // The tRPC error interceptor will handle the redirect
+        } else if (
+          error.message.includes('Failed to fetch') ||
+          error.message.includes('Network')
+        ) {
+          errorContent =
+            'Network error. Please check your connection and try again.';
+        } else {
+          errorContent = error.message;
+        }
+      }
+
       // Show error message
       const errorMessage: Message = {
         role: 'assistant',
-        content: `Sorry, I encountered an error: ${
-          error instanceof Error ? error.message : 'Unknown error occurred'
-        }`,
+        content: `Sorry, I encountered an error: ${errorContent}`,
       };
 
       setMessages((prev) => [...prev, errorMessage]);
@@ -167,14 +266,31 @@ function EditorContent() {
       setPreviewUrl(previewResult.url);
       setPreviewError(null);
     } catch (error) {
-      console.error('Failed to restart preview:', error);
-      setPreviewError(
-        error instanceof Error
-          ? error.message
-          : 'Failed to restart preview server'
-      );
+      handlePreviewError(error, 'Failed to restart preview server');
     } finally {
       setIsGeneratingPreview(false);
+    }
+  };
+
+  const handleRegeneratePreview = async () => {
+    if (!projectId) return;
+
+    try {
+      setIsRegeneratingPreview(true);
+      setPreviewError(null);
+
+      const regenerateResult = await regeneratePreviewMutation.mutateAsync({
+        projectId,
+      });
+
+      setPreviewUrl(regenerateResult.url);
+      setPreviewError(null);
+      // Reset the flag so user can regenerate again if needed
+      hasAttemptedRegeneration.current = false;
+    } catch (error) {
+      handlePreviewError(error, 'Failed to regenerate preview');
+    } finally {
+      setIsRegeneratingPreview(false);
     }
   };
 
@@ -296,23 +412,47 @@ function EditorContent() {
             </div>
 
             <div className="flex items-center gap-2">
-              {previewUrl && viewMode === 'preview' && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRestartPreview}
-                  disabled={isGeneratingPreview}
-                  className="rounded-lg border-border/50 transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
-                  title="Restart preview server"
-                >
-                  <RefreshCw
-                    className={cn(
-                      'mr-2 h-4 w-4',
-                      isGeneratingPreview && 'animate-spin'
-                    )}
-                  />
-                  Restart Preview
-                </Button>
+              {viewMode === 'preview' && projectFiles.length > 0 && (
+                <>
+                  {previewError?.includes('not found') ||
+                  previewError?.includes('Sandbox Not Found') ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRegeneratePreview}
+                      disabled={isRegeneratingPreview}
+                      className="rounded-lg border-border/50 transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
+                      title="Regenerate preview from database files"
+                    >
+                      <RefreshCw
+                        className={cn(
+                          'mr-2 h-4 w-4',
+                          isRegeneratingPreview && 'animate-spin'
+                        )}
+                      />
+                      Regenerate Preview
+                    </Button>
+                  ) : (
+                    previewUrl && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRestartPreview}
+                        disabled={isGeneratingPreview}
+                        className="rounded-lg border-border/50 transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
+                        title="Restart preview server"
+                      >
+                        <RefreshCw
+                          className={cn(
+                            'mr-2 h-4 w-4',
+                            isGeneratingPreview && 'animate-spin'
+                          )}
+                        />
+                        Restart Preview
+                      </Button>
+                    )
+                  )}
+                </>
               )}
 
               <DropdownMenu>
@@ -357,20 +497,24 @@ function EditorContent() {
 
           {/* Content Area */}
           <div className="flex-1 overflow-auto p-8">
-            {isGenerating || isGeneratingPreview ? (
+            {isGenerating || isGeneratingPreview || isRegeneratingPreview ? (
               <div className="flex h-full items-center justify-center">
                 <div className="space-y-4 text-center">
                   <div className="mx-auto h-16 w-16 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
                   <div>
                     <h3 className="text-lg font-semibold">
-                      {isGeneratingPreview
-                        ? 'Starting preview server...'
-                        : 'Generating your application...'}
+                      {isRegeneratingPreview
+                        ? 'Restoring preview...'
+                        : isGeneratingPreview
+                          ? 'Starting preview server...'
+                          : 'Generating your application...'}
                     </h3>
                     <p className="mt-2 text-sm text-muted-foreground">
-                      {isGeneratingPreview
-                        ? 'Installing dependencies and starting the development server'
-                        : 'This will take a few moments'}
+                      {isRegeneratingPreview
+                        ? 'Syncing files from database and starting preview (20-30s)'
+                        : isGeneratingPreview
+                          ? 'Installing dependencies and starting the development server'
+                          : 'This will take a few moments'}
                     </p>
                   </div>
                 </div>
@@ -463,17 +607,40 @@ function EditorContent() {
                             <AlertCircle className="h-10 w-10 text-destructive" />
                           </div>
                           <h3 className="text-xl font-semibold">
-                            Preview Failed
+                            {previewError.includes('not found') ||
+                            previewError.includes('Sandbox Not Found')
+                              ? 'Preview Expired'
+                              : 'Preview Failed'}
                           </h3>
                           <p className="text-muted-foreground">
-                            {previewError}
+                            {previewError.includes('not found') ||
+                            previewError.includes('Sandbox Not Found')
+                              ? 'The preview sandbox has expired. Click below to regenerate from your saved files.'
+                              : previewError}
                           </p>
-                          <Button
-                            onClick={handleRestartPreview}
-                            variant="outline"
-                          >
-                            Restart Preview
-                          </Button>
+                          {previewError.includes('not found') ||
+                          previewError.includes('Sandbox Not Found') ? (
+                            <Button
+                              onClick={handleRegeneratePreview}
+                              variant="default"
+                              disabled={isRegeneratingPreview}
+                            >
+                              <RefreshCw
+                                className={cn(
+                                  'mr-2 h-4 w-4',
+                                  isRegeneratingPreview && 'animate-spin'
+                                )}
+                              />
+                              Regenerate Preview
+                            </Button>
+                          ) : (
+                            <Button
+                              onClick={handleRestartPreview}
+                              variant="outline"
+                            >
+                              Restart Preview
+                            </Button>
+                          )}
                         </div>
                       </div>
                     ) : previewUrl ? (
@@ -489,10 +656,12 @@ function EditorContent() {
                           </Button>
                         </div>
                         <iframe
-                          src={proxiedPreviewUrl ?? undefined}
+                          src={previewUrl ?? undefined}
                           className="h-full w-full border-0"
                           title="Live Preview"
                           referrerPolicy="no-referrer-when-downgrade"
+                          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
+                          allow="accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; clipboard-read; clipboard-write"
                         />
                       </>
                     ) : (

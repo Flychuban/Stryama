@@ -18,6 +18,7 @@ import type { UserPlan, ProjectContext } from '~/lib/integrations/claude';
 import { sandboxManager } from '~/lib/integrations/e2b/services/sandbox-manager';
 import { setupInfrastructure } from '~/lib/integrations/e2b/services/preview-manager';
 import { E2B_CONFIG } from '~/lib/integrations/e2b/config';
+import type { Sandbox } from '@e2b/code-interpreter';
 
 export const aiRouter = createTRPCRouter({
   generateCode: protectedProcedure
@@ -54,6 +55,7 @@ export const aiRouter = createTRPCRouter({
 
       let context: ProjectContext | undefined;
       let sandboxId: string | undefined;
+      let sandboxInstance: Sandbox | undefined; // E2B Sandbox instance
       let sessionId: string | undefined;
 
       if (input.projectId) {
@@ -111,6 +113,7 @@ export const aiRouter = createTRPCRouter({
 
           if (sandboxResult.success && sandboxResult.data) {
             sandboxId = sandboxResult.data.id;
+            sandboxInstance = sandboxResult.data.instance; // Store instance for later use
             console.log(`[AI Router] Using sandbox: ${sandboxId}`);
 
             // PHASE 2: Setup infrastructure BEFORE Claude runs
@@ -130,16 +133,19 @@ export const aiRouter = createTRPCRouter({
 
               // Run npm install to prepare dependencies
               try {
+                console.log(
+                  '[AI Router] 📦 Installing dependencies (may take 5-10 minutes)...'
+                );
                 await sandboxResult.data.instance.commands.run(
                   'cd /project && npm install',
-                  { timeoutMs: 180000 } // 3 minutes
+                  { timeoutMs: 600000 } // 10 minutes (matches preview-manager timeout)
                 );
                 console.log(
                   '[AI Router] ✅ Dependencies installed - sandbox ready for Claude'
                 );
               } catch (installError) {
                 console.warn(
-                  '[AI Router] npm install failed (will retry during preview):',
+                  '[AI Router] ⚠️ npm install failed (will retry during preview):',
                   installError
                 );
                 // Continue - preview manager will handle npm install if needed
@@ -216,46 +222,97 @@ export const aiRouter = createTRPCRouter({
         filesGenerated: result.data.files.length,
         filesPaths: result.data.files.map((f) => f.path),
         hasProjectId: !!input.projectId,
+        usedSandbox: !!sandboxId,
+        hasInstance: !!sandboxInstance,
       });
 
       // Save generated files to database
-      if (input.projectId && result.data.files.length > 0) {
+      if (input.projectId) {
         try {
-          console.log(
-            `[AI Router] Saving ${result.data.files.length} generated file(s) to database`
-          );
+          let filesToSave: Array<{
+            path: string;
+            content: string;
+            language: string;
+          }> = [...result.data.files];
 
-          // Use upsert to handle both creation and updates
-          await Promise.all(
-            result.data.files.map((file) =>
-              ctx.db.file.upsert({
-                where: {
-                  projectId_path: {
-                    projectId: input.projectId!,
-                    path: file.path,
+          // If using E2B mode and no files in response, read from sandbox
+          if (sandboxId && sandboxInstance && result.data.files.length === 0) {
+            console.log(
+              '[AI Router] 🔄 E2B mode: No files in response, reading from sandbox filesystem...'
+            );
+
+            const sandboxFilesResult =
+              await sandboxManager.readAllFiles(sandboxInstance);
+
+            if (sandboxFilesResult.success && sandboxFilesResult.data) {
+              filesToSave = sandboxFilesResult.data;
+              console.log(
+                `[AI Router] ✅ Found ${filesToSave.length} files in sandbox to save:`,
+                filesToSave.map((f) => f.path)
+              );
+            } else {
+              console.error(
+                `[AI Router] ❌ Failed to read files from sandbox: ${sandboxFilesResult.error}`
+              );
+            }
+          } else if (
+            sandboxId &&
+            !sandboxInstance &&
+            result.data.files.length === 0
+          ) {
+            console.error(
+              '[AI Router] ❌ CRITICAL: Sandbox ID exists but instance is missing - cannot read files',
+              {
+                sandboxId,
+                hasSandboxId: !!sandboxId,
+                hasInstance: !!sandboxInstance,
+              }
+            );
+          } else if (result.data.files.length > 0) {
+            console.log(
+              `[AI Router] ✅ Using ${result.data.files.length} files from Claude response`
+            );
+          }
+
+          if (filesToSave.length > 0) {
+            console.log(
+              `[AI Router] 💾 Saving ${filesToSave.length} file(s) to database for project ${input.projectId}`
+            );
+
+            // Use upsert to handle both creation and updates
+            await Promise.all(
+              filesToSave.map((file) =>
+                ctx.db.file.upsert({
+                  where: {
+                    projectId_path: {
+                      projectId: input.projectId!,
+                      path: file.path,
+                    },
                   },
-                },
-                create: {
-                  path: file.path,
-                  content: file.content,
-                  language: file.language,
-                  projectId: input.projectId!,
-                },
-                update: {
-                  content: file.content,
-                  language: file.language,
-                  updatedAt: new Date(),
-                },
-              })
-            )
-          );
+                  create: {
+                    path: file.path,
+                    content: file.content,
+                    language: file.language,
+                    projectId: input.projectId!,
+                  },
+                  update: {
+                    content: file.content,
+                    language: file.language,
+                    updatedAt: new Date(),
+                  },
+                })
+              )
+            );
 
-          console.log(
-            `[AI Router] ✅ Successfully saved ${result.data.files.length} file(s) to database`
-          );
-
-          // NOTE: When using E2B sandbox mode, files are written directly to the sandbox
-          // via MCP tools. No cleanup needed as files never touch the local filesystem.
+            console.log(
+              `[AI Router] ✅ Successfully saved ${filesToSave.length} file(s) to database:`,
+              filesToSave.map((f) => `${f.path} (${f.language})`)
+            );
+          } else {
+            console.warn(
+              '[AI Router] ⚠️ No files to save to database - this may cause issues when regenerating preview'
+            );
+          }
         } catch (error) {
           console.error(
             '[AI Router] ❌ Error saving files to database:',
@@ -266,19 +323,11 @@ export const aiRouter = createTRPCRouter({
             message: 'Failed to save generated files to database',
           });
         }
-      } else if (input.projectId && result.data.files.length === 0) {
-        console.warn(
-          '[AI Router] ⚠️ No files generated - nothing to save to database'
-        );
-      } else if (!input.projectId) {
+      } else {
         console.log(
           '[AI Router] No projectId provided - skipping database save'
         );
       }
-
-      // NOTE: When using E2B sandbox mode, files are written directly to the sandbox
-      // via Claude's MCP tools. No manual sync needed!
-      // The database save is optional and kept for history/versioning purposes.
 
       return {
         ...result.data,

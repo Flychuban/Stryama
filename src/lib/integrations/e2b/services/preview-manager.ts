@@ -211,6 +211,7 @@ export async function setupInfrastructure(
  * Setup project with package.json and config files
  * @deprecated Use setupInfrastructure() instead - this function creates entry points that should be Claude's responsibility
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function setupProjectFiles(
   sandbox: Sandbox,
   framework: Framework,
@@ -311,19 +312,24 @@ async function installDependencies(
     const workDir = '/project';
 
     console.log(
-      '[Preview] Installing dependencies (this may take a moment)...'
+      '[Preview] 📦 Installing dependencies (this may take 5-10 minutes for large projects)...'
     );
 
-    // Run npm install with a timeout
+    const startTime = Date.now();
+
+    // Run npm install with extended timeout for large projects
+    // React projects can have 100+ dependencies requiring 5-8 minutes
     const installResult = await sandbox.commands.run(
       `cd ${workDir} && npm install`,
       {
-        timeoutMs: 180000, // 3 minutes timeout
+        timeoutMs: 600000, // 10 minutes timeout (increased from 3 minutes)
       }
     );
 
+    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+
     if (installResult.exitCode !== 0) {
-      console.error('[Preview] npm install failed:', installResult.stderr);
+      console.error('[Preview] ❌ npm install failed:', installResult.stderr);
       return {
         success: false,
         data: false,
@@ -331,7 +337,9 @@ async function installDependencies(
       };
     }
 
-    console.log('[Preview] Dependencies installed successfully');
+    console.log(
+      `[Preview] ✅ Dependencies installed successfully in ${duration}s`
+    );
 
     return {
       success: true,
@@ -339,14 +347,28 @@ async function installDependencies(
       error: null,
     };
   } catch (error) {
-    console.error('[Preview] Failed to install dependencies:', error);
+    console.error('[Preview] ❌ Failed to install dependencies:', error);
+
+    // Provide more specific error messages
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
+
+    if (
+      errorMessage.includes('timeout') ||
+      errorMessage.includes('deadline_exceeded')
+    ) {
+      return {
+        success: false,
+        data: false,
+        error:
+          'npm install timed out after 10 minutes. The project may have too many dependencies. Try reducing dependencies or contact support.',
+      };
+    }
+
     return {
       success: false,
       data: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : 'Failed to install dependencies',
+      error: `Failed to install dependencies: ${errorMessage}`,
     };
   }
 }
@@ -406,19 +428,21 @@ export async function startPreviewServer(
         `[Preview] No dev server running, setting up infrastructure and starting server`
       );
 
-      // Check if dependencies are already installed (node_modules exists)
+      // Check if dependencies are already installed and valid
       const checkNodeModules = await sandbox.commands.run(
-        `test -d ${workDir}/node_modules && echo "exists" || echo "missing"`,
+        `test -d ${workDir}/node_modules && test -n "$(ls -A ${workDir}/node_modules 2>/dev/null)" && echo "exists" || echo "missing"`,
         { timeoutMs: 5000 }
       );
       const nodeModulesExists = checkNodeModules.stdout.trim() === 'exists';
 
       if (nodeModulesExists) {
         console.log(
-          `[Preview] ✅ Dependencies already installed (node_modules exists) - skipping setup`
+          `[Preview] ✅ Dependencies already installed (node_modules exists and is not empty) - skipping setup`
         );
       } else {
-        console.log(`[Preview] Dependencies not found, running full setup...`);
+        console.log(
+          `[Preview] 📦 Dependencies not found or invalid, running full setup...`
+        );
 
         // Step 1: Ensure infrastructure files exist (package.json, configs)
         // Note: Claude should have already created all application files (index.html, src/*, etc.)

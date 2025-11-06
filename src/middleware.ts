@@ -1,4 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
+import { NextResponse } from 'next/server';
 
 // Define public routes that don't require authentication
 const isPublicRoute = createRouteMatcher(['/', '/sign-in(.*)', '/sign-up(.*)']);
@@ -6,7 +7,24 @@ const isPublicRoute = createRouteMatcher(['/', '/sign-in(.*)', '/sign-up(.*)']);
 export default clerkMiddleware(async (auth, req) => {
   // Protect all routes except public ones
   if (!isPublicRoute(req)) {
-    await auth.protect();
+    const isApiRoute =
+      req.nextUrl.pathname.startsWith('/api') ||
+      req.nextUrl.pathname.startsWith('/trpc');
+
+    if (isApiRoute) {
+      // For API routes, return JSON error instead of redirect
+      try {
+        await auth.protect();
+      } catch {
+        return NextResponse.json(
+          { error: 'Unauthorized', message: 'Authentication required' },
+          { status: 401 }
+        );
+      }
+    } else {
+      // For page routes, use normal redirect behavior
+      await auth.protect();
+    }
   }
 });
 
