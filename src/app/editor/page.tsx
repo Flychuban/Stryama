@@ -20,6 +20,8 @@ import { AppHeader } from '@/components/shared/AppHeader';
 import ChatMessage from '@/components/editor/ChatMessage';
 import AILoadingAnimation from '@/components/editor/AILoadingAnimation';
 import CodeView from '@/components/editor/CodeView';
+import { StreamingIndicator } from '@/components/editor/StreamingIndicator';
+import { useAIGenerationStream } from '@/hooks/useAIGenerationStream';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,7 +50,6 @@ function EditorContent() {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('preview');
   const [deviceMode, setDeviceMode] = useState<DeviceMode>('desktop');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -60,14 +61,111 @@ function EditorContent() {
   // Track if we've already attempted auto-regeneration to prevent infinite loops
   const hasAttemptedRegeneration = useRef(false);
 
-  // tRPC mutations for AI and E2B sandbox operations
-  const generateCodeMutation = api.ai.generateCode.useMutation();
+  // Track which sessions we've already handled to prevent duplicate processing
+  const handledCompletionsRef = useRef(new Set<string>());
+  const handledErrorsRef = useRef(new Set<string>());
+
+  // tRPC mutations for E2B sandbox operations
   const startPreviewMutation = api.sandbox.startPreview.useMutation();
   const restartPreviewMutation = api.sandbox.restartPreview.useMutation();
   const regeneratePreviewMutation = api.sandbox.regeneratePreview.useMutation();
 
   // Refetch project files after AI generation
   const utils = api.useUtils();
+
+  // AI generation streaming hook - simplified, no callbacks
+  const {
+    state: streamState,
+    startStreaming,
+    isStreaming,
+  } = useAIGenerationStream({
+    projectId: projectId ?? undefined,
+    useSandbox: true,
+  });
+
+  // Handle streaming completion - watch state directly
+  useEffect(() => {
+    if (!streamState.isComplete || !streamState.result) return;
+
+    const sessionId = streamState.result.sessionId;
+
+    // Prevent duplicate handling of the same completion
+    if (handledCompletionsRef.current.has(sessionId)) {
+      return;
+    }
+
+    // Mark this session as handled
+    handledCompletionsRef.current.add(sessionId);
+
+    const result = streamState.result; // Store in const for type safety
+
+    const handleCompletion = async () => {
+      console.log('[Editor] Stream completed, processing results...');
+
+      // Add AI message to chat
+      const aiMessage: Message = {
+        role: 'assistant',
+        content: result.content ?? "I've generated the code for you!",
+        files: result.files?.map((f) => f.path),
+      };
+      setMessages((prev) => [...prev, aiMessage]);
+
+      // Refetch project files and start preview
+      if (projectId && result.sandboxId) {
+        try {
+          // IMPORTANT: Invalidate project to get updated files
+          // This is safe now because the project loading effect won't reload messages
+          // when messages.length > 0
+          console.log('[Editor] Invalidating project data to refresh files...');
+          await utils.project.getById.invalidate({ id: projectId });
+
+          setIsGeneratingPreview(true);
+          const previewResult = await startPreviewMutation.mutateAsync({
+            projectId,
+            sandboxId: result.sandboxId,
+          });
+          setPreviewUrl(previewResult.url);
+          setPreviewError(null);
+          console.log('[Editor] ✅ Preview started successfully');
+        } catch (error) {
+          console.error('[Editor] ❌ Failed to start preview server', error);
+          setPreviewError(
+            error instanceof Error
+              ? error.message
+              : 'Failed to start preview server'
+          );
+          setPreviewUrl(null);
+        } finally {
+          setIsGeneratingPreview(false);
+        }
+      }
+    };
+
+    void handleCompletion();
+    // Intentionally omit startPreviewMutation from deps - mutation objects are unstable
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streamState.isComplete, streamState.result?.sessionId, projectId, utils]);
+
+  // Handle streaming errors - watch state directly
+  useEffect(() => {
+    if (!streamState.hasError || !streamState.error) return;
+
+    const errorKey = `${streamState.error.code}-${streamState.error.message}`;
+
+    // Prevent duplicate error messages
+    if (handledErrorsRef.current.has(errorKey)) {
+      return;
+    }
+
+    // Mark this error as handled
+    handledErrorsRef.current.add(errorKey);
+
+    const errorMessage: Message = {
+      role: 'assistant',
+      content: `Sorry, I encountered an error: ${streamState.error.message}`,
+    };
+    setMessages((prev) => [...prev, errorMessage]);
+  }, [streamState.hasError, streamState.error]);
 
   // Reusable error handler for preview operations
   const handlePreviewError = (error: unknown, fallbackMessage: string) => {
@@ -82,7 +180,7 @@ function EditorContent() {
     }
   }, [project]);
 
-  // Load conversation history and preview URL when project loads
+  // Load conversation history and preview URL when project loads (INITIAL LOAD ONLY)
   useEffect(() => {
     if (!projectId) return;
 
@@ -92,11 +190,22 @@ function EditorContent() {
     // If project doesn't exist, don't proceed
     if (!project) return;
 
+    // CRITICAL FIX: Don't reload messages if already loaded or if streaming is active
+    // This prevents the race condition where project invalidation overwrites messages
+    if (messages.length > 0 || isStreaming) {
+      console.log(
+        '[Editor] Skipping message reload - messages already loaded or streaming active'
+      );
+      return;
+    }
+
     // Reset regeneration flag when projectId changes (new project loaded)
     hasAttemptedRegeneration.current = false;
 
     const loadProjectState = async () => {
       try {
+        console.log('[Editor] Loading initial project state...');
+
         // Fetch conversation history using utils
         const history = await utils.ai.getHistory.fetch({
           projectId,
@@ -111,7 +220,17 @@ function EditorContent() {
             { role: 'assistant' as const, content: gen.response ?? '' },
           ]);
 
-        setMessages(conversationMessages);
+        // Only set messages if we still don't have any (avoid race conditions)
+        if (messages.length === 0 && !isStreaming) {
+          setMessages(conversationMessages);
+          console.log(
+            `[Editor] ✅ Loaded ${conversationMessages.length} messages from history`
+          );
+        } else {
+          console.log(
+            '[Editor] Skipping message set - messages already present or streaming started'
+          );
+        }
 
         // Check if project has an active sandbox and if it's expired
         const sandboxStatus = await utils.sandbox.getProjectStatus.fetch({
@@ -159,9 +278,10 @@ function EditorContent() {
     };
 
     void loadProjectState();
-    // Removed regeneratePreviewMutation from dependencies to prevent infinite loop
+    // IMPORTANT: Removed 'project' from deps to prevent cascading reloads
+    // Only run when projectId changes or loading state changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, utils, project, isLoadingProject]);
+  }, [projectId, isLoadingProject]);
 
   const handleSend = async () => {
     if (!input.trim() || !projectId) return;
@@ -172,84 +292,12 @@ function EditorContent() {
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    const userPrompt = input.trim();
     setInput('');
-    setIsGenerating(true);
     setPreviewError(null);
 
-    try {
-      const result = await generateCodeMutation.mutateAsync({
-        prompt: input.trim(),
-        projectId,
-      });
-
-      // Create AI message with response
-      const aiMessage: Message = {
-        role: 'assistant',
-        content: result.explanation ?? "I've generated the code for you!",
-        files: result.files.map((f) => f.path),
-      };
-
-      setMessages((prev) => [...prev, aiMessage]);
-
-      // Refetch project files to show the newly generated files
-      await utils.project.getById.invalidate({ id: projectId });
-
-      setIsGenerating(false);
-
-      // After AI generates code, start preview
-      try {
-        setIsGeneratingPreview(true);
-
-        // Files are already synced by the AI router, just start preview
-        // Pass sandboxId from AI generation to ensure we use the SAME sandbox
-        const previewResult = await startPreviewMutation.mutateAsync({
-          projectId,
-          sandboxId: result.sandboxId, // ✅ Use the sandbox where Claude wrote files
-        });
-
-        setPreviewUrl(previewResult.url);
-        setPreviewError(null);
-      } catch (error) {
-        handlePreviewError(error, 'Failed to start preview server');
-        setPreviewUrl(null);
-      } finally {
-        setIsGeneratingPreview(false);
-      }
-    } catch (error) {
-      console.error('Failed to generate code:', error);
-      setIsGenerating(false);
-
-      // Determine error message based on error type
-      let errorContent = 'Unknown error occurred';
-
-      if (error instanceof Error) {
-        // Check if it's an authentication error
-        if (
-          error.message.includes('session has expired') ||
-          error.message.includes('Unauthorized') ||
-          error.message.includes('Authentication required')
-        ) {
-          errorContent = 'Your session has expired. Redirecting to sign in...';
-          // The tRPC error interceptor will handle the redirect
-        } else if (
-          error.message.includes('Failed to fetch') ||
-          error.message.includes('Network')
-        ) {
-          errorContent =
-            'Network error. Please check your connection and try again.';
-        } else {
-          errorContent = error.message;
-        }
-      }
-
-      // Show error message
-      const errorMessage: Message = {
-        role: 'assistant',
-        content: `Sorry, I encountered an error: ${errorContent}`,
-      };
-
-      setMessages((prev) => [...prev, errorMessage]);
-    }
+    // Start streaming generation
+    startStreaming(userPrompt);
   };
 
   const handleRestartPreview = async () => {
@@ -331,9 +379,18 @@ function EditorContent() {
                   </div>
                 </div>
               ) : (
-                messages.map((message, i) => (
-                  <ChatMessage key={i} {...message} />
-                ))
+                <>
+                  {messages.map((message, i) => (
+                    <ChatMessage key={i} {...message} />
+                  ))}
+
+                  {/* Show streaming indicator when AI is generating or has just completed */}
+                  {(isStreaming || streamState.status !== 'idle') && (
+                    <div className="mt-4">
+                      <StreamingIndicator state={streamState} />
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </ScrollArea>
@@ -364,7 +421,7 @@ function EditorContent() {
               <Button
                 size="icon"
                 onClick={handleSend}
-                disabled={!input.trim() || isGenerating}
+                disabled={!input.trim() || isStreaming}
                 className="to-primary-hover h-12 w-12 flex-shrink-0 rounded-xl bg-gradient-to-br from-primary transition-all duration-200 hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50"
               >
                 <Send className="h-5 w-5" />
@@ -382,28 +439,32 @@ function EditorContent() {
           <div className="relative z-10 flex items-center justify-between border-b border-border/50 bg-background/60 px-6 py-4 backdrop-blur-xl">
             <div className="flex items-center gap-1 rounded-lg border border-border/30 bg-muted/40 p-1 backdrop-blur-sm">
               <Button
-                variant={viewMode === 'preview' ? 'default' : 'ghost'}
+                type="button"
+                variant="ghost"
                 size="sm"
+                aria-pressed={viewMode === 'preview'}
                 onClick={() => setViewMode('preview')}
                 className={cn(
                   'rounded-md transition-all duration-200',
                   viewMode === 'preview'
-                    ? 'bg-background shadow-sm hover:bg-background'
-                    : 'hover:bg-background/50'
+                    ? 'bg-primary/10 text-primary shadow-sm hover:bg-primary/10 hover:text-primary'
+                    : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                 )}
               >
                 <Eye className="mr-2 h-4 w-4" />
                 Preview
               </Button>
               <Button
-                variant={viewMode === 'code' ? 'default' : 'ghost'}
+                type="button"
+                variant="ghost"
                 size="sm"
+                aria-pressed={viewMode === 'code'}
                 onClick={() => setViewMode('code')}
                 className={cn(
                   'rounded-md transition-all duration-200',
                   viewMode === 'code'
-                    ? 'bg-background shadow-sm hover:bg-background'
-                    : 'hover:bg-background/50'
+                    ? 'bg-primary/10 text-primary shadow-sm hover:bg-primary/10 hover:text-primary'
+                    : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                 )}
               >
                 <Code2 className="mr-2 h-4 w-4" />
@@ -497,7 +558,7 @@ function EditorContent() {
 
           {/* Content Area */}
           <div className="flex-1 overflow-auto p-8">
-            {isGenerating || isGeneratingPreview || isRegeneratingPreview ? (
+            {isGeneratingPreview || isRegeneratingPreview ? (
               <div className="flex h-full items-center justify-center">
                 <div className="space-y-4 text-center">
                   <div className="mx-auto h-16 w-16 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
@@ -505,16 +566,12 @@ function EditorContent() {
                     <h3 className="text-lg font-semibold">
                       {isRegeneratingPreview
                         ? 'Restoring preview...'
-                        : isGeneratingPreview
-                          ? 'Starting preview server...'
-                          : 'Generating your application...'}
+                        : 'Starting preview server...'}
                     </h3>
                     <p className="mt-2 text-sm text-muted-foreground">
                       {isRegeneratingPreview
                         ? 'Syncing files from database and starting preview (20-30s)'
-                        : isGeneratingPreview
-                          ? 'Installing dependencies and starting the development server'
-                          : 'This will take a few moments'}
+                        : 'Installing dependencies and starting the development server'}
                     </p>
                   </div>
                 </div>

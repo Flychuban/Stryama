@@ -24,6 +24,12 @@ import { CodeParser } from './parser';
 import { retryHandler } from './errors/retry-handler';
 import { createE2BTools } from './tools/e2b-tools';
 import type { PrismaClient } from '@prisma/client';
+import {
+  processSDKStream,
+  createStatusEvent,
+  createErrorEvent,
+} from './stream-manager';
+import type { StreamEvent } from './types/stream-events';
 
 export class ClaudeClient {
   private static instance: ClaudeClient;
@@ -48,6 +54,85 @@ export class ClaudeClient {
       async () => this.performGeneration(request, db, sandboxId),
       'AI Code Generation'
     );
+  }
+
+  /**
+   * Generate code with streaming events
+   *
+   * This method yields real-time events as the AI agent works,
+   * providing transparency into tool usage, thinking, and content generation.
+   *
+   * @param request - AI generation request
+   * @param db - Prisma database client for E2B tools
+   * @param sandboxId - Optional E2B sandbox ID for remote execution
+   * @returns AsyncGenerator that yields StreamEvent objects
+   */
+  async *generateCodeStreaming(
+    request: AIGenerationRequest,
+    db?: PrismaClient,
+    sandboxId?: string
+  ): AsyncGenerator<StreamEvent> {
+    const generationId = this.generateId();
+    const startTime = Date.now();
+
+    try {
+      console.log(`[Claude] Starting streaming generation ${generationId}`);
+
+      // Build enhanced prompt with context
+      const enhancedPrompt = this.buildEnhancedPrompt(request, sandboxId);
+
+      // Emit initializing status
+      yield createStatusEvent('initializing', 'Preparing AI agent');
+
+      // Get existing session ID from request
+      const sessionId = request.sessionId;
+
+      if (sessionId) {
+        console.log(`[Claude] Resuming session ${sessionId}`);
+      }
+
+      // Set up MCP servers (E2B tools if sandbox provided)
+      const mcpServers =
+        sandboxId && db ? { 'e2b-sandbox': createE2BTools(db) } : undefined;
+
+      // Start the query with streaming
+      const sdkStream = query({
+        prompt: enhancedPrompt,
+        options: {
+          model: request.options?.model ?? DEFAULT_MODEL,
+          maxTurns: request.options?.maxTurns ?? GENERATION_CONFIG.maxTurns,
+          mcpServers,
+          disallowedTools: sandboxId
+            ? [...GENERATION_CONFIG.e2bMode.disallowedTools]
+            : undefined,
+          allowedTools: sandboxId
+            ? [...GENERATION_CONFIG.e2bMode.allowedTools]
+            : [...GENERATION_CONFIG.localMode.allowedTools],
+          resume: request.sessionId,
+        },
+      });
+
+      // Process and yield stream events, passing sandboxId for completion event
+      yield* processSDKStream(sdkStream, sandboxId);
+
+      const duration = Date.now() - startTime;
+      console.log(
+        `[Claude] Streaming generation ${generationId} completed in ${duration}ms`
+      );
+    } catch (error) {
+      console.error(
+        `[Claude] Streaming generation ${generationId} failed:`,
+        error
+      );
+
+      const errorType = classifyError(error);
+      const errorMessage = getUserFriendlyErrorMessage(errorType);
+
+      yield createErrorEvent(errorMessage, 'STREAM_ERROR', {
+        generationId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async performGeneration(
