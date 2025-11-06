@@ -45,8 +45,14 @@ function EditorContent() {
   const projectId = searchParams?.get('id') ?? null;
 
   // Fetch project data if ID is provided
-  const { data: project, isLoading: isLoadingProject } =
-    api.project.getById.useQuery({ id: projectId! }, { enabled: !!projectId });
+  const {
+    data: project,
+    isLoading: isLoadingProject,
+    refetch: refetchProject,
+  } = api.project.getById.useQuery(
+    { id: projectId! },
+    { enabled: !!projectId }
+  );
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -113,11 +119,11 @@ function EditorContent() {
       // Refetch project files and start preview
       if (projectId && result.sandboxId) {
         try {
-          // IMPORTANT: Invalidate project to get updated files
+          // IMPORTANT: Refetch project to get updated files and trigger re-render
           // This is safe now because the project loading effect won't reload messages
           // when messages.length > 0
-          console.log('[Editor] Invalidating project data to refresh files...');
-          await utils.project.getById.invalidate({ id: projectId });
+          console.log('[Editor] Refetching project data to refresh files...');
+          await refetchProject();
 
           setIsGeneratingPreview(true);
           const previewResult = await startPreviewMutation.mutateAsync({
