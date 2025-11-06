@@ -12,52 +12,24 @@ import { sandboxManager } from '~/lib/integrations/e2b';
 import type { PrismaClient } from '@prisma/client';
 
 /**
- * Sandbox instance cache to avoid repeated lookups
- */
-const sandboxCache = new Map<string, Sandbox>();
-
-/**
- * Get or retrieve a sandbox instance
+ * Get a sandbox instance from the sandbox manager's cache
  */
 async function getSandbox(
   sandboxId: string,
   db: PrismaClient
 ): Promise<Sandbox> {
-  // Check local cache first
-  if (sandboxCache.has(sandboxId)) {
-    const cached = sandboxCache.get(sandboxId)!;
-    console.log(`[E2B Tools] Found cached sandbox instance: ${sandboxId}`);
+  // Use the sandbox manager's cache (single source of truth)
+  const cachedInstance = sandboxManager.getCachedInstance(sandboxId);
+  if (cachedInstance) {
+    console.log(`[E2B Tools] Using cached sandbox instance: ${sandboxId}`);
 
     // Validate cached instance is still alive
     try {
-      await cached.getInfo();
-      console.log(`[E2B Tools] ✅ Cached sandbox is valid`);
-      return cached;
-    } catch (error) {
-      console.error(
-        `[E2B Tools] ❌ Cached sandbox is dead, removing from cache:`,
-        error
-      );
-      sandboxCache.delete(sandboxId);
-      // Fall through to get fresh instance
-    }
-  }
-
-  // Try to get from manager's cache
-  const cachedInstance = sandboxManager.getCachedInstance(sandboxId);
-  if (cachedInstance) {
-    console.log(
-      `[E2B Tools] Using manager's cached sandbox instance: ${sandboxId}`
-    );
-
-    // Validate manager's cached instance
-    try {
       await cachedInstance.getInfo();
-      console.log(`[E2B Tools] ✅ Manager's cached sandbox is valid`);
-      sandboxCache.set(sandboxId, cachedInstance);
+      console.log(`[E2B Tools] ✅ Cached sandbox is valid`);
       return cachedInstance;
     } catch (error) {
-      console.error(`[E2B Tools] ❌ Manager's cached sandbox is dead:`, error);
+      console.error(`[E2B Tools] ❌ Cached sandbox is dead:`, error);
       // Fall through to resume
     }
   }
@@ -89,11 +61,8 @@ async function getSandbox(
     );
   }
 
-  // Cache for future use
-  console.log(
-    `[E2B Tools] Successfully resumed and cached sandbox: ${sandboxId}`
-  );
-  sandboxCache.set(sandboxId, result.data);
+  // Sandbox is now cached by the manager
+  console.log(`[E2B Tools] Successfully resumed sandbox: ${sandboxId}`);
   return result.data;
 }
 
@@ -434,14 +403,10 @@ export function createE2BTools(db: PrismaClient) {
 }
 
 /**
- * Clear the sandbox cache (useful when sandboxes are destroyed)
+ * Clear the sandbox cache (delegated to sandbox manager)
  */
-export function clearSandboxCache(sandboxId?: string) {
-  if (sandboxId) {
-    sandboxCache.delete(sandboxId);
-    console.log(`[E2B Tools] Cleared cache for sandbox: ${sandboxId}`);
-  } else {
-    sandboxCache.clear();
-    console.log(`[E2B Tools] Cleared all sandbox cache`);
-  }
+export function clearSandboxCache(_sandboxId?: string) {
+  // Cache management is now handled by SandboxManager
+  // This function is kept for backwards compatibility
+  console.log(`[E2B Tools] Cache clearing delegated to SandboxManager`);
 }

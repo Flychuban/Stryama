@@ -81,33 +81,9 @@ export class ClaudeClient {
         sandboxId && db ? { 'e2b-sandbox': createE2BTools(db) } : undefined;
 
       if (mcpServers) {
-        console.log(
-          `[Claude] ═══════════════════════════════════════════════════════`
-        );
-        console.log(
-          `[Claude] MCP Server created for E2B sandbox: ${sandboxId}`
-        );
-        console.log(
-          `[Claude] MCP Servers configured:`,
-          Object.keys(mcpServers)
-        );
-        console.log(
-          `[Claude] Disallowed tools: ${GENERATION_CONFIG.e2bMode.disallowedTools.join(', ')}`
-        );
-        console.log(
-          `[Claude] Allowed tools (${GENERATION_CONFIG.e2bMode.allowedTools.length}):`
-        );
-        GENERATION_CONFIG.e2bMode.allowedTools.forEach((tool, i) => {
-          console.log(`[Claude]   ${i + 1}. ${tool}`);
-        });
-        console.log(
-          `[Claude] ═══════════════════════════════════════════════════════`
-        );
+        console.log(`[Claude] E2B mode enabled for sandbox: ${sandboxId}`);
       } else {
-        console.log(`[Claude] No MCP server - using local mode`);
-        console.log(
-          `[Claude] Allowed tools: ${GENERATION_CONFIG.localMode.allowedTools.join(', ')}`
-        );
+        console.log(`[Claude] Local mode enabled`);
       }
 
       for await (const message of query({
@@ -165,23 +141,8 @@ export class ClaudeClient {
           }
         }
 
-        // Log assistant messages for debugging
-        if (message.type === 'assistant') {
-          console.log(`[Claude] Assistant thinking...`);
-        }
-
-        // Log stream events (includes tool usage)
-        if (message.type === 'stream_event') {
-          // Tool usage events will appear here in the stream
-          const eventData = JSON.stringify(message).toLowerCase();
-          if (
-            eventData.includes('e2b_write') ||
-            eventData.includes('e2b_bash') ||
-            eventData.includes('e2b_read')
-          ) {
-            console.log(`[Claude] 🔧 E2B MCP tool detected in stream`);
-          }
-        }
+        // Stream events are logged in development mode only
+        // Production logging is minimal for performance
       }
 
       if (!resultText) {

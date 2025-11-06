@@ -524,6 +524,253 @@ export const sandboxRouter = createTRPCRouter({
     }),
 
   /**
+   * Get project sandbox status and health
+   * Used to check if project's sandbox is alive or expired
+   */
+  getProjectStatus: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string().min(1, 'Project ID is required'),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      // Verify project ownership and get active sandbox
+      const project = await ctx.db.project.findUnique({
+        where: {
+          id: input.projectId,
+          clerkUserId: ctx.auth.userId,
+        },
+        include: {
+          sandboxes: {
+            where: {
+              status: 'ACTIVE',
+            },
+            orderBy: {
+              createdAt: 'desc',
+            },
+            take: 1,
+          },
+        },
+      });
+
+      if (!project) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Project not found or access denied',
+        });
+      }
+
+      const sandbox = project.sandboxes[0];
+
+      // No active sandbox
+      if (!sandbox) {
+        return {
+          hasActiveSandbox: false,
+          isExpired: true,
+          status: 'STOPPED' as const,
+          sandboxId: null,
+        };
+      }
+
+      // Check if sandbox is expired
+      const isExpired = sandbox.expiresAt
+        ? sandbox.expiresAt < new Date()
+        : false;
+
+      // If expired, mark as STOPPED
+      if (isExpired) {
+        await ctx.db.sandbox.update({
+          where: { id: sandbox.id },
+          data: { status: 'STOPPED' },
+        });
+
+        return {
+          hasActiveSandbox: false,
+          isExpired: true,
+          status: 'STOPPED' as const,
+          sandboxId: sandbox.id,
+        };
+      }
+
+      return {
+        hasActiveSandbox: true,
+        isExpired: false,
+        status: sandbox.status,
+        sandboxId: sandbox.id,
+        expiresAt: sandbox.expiresAt,
+      };
+    }),
+
+  /**
+   * Regenerate preview from database files
+   * Creates new sandbox, syncs files from DB, and starts preview
+   */
+  regeneratePreview: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string().min(1, 'Project ID is required'),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const startTime = Date.now();
+      console.log(
+        `[Sandbox Router] 🔄 Regenerating preview for project: ${input.projectId}`
+      );
+
+      try {
+        // Verify project ownership and get files
+        const project = await ctx.db.project.findUnique({
+          where: {
+            id: input.projectId,
+            clerkUserId: ctx.auth.userId,
+          },
+          include: {
+            files: true,
+          },
+        });
+
+        if (!project) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Project not found or access denied',
+          });
+        }
+
+        // Check if project has files
+        if (project.files.length === 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'No files found for this project. Please generate code first.',
+          });
+        }
+
+        console.log(
+          `[Sandbox Router] Found ${project.files.length} files to sync`
+        );
+
+        // Create or get sandbox
+        const sandboxResult = await sandboxManager.getOrCreateSandbox(
+          ctx.db,
+          input.projectId,
+          ctx.auth.userId,
+          E2B_CONFIG.maxTimeoutMs
+        );
+
+        if (!sandboxResult.success || !sandboxResult.data) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: sandboxResult.error ?? 'Failed to create sandbox',
+          });
+        }
+
+        const { instance: sandbox, id: sandboxId } = sandboxResult.data;
+
+        console.log(`[Sandbox Router] Sandbox ready: ${sandboxId}`);
+
+        // Sync all files from database to sandbox
+        console.log(`[Sandbox Router] 📂 Syncing files to sandbox...`);
+
+        const fileSyncResult = await FileSync.syncAllFiles(
+          sandbox,
+          sandboxId,
+          input.projectId,
+          ctx.db
+        );
+
+        if (!fileSyncResult.success) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: fileSyncResult.error ?? 'Failed to sync files to sandbox',
+          });
+        }
+
+        console.log(
+          `[Sandbox Router] ✅ Synced ${fileSyncResult.data?.syncedFiles ?? 0} files`
+        );
+
+        // Start preview server (this includes npm install if needed)
+        console.log(`[Sandbox Router] 🚀 Starting preview server...`);
+
+        const previewResult = await startPreviewServer(
+          sandbox,
+          input.projectId,
+          project.files,
+          project.framework
+        );
+
+        if (!previewResult.success || !previewResult.data) {
+          // Check if error is timeout-related
+          const errorMsg =
+            previewResult.error ?? 'Failed to start preview server';
+
+          if (
+            errorMsg.includes('timeout') ||
+            errorMsg.includes('deadline_exceeded')
+          ) {
+            throw new TRPCError({
+              code: 'TIMEOUT',
+              message:
+                'Preview generation timed out while installing dependencies. This usually happens with large projects. Please try again or contact support if the issue persists.',
+            });
+          }
+
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: errorMsg,
+          });
+        }
+
+        const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.log(
+          `[Sandbox Router] ✅ Preview ready in ${duration}s: ${previewResult.data.url}`
+        );
+
+        return {
+          url: previewResult.data.url,
+          sandboxId,
+          filesSynced: fileSyncResult.data?.syncedFiles ?? 0,
+        };
+      } catch (error) {
+        const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.error(
+          `[Sandbox Router] ❌ Preview regeneration failed after ${duration}s:`,
+          error
+        );
+
+        // Re-throw TRPCErrors as-is
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
+        // Handle timeout errors specifically
+        if (error instanceof Error) {
+          const errorMsg = error.message;
+
+          if (
+            errorMsg.includes('timeout') ||
+            errorMsg.includes('deadline_exceeded')
+          ) {
+            throw new TRPCError({
+              code: 'TIMEOUT',
+              message:
+                'Operation timed out. The preview server took too long to start (likely due to npm install). Please try again.',
+            });
+          }
+        }
+
+        // Generic error
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Unknown error occurred during preview regeneration',
+        });
+      }
+    }),
+
+  /**
    * Get preview server logs
    */
   getPreviewLogs: protectedProcedure

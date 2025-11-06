@@ -506,6 +506,135 @@ class SandboxManager {
   }
 
   /**
+   * Read all project files from sandbox
+   * Used to sync files from E2B sandbox to database
+   * @param instance - E2B sandbox instance to read files from
+   */
+  async readAllFiles(
+    instance: E2BSandbox
+  ): Promise<
+    ServiceResult<Array<{ path: string; content: string; language: string }>>
+  > {
+    try {
+      if (!instance) {
+        return {
+          success: false,
+          data: null,
+          error: 'Sandbox instance is required',
+        };
+      }
+
+      // List all files recursively in /project
+      // Exclude build artifacts: node_modules, .git, dist, build, .next, .cache
+      const findCmd = `find /project -type f ! -path "*/node_modules/*" ! -path "*/.git/*" ! -path "*/dist/*" ! -path "*/build/*" ! -path "*/.next/*" ! -path "*/.cache/*" ! -name "package-lock.json" ! -name "*.log" 2>/dev/null || true`;
+
+      const listResult = await instance.commands.run(findCmd);
+      const filePaths = listResult.stdout
+        .split('\n')
+        .filter((path) => path.trim().length > 0)
+        .filter((path) => !path.includes('node_modules'));
+
+      if (filePaths.length === 0) {
+        console.log('[Sandbox Manager] No files found in sandbox');
+        return {
+          success: true,
+          data: [],
+          error: null,
+        };
+      }
+
+      console.log(
+        `[Sandbox Manager] Found ${filePaths.length} files in sandbox`
+      );
+
+      // Read each file
+      const files: Array<{ path: string; content: string; language: string }> =
+        [];
+
+      for (const fullPath of filePaths) {
+        try {
+          // Read file content
+          const readResult = await instance.commands.run(`cat "${fullPath}"`);
+
+          // Extract relative path from /project
+          const relativePath = fullPath.replace('/project/', '');
+
+          // Detect language from file extension
+          const language = this.detectLanguage(relativePath);
+
+          files.push({
+            path: relativePath,
+            content: readResult.stdout,
+            language,
+          });
+        } catch (error) {
+          console.warn(
+            `[Sandbox Manager] Failed to read file ${fullPath}:`,
+            error
+          );
+          // Continue with other files
+        }
+      }
+
+      console.log(
+        `[Sandbox Manager] Successfully read ${files.length} files from sandbox`
+      );
+
+      return {
+        success: true,
+        data: files,
+        error: null,
+      };
+    } catch (error) {
+      console.error(
+        '[Sandbox Manager] Failed to read files from sandbox:',
+        error
+      );
+      return {
+        success: false,
+        data: null,
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Failed to read files from sandbox',
+      };
+    }
+  }
+
+  /**
+   * Detect programming language from file extension
+   * Returns standard language names compatible with database and UI
+   */
+  private detectLanguage(filePath: string): string {
+    const ext = filePath.split('.').pop()?.toLowerCase();
+    const languageMap: Record<string, string> = {
+      ts: 'typescript',
+      tsx: 'typescript',
+      js: 'javascript',
+      jsx: 'javascript',
+      html: 'html',
+      css: 'css',
+      json: 'json',
+      md: 'markdown',
+      markdown: 'markdown',
+      // Additional languages
+      py: 'python',
+      go: 'go',
+      rs: 'rust',
+      java: 'java',
+      cpp: 'cpp',
+      c: 'c',
+      sh: 'bash',
+      yaml: 'yaml',
+      yml: 'yaml',
+      toml: 'toml',
+      svg: 'svg',
+      txt: 'plaintext',
+    };
+    return languageMap[ext ?? ''] ?? 'plaintext';
+  }
+
+  /**
    * Get cached E2B instance (for internal use)
    */
   getCachedInstance(sandboxId: string): E2BSandbox | undefined {

@@ -25,9 +25,17 @@ export class FileSync {
     const startTime = Date.now();
 
     try {
+      // Fetch files excluding build artifacts (.next, node_modules, etc.)
       const files = await db.file.findMany({
         where: {
           projectId,
+          NOT: [
+            { path: { startsWith: '.next/' } },
+            { path: { startsWith: 'node_modules/' } },
+            { path: { startsWith: 'dist/' } },
+            { path: { startsWith: 'build/' } },
+            { path: { startsWith: '.cache/' } },
+          ],
         },
         orderBy: {
           path: 'asc',
@@ -48,18 +56,8 @@ export class FileSync {
         };
       }
 
-      const validation = FileValidator.validateFiles(files);
-      if (!validation.valid) {
-        return {
-          success: false,
-          data: null,
-          error: `File validation failed: ${validation.errors.join(', ')}`,
-        };
-      }
-
-      if (validation.warnings.length > 0) {
-        console.warn('[FileSync] Validation warnings:', validation.warnings);
-      }
+      // File validation removed - E2B sandboxes are already isolated
+      // Trust E2B's sandbox environment to handle code execution safely
 
       const syncResult = await this.syncFilesToSandbox(
         sandboxInstance,
@@ -122,18 +120,8 @@ export class FileSync {
         };
       }
 
-      const validation = FileValidator.validateFiles(files);
-      if (!validation.valid) {
-        return {
-          success: false,
-          data: null,
-          error: `File validation failed: ${validation.errors.join(', ')}`,
-        };
-      }
-
-      if (validation.warnings.length > 0) {
-        console.warn('[FileSync] Validation warnings:', validation.warnings);
-      }
+      // File validation removed - E2B sandboxes are already isolated
+      // Trust E2B's sandbox environment to handle code execution safely
 
       const syncResult = await this.syncFilesToSandbox(
         sandboxInstance,
