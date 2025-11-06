@@ -472,10 +472,21 @@ export const aiRouter = createTRPCRouter({
             let sessionId: string | undefined;
             let sandboxId: string | undefined;
             let sandboxInstance: Sandbox | undefined;
+            let project: Awaited<ReturnType<typeof ctx.db.project.findFirst>> =
+              null;
+
+            // Track completion data for database persistence
+            let completionResult: {
+              content: string;
+              sessionId: string;
+              tokensUsed: number;
+              totalCost: number;
+              duration: number;
+            } | null = null;
 
             // Gather project context if project ID provided
             if (input.projectId) {
-              const project = await ctx.db.project.findFirst({
+              project = await ctx.db.project.findFirst({
                 where: {
                   id: input.projectId,
                   clerkUserId: ctx.auth.userId,
@@ -614,9 +625,98 @@ export const aiRouter = createTRPCRouter({
               sandboxId
             );
 
-            // Yield all events from the stream
+            // Yield all events from the stream and capture completion data
             for await (const event of streamIterator) {
               emit.next(event);
+
+              // Capture completion data for database persistence
+              if (event.type === 'complete' && event.result) {
+                completionResult = event.result;
+              }
+            }
+
+            // CRITICAL: Persist to database after stream completes
+            if (completionResult && input.projectId && project) {
+              console.log('[AI Stream] Persisting generation to database...');
+
+              try {
+                // Save AI generation record
+                await ctx.db.aIGeneration.create({
+                  data: {
+                    prompt: input.prompt,
+                    response: completionResult.content ?? '',
+                    tokens: completionResult.tokensUsed,
+                    duration: completionResult.duration,
+                    clerkUserId: ctx.auth.userId,
+                    projectId: input.projectId,
+                    sessionId: completionResult.sessionId ?? null,
+                    totalCost: completionResult.totalCost ?? null,
+                  },
+                });
+
+                console.log('[AI Stream] ✅ AI generation saved to database');
+
+                // Save files to database if using sandbox
+                if (sandboxId && sandboxInstance) {
+                  console.log(
+                    '[AI Stream] Reading files from sandbox to save to database...'
+                  );
+
+                  const sandboxFilesResult =
+                    await sandboxManager.readAllFiles(sandboxInstance);
+
+                  if (
+                    sandboxFilesResult.success &&
+                    sandboxFilesResult.data &&
+                    sandboxFilesResult.data.length > 0
+                  ) {
+                    console.log(
+                      `[AI Stream] Saving ${sandboxFilesResult.data.length} files to database...`
+                    );
+
+                    await Promise.all(
+                      sandboxFilesResult.data.map((file) =>
+                        ctx.db.file.upsert({
+                          where: {
+                            projectId_path: {
+                              projectId: input.projectId!,
+                              path: file.path,
+                            },
+                          },
+                          create: {
+                            path: file.path,
+                            content: file.content,
+                            language: file.language,
+                            projectId: input.projectId!,
+                          },
+                          update: {
+                            content: file.content,
+                            language: file.language,
+                            updatedAt: new Date(),
+                          },
+                        })
+                      )
+                    );
+
+                    console.log(
+                      `[AI Stream] ✅ Successfully saved ${sandboxFilesResult.data.length} files to database`
+                    );
+                  } else {
+                    console.warn(
+                      '[AI Stream] ⚠️ No files found in sandbox to save'
+                    );
+                  }
+                }
+
+                // Increment rate limit counter
+                await rateLimiter.incrementCount(ctx.auth.userId);
+              } catch (dbError) {
+                console.error(
+                  '[AI Stream] ❌ Failed to persist to database:',
+                  dbError
+                );
+                // Don't throw - stream already completed successfully
+              }
             }
 
             // Mark as complete

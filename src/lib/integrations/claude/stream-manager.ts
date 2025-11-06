@@ -160,7 +160,7 @@ export async function* processSDKStream(
 
       // Handle result messages
       if (message.type === 'result' && 'subtype' in message) {
-        const resultMsg = message as {
+        const resultMsg = message as unknown as {
           subtype: string;
           result?: string;
           session_id?: string;

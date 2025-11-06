@@ -100,6 +100,8 @@ function EditorContent() {
     const result = streamState.result; // Store in const for type safety
 
     const handleCompletion = async () => {
+      console.log('[Editor] Stream completed, processing results...');
+
       // Add AI message to chat
       const aiMessage: Message = {
         role: 'assistant',
@@ -111,6 +113,10 @@ function EditorContent() {
       // Refetch project files and start preview
       if (projectId && result.sandboxId) {
         try {
+          // IMPORTANT: Invalidate project to get updated files
+          // This is safe now because the project loading effect won't reload messages
+          // when messages.length > 0
+          console.log('[Editor] Invalidating project data to refresh files...');
           await utils.project.getById.invalidate({ id: projectId });
 
           setIsGeneratingPreview(true);
@@ -120,8 +126,9 @@ function EditorContent() {
           });
           setPreviewUrl(previewResult.url);
           setPreviewError(null);
+          console.log('[Editor] ✅ Preview started successfully');
         } catch (error) {
-          console.error('Failed to start preview server', error);
+          console.error('[Editor] ❌ Failed to start preview server', error);
           setPreviewError(
             error instanceof Error
               ? error.message
@@ -173,7 +180,7 @@ function EditorContent() {
     }
   }, [project]);
 
-  // Load conversation history and preview URL when project loads
+  // Load conversation history and preview URL when project loads (INITIAL LOAD ONLY)
   useEffect(() => {
     if (!projectId) return;
 
@@ -183,11 +190,22 @@ function EditorContent() {
     // If project doesn't exist, don't proceed
     if (!project) return;
 
+    // CRITICAL FIX: Don't reload messages if already loaded or if streaming is active
+    // This prevents the race condition where project invalidation overwrites messages
+    if (messages.length > 0 || isStreaming) {
+      console.log(
+        '[Editor] Skipping message reload - messages already loaded or streaming active'
+      );
+      return;
+    }
+
     // Reset regeneration flag when projectId changes (new project loaded)
     hasAttemptedRegeneration.current = false;
 
     const loadProjectState = async () => {
       try {
+        console.log('[Editor] Loading initial project state...');
+
         // Fetch conversation history using utils
         const history = await utils.ai.getHistory.fetch({
           projectId,
@@ -202,7 +220,17 @@ function EditorContent() {
             { role: 'assistant' as const, content: gen.response ?? '' },
           ]);
 
-        setMessages(conversationMessages);
+        // Only set messages if we still don't have any (avoid race conditions)
+        if (messages.length === 0 && !isStreaming) {
+          setMessages(conversationMessages);
+          console.log(
+            `[Editor] ✅ Loaded ${conversationMessages.length} messages from history`
+          );
+        } else {
+          console.log(
+            '[Editor] Skipping message set - messages already present or streaming started'
+          );
+        }
 
         // Check if project has an active sandbox and if it's expired
         const sandboxStatus = await utils.sandbox.getProjectStatus.fetch({
@@ -250,9 +278,10 @@ function EditorContent() {
     };
 
     void loadProjectState();
-    // Removed regeneratePreviewMutation from dependencies to prevent infinite loop
+    // IMPORTANT: Removed 'project' from deps to prevent cascading reloads
+    // Only run when projectId changes or loading state changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, utils, project, isLoadingProject]);
+  }, [projectId, isLoadingProject]);
 
   const handleSend = async () => {
     if (!input.trim() || !projectId) return;
