@@ -1,5 +1,6 @@
 import { User, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 type ChatMessageProps = {
   role: 'user' | 'assistant';
@@ -71,9 +72,16 @@ const ChatMessage = ({ role, content, thinking, files }: ChatMessageProps) => {
         )}
 
         {/* Message Content */}
-        <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
-          {content}
-        </div>
+        {isUser ? (
+          <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
+            {content}
+          </div>
+        ) : (
+          <MarkdownRenderer
+            content={content}
+            className="text-sm leading-relaxed text-foreground/90"
+          />
+        )}
       </div>
     </div>
   );

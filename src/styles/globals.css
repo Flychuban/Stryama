@@ -178,3 +178,121 @@ button {
   background-size: 200% auto;
   animation: gradient-shift 15s ease infinite;
 }
+
+/* Syntax Highlighting - GitHub Dark Theme with Purple Accents */
+.hljs {
+  display: block;
+  overflow-x: auto;
+  color: #e6edf3;
+}
+
+/* Comments */
+.hljs-comment,
+.hljs-quote {
+  color: #8b949e;
+  font-style: italic;
+}
+
+/* Keywords */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-subst {
+  color: #ff7b72;
+}
+
+/* Functions */
+.hljs-function,
+.hljs-title {
+  color: #d2a8ff;
+}
+
+/* Strings */
+.hljs-string,
+.hljs-attr,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+  color: #a5d6ff;
+}
+
+/* Numbers */
+.hljs-number,
+.hljs-literal {
+  color: #79c0ff;
+}
+
+/* Built-ins */
+.hljs-built_in,
+.hljs-builtin-name {
+  color: #ffa657;
+}
+
+/* Variables and attributes */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-attribute {
+  color: #79c0ff;
+}
+
+/* Types */
+.hljs-type,
+.hljs-class .hljs-title {
+  color: #d2a8ff;
+}
+
+/* Tags (HTML/JSX) */
+.hljs-tag,
+.hljs-name {
+  color: #7ee787;
+}
+
+/* Tag attributes */
+.hljs-tag .hljs-attr {
+  color: #79c0ff;
+}
+
+/* Operators */
+.hljs-operator,
+.hljs-selector-id,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: #ff7b72;
+}
+
+/* Meta and preprocessor */
+.hljs-meta,
+.hljs-meta-keyword {
+  color: #8b949e;
+}
+
+/* Deletion */
+.hljs-deletion {
+  color: #ff7b72;
+}
+
+/* Emphasis */
+.hljs-emphasis {
+  font-style: italic;
+}
+
+/* Strong */
+.hljs-strong {
+  font-weight: 700;
+}
+
+/* Links */
+.hljs-link {
+  text-decoration: underline;
+  color: #a5d6ff;
+}
+
+/* RegExp */
+.hljs-regexp {
+  color: #7ee787;
+}
+
+/* Sections */
+.hljs-section {
+  color: #d2a8ff;
+  font-weight: 600;
+}
