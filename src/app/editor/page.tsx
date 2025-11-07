@@ -55,6 +55,7 @@ const checkPreviewHealth = async (url: string): Promise<boolean> => {
 function EditorContent() {
   const searchParams = useSearchParams();
   const projectId = searchParams?.get('id') ?? null;
+  const autoStart = searchParams?.get('autoStart') === 'true';
 
   // Fetch project data if ID is provided
   const {
@@ -78,6 +79,9 @@ function EditorContent() {
 
   // Track if we've already attempted auto-regeneration to prevent infinite loops
   const hasAttemptedRegeneration = useRef(false);
+
+  // Track if we've already triggered auto-start to prevent duplicate execution
+  const hasTriggeredAutoStart = useRef(false);
 
   // Track which sessions we've already handled to prevent duplicate processing
   const handledCompletionsRef = useRef(new Set<string>());
@@ -118,8 +122,6 @@ function EditorContent() {
     const result = streamState.result; // Store in const for type safety
 
     const handleCompletion = async () => {
-      console.log('[Editor] Stream completed, processing results...');
-
       // Add AI message to chat
       const aiMessage: Message = {
         role: 'assistant',
@@ -134,7 +136,6 @@ function EditorContent() {
           // IMPORTANT: Refetch project to get updated files and trigger re-render
           // This is safe now because the project loading effect won't reload messages
           // when messages.length > 0
-          console.log('[Editor] Refetching project data to refresh files...');
           await refetchProject();
 
           setIsGeneratingPreview(true);
@@ -144,9 +145,8 @@ function EditorContent() {
           });
           setPreviewUrl(previewResult.url);
           setPreviewError(null);
-          console.log('[Editor] ✅ Preview started successfully');
         } catch (error) {
-          console.error('[Editor] ❌ Failed to start preview server', error);
+          console.error('[Editor] Failed to start preview server', error);
           setPreviewError(
             error instanceof Error
               ? error.message
@@ -211,9 +211,6 @@ function EditorContent() {
     // CRITICAL FIX: Don't reload messages if already loaded or if streaming is active
     // This prevents the race condition where project invalidation overwrites messages
     if (messages.length > 0 || isStreaming) {
-      console.log(
-        '[Editor] Skipping message reload - messages already loaded or streaming active'
-      );
       return;
     }
 
@@ -222,8 +219,6 @@ function EditorContent() {
 
     const loadProjectState = async () => {
       try {
-        console.log('[Editor] Loading initial project state...');
-
         // Fetch conversation history using utils
         const history = await utils.ai.getHistory.fetch({
           projectId,
@@ -241,13 +236,6 @@ function EditorContent() {
         // Only set messages if we still don't have any (avoid race conditions)
         if (messages.length === 0 && !isStreaming) {
           setMessages(conversationMessages);
-          console.log(
-            `[Editor] ✅ Loaded ${conversationMessages.length} messages from history`
-          );
-        } else {
-          console.log(
-            '[Editor] Skipping message set - messages already present or streaming started'
-          );
         }
 
         // Check if project has an active sandbox and if it's expired
@@ -261,9 +249,6 @@ function EditorContent() {
         if (sandboxStatus.isExpired || !sandboxStatus.hasActiveSandbox) {
           // No active sandbox or expired - need to regenerate
           shouldRegenerate = true;
-          console.log(
-            '[Editor] Sandbox expired or inactive, regeneration needed'
-          );
         } else {
           // Sandbox is active, check if preview URL is healthy
           const previewData = await utils.sandbox.getPreviewUrl.fetch({
@@ -275,16 +260,10 @@ function EditorContent() {
 
             if (isHealthy) {
               // Preview server is running, use the cached URL
-              console.log(
-                '[Editor] Preview server is healthy, using cached URL'
-              );
               setPreviewUrl(previewData.url);
               shouldRegenerate = false;
             } else {
               // Preview server is dead, need to regenerate
-              console.log(
-                '[Editor] Preview server not responding, regeneration needed'
-              );
               shouldRegenerate = true;
             }
           } else {
@@ -296,15 +275,10 @@ function EditorContent() {
         // Perform regeneration if needed
         if (shouldRegenerate) {
           // Only regenerate if project has files AND we haven't attempted yet
-          if (
-            project.files &&
-            project.files.length > 0 &&
-            !hasAttemptedRegeneration.current
-          ) {
+          if (project.files?.length && !hasAttemptedRegeneration.current) {
             setIsRegeneratingPreview(true);
 
             try {
-              console.log('[Editor] Starting preview regeneration...');
               const regenerateResult =
                 await regeneratePreviewMutation.mutateAsync({
                   projectId,
@@ -315,9 +289,8 @@ function EditorContent() {
 
               // Only set flag on successful regeneration
               hasAttemptedRegeneration.current = true;
-              console.log('[Editor] ✅ Preview regenerated successfully');
             } catch (error) {
-              console.error('[Editor] ❌ Failed to regenerate preview:', error);
+              console.error('[Editor] Failed to regenerate preview:', error);
               handlePreviewError(error, 'Failed to regenerate preview');
               // Flag NOT set - allows user to retry manually or on refresh
             } finally {
@@ -325,8 +298,30 @@ function EditorContent() {
             }
           }
         }
+
+        // Auto-start AI generation if coming from landing page
+        if (autoStart && !hasTriggeredAutoStart.current) {
+          const initialPrompt = sessionStorage.getItem('initialPrompt');
+
+          if (initialPrompt?.trim()) {
+            hasTriggeredAutoStart.current = true;
+
+            // Add user message to chat
+            const userMessage: Message = {
+              role: 'user',
+              content: initialPrompt,
+            };
+            setMessages((prev) => [...prev, userMessage]);
+
+            // Clear the stored prompt
+            sessionStorage.removeItem('initialPrompt');
+
+            // Start AI generation
+            startStreaming(initialPrompt);
+          }
+        }
       } catch (error) {
-        console.error('[Editor] ❌ Failed to load project state:', error);
+        console.error('[Editor] Failed to load project state:', error);
       }
     };
 

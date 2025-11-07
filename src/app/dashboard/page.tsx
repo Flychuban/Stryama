@@ -1,7 +1,7 @@
 'use client';
 
 // 1. External libraries
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -9,6 +9,7 @@ import { type Framework } from '@prisma/client';
 
 // 2. Internal utilities
 import { api } from '@/trpc/react';
+import { usePromptHandoff } from '@/hooks/usePromptHandoff';
 
 // 4. UI components
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,16 @@ import { CreateProjectDialog } from '@/components/dashboard/CreateProjectDialog'
 export default function DashboardPage() {
   const router = useRouter();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isAutoCreating, setIsAutoCreating] = useState(false);
+  const [pendingPromptData, setPendingPromptData] = useState<{
+    prompt: string;
+    framework: Framework;
+  } | null>(null);
+
+  // Prevent duplicate execution in React 18 Strict Mode
+  const hasInitiatedCreation = useRef(false);
+
+  const { retrievePrompt, clearPrompt } = usePromptHandoff();
 
   // Fetch projects from backend
   const { data: projects, isLoading } = api.project.getAll.useQuery();
@@ -34,10 +45,27 @@ export default function DashboardPage() {
       toast.success('Project created successfully!');
       void utils.project.getAll.invalidate();
       setIsDialogOpen(false);
-      router.push(`/editor?id=${newProject.id}`);
+
+      // Check if this was an auto-creation from landing page
+      if (isAutoCreating && pendingPromptData) {
+        // Store the prompt for auto-start in editor
+        sessionStorage.setItem('initialPrompt', pendingPromptData.prompt);
+
+        // Clear the pending prompt from storage
+        clearPrompt();
+
+        // Redirect to editor with auto-start
+        router.push(`/editor?id=${newProject.id}&autoStart=true`);
+      } else {
+        router.push(`/editor?id=${newProject.id}`);
+      }
     },
     onError: (error) => {
       toast.error('Failed to create project: ' + error.message);
+      setIsAutoCreating(false);
+      setPendingPromptData(null);
+      // Reset the flag so user can retry
+      hasInitiatedCreation.current = false;
     },
   });
 
@@ -92,6 +120,43 @@ export default function DashboardPage() {
     deleteProject.mutate({ id });
   };
 
+  // Generate a concise project name from prompt (max 50 chars)
+  const generateProjectName = (promptText: string): string => {
+    const words = promptText.trim().split(/\s+/).slice(0, 5);
+    let name = words.join(' ');
+    if (name.length > 50) {
+      name = name.substring(0, 47) + '...';
+    }
+    return name || 'New Project';
+  };
+
+  // Check for pending prompt from landing page on mount
+  useEffect(() => {
+    // Prevent duplicate execution in React 18 Strict Mode
+    if (hasInitiatedCreation.current) {
+      return;
+    }
+
+    const storedData = retrievePrompt();
+
+    if (storedData) {
+      // Mark as initiated to prevent duplicate execution
+      hasInitiatedCreation.current = true;
+
+      setIsAutoCreating(true);
+      setPendingPromptData(storedData);
+      toast.info('Setting up your workspace...');
+
+      // Create project with stored prompt
+      createProject.mutate({
+        name: generateProjectName(storedData.prompt),
+        description: storedData.prompt,
+        framework: storedData.framework,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
+
   // Transform projects to match the expected format
   const transformedProjects =
     projects?.map((project) => ({
@@ -101,6 +166,28 @@ export default function DashboardPage() {
       lastModified: project.updatedAt,
       thumbnailUrl: undefined,
     })) ?? [];
+
+  // Show loading overlay during auto-creation
+  if (isAutoCreating) {
+    return (
+      <div className="min-h-screen bg-background">
+        <AppHeader />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            <div className="text-center">
+              <h2 className="text-2xl font-semibold">
+                Creating your project...
+              </h2>
+              <p className="mt-2 text-muted-foreground">
+                Setting up your workspace and getting ready to build
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
