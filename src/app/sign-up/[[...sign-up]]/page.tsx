@@ -14,6 +14,7 @@ export default function SignUpPage() {
       </div>
 
       <SignUp
+        forceRedirectUrl="/dashboard"
         appearance={{
           elements: {
             formButtonPrimary:

@@ -1,15 +1,26 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@clerk/nextjs';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ArrowUp, Zap, Code2, Palette, Database, Cloud } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Logo } from '@/components/shared/Logo';
+import { api } from '@/trpc/react';
+import { usePromptHandoff } from '@/hooks/usePromptHandoff';
+import { Framework } from '@prisma/client';
+import { useToast } from '@/hooks/use-toast';
 
 type SuggestionPill = {
   icon: React.ReactNode;
   text: string;
+};
+
+type FrameworkOption = {
+  value: Framework;
+  label: string;
 };
 
 const suggestions: SuggestionPill[] = [
@@ -19,26 +30,77 @@ const suggestions: SuggestionPill[] = [
   { icon: <Code2 className="h-3.5 w-3.5" />, text: 'Dashboard' },
 ];
 
+const frameworkOptions: FrameworkOption[] = [
+  { value: Framework.REACT, label: 'React' },
+  { value: Framework.NEXTJS, label: 'Next.js' },
+  { value: Framework.VUE, label: 'Vue' },
+  { value: Framework.VANILLA, label: 'Vanilla JS' },
+];
+
 export function Hero() {
-  const [demoPrompt, setDemoPrompt] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [prompt, setPrompt] = useState('');
+  const [selectedFramework, setSelectedFramework] = useState<Framework>(
+    Framework.REACT
+  );
+  const [isCreating, setIsCreating] = useState(false);
 
-  const handleDemo = (): void => {
-    if (!demoPrompt.trim()) return;
+  const router = useRouter();
+  const { isSignedIn } = useAuth();
+  const { toast } = useToast();
+  const { storePrompt } = usePromptHandoff();
 
-    setIsGenerating(true);
-    setTimeout(() => {
-      setIsGenerating(false);
-    }, 2000);
+  const createProjectMutation = api.project.create.useMutation({
+    onSuccess: (newProject) => {
+      // Store the prompt for auto-start in editor
+      sessionStorage.setItem('initialPrompt', prompt);
+      router.push(`/editor?id=${newProject.id}&autoStart=true`);
+    },
+    onError: (error) => {
+      setIsCreating(false);
+      toast({
+        title: 'Failed to create project',
+        description: error.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const handleSubmit = (): void => {
+    if (!prompt.trim()) return;
+
+    setIsCreating(true);
+
+    if (isSignedIn) {
+      // User is authenticated - create project immediately
+      createProjectMutation.mutate({
+        name: generateProjectName(prompt),
+        description: prompt,
+        framework: selectedFramework,
+      });
+    } else {
+      // User is not authenticated - store prompt and redirect to sign-up
+      storePrompt(prompt, selectedFramework);
+      router.push('/sign-up');
+    }
   };
 
   const handleSuggestionClick = (text: string): void => {
-    setDemoPrompt(
+    setPrompt(
       `Create a modern ${text.toLowerCase()} with beautiful design and animations`
     );
   };
 
   const placeholderText = 'Describe your app idea here...';
+
+  // Generate a concise project name from prompt (max 50 chars)
+  const generateProjectName = (promptText: string): string => {
+    const words = promptText.trim().split(/\s+/).slice(0, 5);
+    let name = words.join(' ');
+    if (name.length > 50) {
+      name = name.substring(0, 47) + '...';
+    }
+    return name || 'New Project';
+  };
 
   return (
     <section className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-32">
@@ -93,28 +155,53 @@ export function Hero() {
               <div className="relative rounded-3xl border border-border/50 bg-card/80 p-2 shadow-2xl backdrop-blur-xl">
                 <div className="flex items-end gap-2">
                   <Textarea
-                    value={demoPrompt}
-                    onChange={(e) => setDemoPrompt(e.target.value)}
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
                     placeholder={placeholderText}
                     className="min-h-[100px] resize-none border-0 bg-transparent text-base placeholder:text-muted-foreground/60 focus-visible:ring-0 focus-visible:ring-offset-0"
-                    disabled={isGenerating}
+                    disabled={isCreating}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
-                        handleDemo();
+                        handleSubmit();
                       }
                     }}
                   />
                   <Button
-                    onClick={handleDemo}
-                    disabled={isGenerating || !demoPrompt.trim()}
+                    onClick={handleSubmit}
+                    disabled={isCreating || !prompt.trim()}
                     size="icon"
                     className="mb-2 h-12 w-12 flex-shrink-0 rounded-full shadow-lg transition-all hover:scale-105 hover:shadow-xl"
                   >
-                    <ArrowUp className="h-5 w-5" />
+                    {isCreating ? (
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-background border-t-transparent" />
+                    ) : (
+                      <ArrowUp className="h-5 w-5" />
+                    )}
                   </Button>
                 </div>
               </div>
+            </div>
+
+            {/* Framework selector */}
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <span className="text-sm text-muted-foreground">Framework:</span>
+              {frameworkOptions.map((framework) => (
+                <Button
+                  key={framework.value}
+                  variant={
+                    selectedFramework === framework.value
+                      ? 'default'
+                      : 'outline'
+                  }
+                  size="sm"
+                  className="rounded-full transition-all"
+                  onClick={() => setSelectedFramework(framework.value)}
+                  disabled={isCreating}
+                >
+                  {framework.label}
+                </Button>
+              ))}
             </div>
 
             {/* Suggestion pills */}
@@ -129,6 +216,7 @@ export function Hero() {
                   size="sm"
                   className="rounded-full transition-all hover:border-primary/50 hover:bg-primary/5"
                   onClick={() => handleSuggestionClick(suggestion.text)}
+                  disabled={isCreating}
                 >
                   {suggestion.icon}
                   <span className="ml-1.5">{suggestion.text}</span>
@@ -138,7 +226,9 @@ export function Hero() {
 
             <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
               <Logo size={16} showText={false} />
-              No sign up required to try
+              {isSignedIn
+                ? 'Start creating instantly'
+                : 'Sign up to save your project'}
             </div>
           </div>
         </div>
