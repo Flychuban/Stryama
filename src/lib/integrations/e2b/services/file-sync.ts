@@ -234,18 +234,82 @@ export class FileSync {
   ): Promise<Omit<SyncResult, 'duration' | 'timestamp'>> {
     const failedFiles: FailedFile[] = [];
     const syncedPaths: string[] = [];
+    const workDir = '/project';
+
+    // CRITICAL: Filter out infrastructure files - they should be generated fresh by setupInfrastructure()
+    // This ensures we always use the latest package.json with current dependencies (e.g., patch-package)
+    const infrastructureFiles = [
+      'package.json',
+      'vite.config.ts',
+      'tsconfig.json',
+      'next.config.js',
+    ];
+    const filesToSync = files.filter(
+      (file) => !infrastructureFiles.includes(file.path)
+    );
 
     try {
-      const writeEntries = this.buildWriteEntries(files);
+      // Log files being synced for debugging
+      console.log(
+        `[FileSync] Files to sync (${filesToSync.length}/${files.length}): ${filesToSync.map((f) => f.path).join(', ')}`
+      );
+
+      if (files.length !== filesToSync.length) {
+        const skippedFiles = files
+          .filter((f) => infrastructureFiles.includes(f.path))
+          .map((f) => f.path);
+        console.log(
+          `[FileSync] Skipping ${skippedFiles.length} infrastructure file(s) - will be generated fresh: ${skippedFiles.join(', ')}`
+        );
+      }
+
+      if (filesToSync.length === 0) {
+        console.log(
+          '[FileSync] No application files to sync (only infrastructure files)'
+        );
+        return {
+          totalFiles: files.length,
+          syncedFiles: 0,
+          failedFiles: [],
+        };
+      }
+
+      // CRITICAL: Ensure /project directory exists in fresh E2B sandboxes
+      await sandboxInstance.commands.run(`mkdir -p ${workDir}`);
+
+      // CRITICAL: Create all necessary subdirectories before batch write
+      // E2B's batch write doesn't auto-create parent directories
+      const directories = new Set<string>();
+      filesToSync.forEach((file) => {
+        const sanitizedPath = FileValidator.sanitizePath(file.path);
+        const lastSlash = sanitizedPath.lastIndexOf('/');
+        if (lastSlash > 0) {
+          // Extract directory path (e.g., "src/components" from "src/components/App.tsx")
+          directories.add(sanitizedPath.substring(0, lastSlash));
+        }
+      });
+
+      if (directories.size > 0) {
+        const dirsArray = Array.from(directories);
+        console.log(
+          `[FileSync] Creating ${directories.size} subdirector${directories.size === 1 ? 'y' : 'ies'}: ${dirsArray.join(', ')}`
+        );
+        // Create all directories in one command for efficiency
+        await sandboxInstance.commands.run(
+          `mkdir -p ${dirsArray.map((d) => `${workDir}/${d}`).join(' ')}`
+        );
+      }
+
+      const writeEntries = this.buildWriteEntries(filesToSync, workDir);
 
       await withRetry(async () => {
         await sandboxInstance.files.write(writeEntries);
       }, 'Batch file upload');
 
-      syncedPaths.push(...files.map((f) => f.path));
+      syncedPaths.push(...filesToSync.map((f) => f.path));
 
       console.log(
-        `[FileSync] Successfully synced ${files.length} file(s) to sandbox`
+        `[FileSync] Successfully synced ${filesToSync.length} file(s) to sandbox`
       );
     } catch (error) {
       console.error(
@@ -254,12 +318,22 @@ export class FileSync {
       );
 
       // Fallback: Upload files individually to identify failures
-      for (const file of files) {
+      for (const file of filesToSync) {
         try {
           const sanitizedPath = FileValidator.sanitizePath(file.path);
+          const fullPath = `${workDir}/${sanitizedPath}`;
+
+          // Create parent directory if file is in a subdirectory
+          const lastSlash = sanitizedPath.lastIndexOf('/');
+          if (lastSlash > 0) {
+            const dirPath = sanitizedPath.substring(0, lastSlash);
+            await sandboxInstance.commands.run(
+              `mkdir -p "${workDir}/${dirPath}"`
+            );
+          }
 
           await withRetry(async () => {
-            await sandboxInstance.files.write(sanitizedPath, file.content);
+            await sandboxInstance.files.write(fullPath, file.content);
           }, `Upload file: ${file.path}`);
 
           syncedPaths.push(file.path);
@@ -295,9 +369,12 @@ export class FileSync {
     };
   }
 
-  private static buildWriteEntries(files: File[]): E2BWriteEntry[] {
+  private static buildWriteEntries(
+    files: File[],
+    workDir: string
+  ): E2BWriteEntry[] {
     return files.map((file) => ({
-      path: FileValidator.sanitizePath(file.path),
+      path: `${workDir}/${FileValidator.sanitizePath(file.path)}`,
       data: file.content,
     }));
   }

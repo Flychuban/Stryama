@@ -52,6 +52,7 @@ export function generatePackageJson(
           'eslint-plugin-react-hooks': '^5.0.0',
           'eslint-plugin-react-refresh': '^0.4.16',
           typescript: '^5.7.3',
+          'patch-package': '^8.0.0', // Required by rollup postinstall scripts
         },
       };
       break;
@@ -98,6 +99,7 @@ export function generatePackageJson(
           vite: '^6.0.5',
           typescript: '^5.7.3',
           'vue-tsc': '^2.2.0',
+          'patch-package': '^8.0.0', // Required by rollup postinstall scripts
         },
       };
       break;
@@ -114,6 +116,7 @@ export function generatePackageJson(
         devDependencies: {
           vite: '^6.0.5',
           typescript: '^5.7.3',
+          'patch-package': '^8.0.0', // Required by rollup postinstall scripts
         },
       };
       break;
@@ -130,6 +133,7 @@ export function generatePackageJson(
         },
         devDependencies: {
           vite: '^6.0.5',
+          'patch-package': '^8.0.0', // Required by rollup postinstall scripts
         },
       };
   }

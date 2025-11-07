@@ -203,6 +203,136 @@ class SandboxManager {
   }
 
   /**
+   * Recreate sandbox for a project
+   * Destroys any existing active sandbox and creates a fresh one
+   * Used for preview regeneration to ensure clean environment with npm available
+   */
+  async recreateSandbox(
+    db: PrismaClient,
+    projectId: string,
+    userId: string,
+    timeoutMs?: number
+  ): Promise<ServiceResult<SandboxInstance>> {
+    try {
+      console.log(
+        `[Sandbox Manager] 🔄 Recreating sandbox for project: ${projectId}`
+      );
+
+      // Find existing active sandbox
+      const existingSandbox = await db.sandbox.findFirst({
+        where: {
+          projectId,
+          status: 'ACTIVE',
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      // Stop existing sandbox if found
+      if (existingSandbox) {
+        console.log(
+          `[Sandbox Manager] Found existing sandbox ${existingSandbox.e2bId}, stopping it...`
+        );
+
+        // Get cached instance if available
+        let instance = this.activeSandboxes.get(existingSandbox.id);
+
+        // If not in cache, try to reconnect to kill it properly
+        // This is CRITICAL for old sandboxes that aren't in memory cache
+        if (!instance && FEATURE_FLAGS.usePersistence) {
+          console.log(
+            `[Sandbox Manager] Sandbox not in cache, reconnecting to kill it...`
+          );
+          try {
+            instance = await Sandbox.connect(existingSandbox.e2bId, {
+              apiKey: E2B_CONFIG.apiKey,
+              timeoutMs: 10000, // Short timeout for kill operation
+            });
+            console.log(
+              `[Sandbox Manager] ✅ Reconnected to old sandbox for termination`
+            );
+          } catch (error) {
+            console.warn(
+              `[Sandbox Manager] ⚠️ Could not reconnect to old sandbox (may already be terminated):`,
+              error
+            );
+            // Continue - sandbox might already be dead on E2B's side
+          }
+        }
+
+        // Kill E2B sandbox if we have instance (either from cache or reconnected)
+        if (instance) {
+          try {
+            await withRetry(
+              () => e2bClient.killSandbox(instance),
+              'Kill Sandbox'
+            );
+            this.activeSandboxes.delete(existingSandbox.id);
+            console.log(
+              `[Sandbox Manager] ✅ Stopped E2B sandbox ${existingSandbox.e2bId}`
+            );
+          } catch (error) {
+            console.warn(
+              '[Sandbox Manager] ⚠️ Failed to kill E2B sandbox (may already be stopped):',
+              error
+            );
+            // Continue anyway - we'll mark it as stopped in DB
+          }
+        }
+
+        // Mark as stopped in database
+        await db.sandbox.update({
+          where: { id: existingSandbox.id },
+          data: {
+            status: 'STOPPED',
+            expiresAt: new Date(), // Mark as expired
+          },
+        });
+
+        console.log(
+          `[Sandbox Manager] ✅ Old sandbox marked as STOPPED in database`
+        );
+      } else {
+        console.log(
+          `[Sandbox Manager] No existing active sandbox found for project`
+        );
+      }
+
+      // Create fresh sandbox
+      console.log(`[Sandbox Manager] Creating fresh sandbox...`);
+      const createResult = await this.createSandbox(
+        db,
+        projectId,
+        userId,
+        timeoutMs
+      );
+
+      if (!createResult.success || !createResult.data) {
+        return {
+          success: false,
+          data: null,
+          error: createResult.error ?? 'Failed to create new sandbox',
+        };
+      }
+
+      console.log(
+        `[Sandbox Manager] ✅ Fresh sandbox created: ${createResult.data.e2bId}`
+      );
+
+      return createResult;
+    } catch (error) {
+      console.error('[Sandbox Manager] Recreate sandbox failed:', error);
+      return {
+        success: false,
+        data: null,
+        error:
+          error instanceof Error ? error.message : 'Failed to recreate sandbox',
+      };
+    }
+  }
+
+  /**
    * Destroy sandbox and cleanup
    */
   async destroySandbox(

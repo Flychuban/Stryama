@@ -303,6 +303,56 @@ async function setupProjectFiles(
 }
 
 /**
+ * Ensure npm is available in the sandbox environment
+ * This is critical for resumed sandboxes that may have lost PATH configuration
+ */
+async function ensureNpmAvailable(
+  sandbox: Sandbox
+): Promise<ServiceResult<boolean>> {
+  try {
+    console.log('[Preview] 🔍 Checking npm availability...');
+
+    // CRITICAL: Test if npm can actually EXECUTE, not just if binary exists
+    // Test in /project directory (same context as npm install) to catch PATH issues
+    const npmCheck = await sandbox.commands.run(
+      'cd /project && npm --version',
+      { timeoutMs: 10000 }
+    );
+
+    if (npmCheck.exitCode !== 0) {
+      console.error(
+        `[Preview] npm not available (exit code ${npmCheck.exitCode}):`,
+        npmCheck.stderr || npmCheck.stdout
+      );
+      return {
+        success: false,
+        data: false,
+        error: `npm command failed to execute (exit code ${npmCheck.exitCode}). Error: ${npmCheck.stderr || npmCheck.stdout}`,
+      };
+    }
+
+    const version = npmCheck.stdout.trim();
+    console.log(`[Preview] ✅ npm is available and executable: v${version}`);
+
+    return {
+      success: true,
+      data: true,
+      error: null,
+    };
+  } catch (error) {
+    console.error('[Preview] Failed to check npm availability:', error);
+    return {
+      success: false,
+      data: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : 'Failed to check npm availability',
+    };
+  }
+}
+
+/**
  * Install npm dependencies
  */
 async function installDependencies(
@@ -310,6 +360,22 @@ async function installDependencies(
 ): Promise<ServiceResult<boolean>> {
   try {
     const workDir = '/project';
+
+    // CRITICAL: Check if npm is available before attempting to install
+    // This prevents exit code 127 (command not found) errors in resumed sandboxes
+    const npmCheckResult = await ensureNpmAvailable(sandbox);
+
+    if (!npmCheckResult.success) {
+      console.error(
+        '[Preview] ❌ Cannot install dependencies - npm not available:',
+        npmCheckResult.error
+      );
+      return {
+        success: false,
+        data: false,
+        error: npmCheckResult.error ?? 'npm command not found in sandbox',
+      };
+    }
 
     console.log(
       '[Preview] 📦 Installing dependencies (this may take 5-10 minutes for large projects)...'
@@ -329,11 +395,14 @@ async function installDependencies(
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
     if (installResult.exitCode !== 0) {
-      console.error('[Preview] ❌ npm install failed:', installResult.stderr);
+      console.error(
+        `[Preview] npm install failed (exit code ${installResult.exitCode}):`,
+        installResult.stderr || installResult.stdout
+      );
       return {
         success: false,
         data: false,
-        error: `npm install failed: ${installResult.stderr}`,
+        error: `npm install failed (exit ${installResult.exitCode}): ${installResult.stderr || installResult.stdout}`,
       };
     }
 
@@ -347,9 +416,8 @@ async function installDependencies(
       error: null,
     };
   } catch (error) {
-    console.error('[Preview] ❌ Failed to install dependencies:', error);
+    console.error('[Preview] Failed to install dependencies:', error);
 
-    // Provide more specific error messages
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error';
 
