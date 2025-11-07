@@ -649,8 +649,13 @@ export const sandboxRouter = createTRPCRouter({
           `[Sandbox Router] Found ${project.files.length} files to sync`
         );
 
-        // Create or get sandbox
-        const sandboxResult = await sandboxManager.getOrCreateSandbox(
+        // CRITICAL FIX: Always create a FRESH sandbox for preview regeneration
+        // This ensures npm is available and prevents exit code 127 errors
+        // Resumed/reconnected sandboxes lose their environment setup (PATH)
+        console.log(
+          `[Sandbox Router] Creating fresh sandbox for regeneration (ensures clean npm environment)...`
+        );
+        const sandboxResult = await sandboxManager.recreateSandbox(
           ctx.db,
           input.projectId,
           ctx.auth.userId,
@@ -704,6 +709,14 @@ export const sandboxRouter = createTRPCRouter({
           const errorMsg =
             previewResult.error ?? 'Failed to start preview server';
 
+          if (errorMsg.includes('npm command not found')) {
+            throw new TRPCError({
+              code: 'INTERNAL_SERVER_ERROR',
+              message:
+                'npm command not found in sandbox environment. Please try regenerating the preview again.',
+            });
+          }
+
           if (
             errorMsg.includes('timeout') ||
             errorMsg.includes('deadline_exceeded')
@@ -743,10 +756,23 @@ export const sandboxRouter = createTRPCRouter({
           throw error;
         }
 
-        // Handle timeout errors specifically
         if (error instanceof Error) {
           const errorMsg = error.message;
 
+          // npm command not found (exit code 127)
+          if (
+            errorMsg.includes('npm command not found') ||
+            errorMsg.includes('exit status 127') ||
+            errorMsg.includes('command not found')
+          ) {
+            throw new TRPCError({
+              code: 'INTERNAL_SERVER_ERROR',
+              message:
+                'npm command not found in sandbox environment. Please try regenerating the preview again.',
+            });
+          }
+
+          // Handle timeout errors
           if (
             errorMsg.includes('timeout') ||
             errorMsg.includes('deadline_exceeded')
