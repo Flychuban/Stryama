@@ -40,6 +40,18 @@ type Message = {
 type ViewMode = 'preview' | 'code';
 type DeviceMode = 'desktop' | 'mobile';
 
+const checkPreviewHealth = async (url: string): Promise<boolean> => {
+  try {
+    await fetch(url, {
+      method: 'HEAD',
+      signal: AbortSignal.timeout(3000),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 function EditorContent() {
   const searchParams = useSearchParams();
   const projectId = searchParams?.get('id') ?? null;
@@ -243,18 +255,56 @@ function EditorContent() {
           projectId,
         });
 
-        // If no active sandbox or sandbox expired, check if we should auto-regenerate
+        // Determine if we need to regenerate the preview
+        let shouldRegenerate = false;
+
         if (sandboxStatus.isExpired || !sandboxStatus.hasActiveSandbox) {
-          // Check if project has files AND we haven't attempted regeneration yet
+          // No active sandbox or expired - need to regenerate
+          shouldRegenerate = true;
+          console.log(
+            '[Editor] Sandbox expired or inactive, regeneration needed'
+          );
+        } else {
+          // Sandbox is active, check if preview URL is healthy
+          const previewData = await utils.sandbox.getPreviewUrl.fetch({
+            projectId,
+          });
+
+          if (previewData.url) {
+            const isHealthy = await checkPreviewHealth(previewData.url);
+
+            if (isHealthy) {
+              // Preview server is running, use the cached URL
+              console.log(
+                '[Editor] Preview server is healthy, using cached URL'
+              );
+              setPreviewUrl(previewData.url);
+              shouldRegenerate = false;
+            } else {
+              // Preview server is dead, need to regenerate
+              console.log(
+                '[Editor] Preview server not responding, regeneration needed'
+              );
+              shouldRegenerate = true;
+            }
+          } else {
+            // No preview URL found, need to regenerate
+            shouldRegenerate = true;
+          }
+        }
+
+        // Perform regeneration if needed
+        if (shouldRegenerate) {
+          // Only regenerate if project has files AND we haven't attempted yet
           if (
             project.files &&
             project.files.length > 0 &&
             !hasAttemptedRegeneration.current
           ) {
-            hasAttemptedRegeneration.current = true;
             setIsRegeneratingPreview(true);
 
             try {
+              console.log('[Editor] Starting preview regeneration...');
               const regenerateResult =
                 await regeneratePreviewMutation.mutateAsync({
                   projectId,
@@ -262,20 +312,17 @@ function EditorContent() {
 
               setPreviewUrl(regenerateResult.url);
               setPreviewError(null);
+
+              // Only set flag on successful regeneration
+              hasAttemptedRegeneration.current = true;
+              console.log('[Editor] ✅ Preview regenerated successfully');
             } catch (error) {
+              console.error('[Editor] ❌ Failed to regenerate preview:', error);
               handlePreviewError(error, 'Failed to regenerate preview');
+              // Flag NOT set - allows user to retry manually or on refresh
             } finally {
               setIsRegeneratingPreview(false);
             }
-          }
-        } else {
-          // Sandbox is active, fetch preview URL
-          const previewData = await utils.sandbox.getPreviewUrl.fetch({
-            projectId,
-          });
-
-          if (previewData.url) {
-            setPreviewUrl(previewData.url);
           }
         }
       } catch (error) {
