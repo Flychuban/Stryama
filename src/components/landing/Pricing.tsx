@@ -169,7 +169,11 @@ export function Pricing() {
                     asChild
                   >
                     <Link
-                      href={tier.price === 0 ? '/auth/signup' : '/checkout'}
+                      href={
+                        tier.price === 0
+                          ? '/sign-up'
+                          : `/checkout?plan=${tier.name.toLowerCase()}`
+                      }
                     >
                       {tier.cta}
                       <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover/btn:translate-x-1" />
@@ -211,7 +215,6 @@ export function Pricing() {
             <div className="text-xs font-medium">🔒 Secure Payments</div>
             <div className="text-xs font-medium">💳 Cancel Anytime</div>
             <div className="text-xs font-medium">⚡ Instant Access</div>
-            <div className="text-xs font-medium">🎯 14-Day Money Back</div>
           </div>
         </div>
       </div>
