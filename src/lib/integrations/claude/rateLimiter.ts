@@ -1,6 +1,5 @@
 import { RATE_LIMIT_CONFIG } from './config';
-
-export type UserPlan = 'free' | 'pro' | 'enterprise';
+import type { UserPlan } from '~/types/pricing';
 
 export type RateLimitStatus = {
   readonly allowed: boolean;

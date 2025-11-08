@@ -10,6 +10,7 @@ import { type Framework } from '@prisma/client';
 // 2. Internal utilities
 import { api } from '@/trpc/react';
 import { usePromptHandoff } from '@/hooks/usePromptHandoff';
+import Link from 'next/link';
 
 // 4. UI components
 import { Button } from '@/components/ui/button';
@@ -36,6 +37,9 @@ export default function DashboardPage() {
 
   // Fetch projects from backend
   const { data: projects, isLoading } = api.project.getAll.useQuery();
+
+  // Fetch usage stats
+  const { data: usageStats } = api.usage.getStats.useQuery();
 
   // Mutations
   const utils = api.useUtils();
@@ -215,6 +219,19 @@ export default function DashboardPage() {
                 <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-sm font-medium text-primary">
                   {transformedProjects.length}
                 </span>
+              )}
+              {usageStats && (
+                <Link
+                  href="/profile"
+                  className="flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-sm transition-colors hover:bg-blue-100"
+                >
+                  <span className="font-medium text-blue-900">
+                    {usageStats.generationsRemaining} remaining
+                  </span>
+                  {usageStats.generationsRemaining < 10 && (
+                    <span className="text-xs text-amber-600">⚠️</span>
+                  )}
+                </Link>
               )}
             </div>
             <p className="text-sm text-muted-foreground">

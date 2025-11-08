@@ -15,13 +15,16 @@ import {
   ProjectContextGatherer,
   ConflictDetector,
 } from '~/lib/integrations/claude';
-import type { UserPlan, ProjectContext } from '~/lib/integrations/claude';
+import type { ProjectContext } from '~/lib/integrations/claude';
 import type { StreamEvent } from '~/lib/integrations/claude/types/stream-events';
 import { createSandboxEvent } from '~/lib/integrations/claude/stream-manager';
 import { sandboxManager } from '~/lib/integrations/e2b/services/sandbox-manager';
 import { setupInfrastructure } from '~/lib/integrations/e2b/services/preview-manager';
 import { E2B_CONFIG } from '~/lib/integrations/e2b/config';
 import type { Sandbox } from '@e2b/code-interpreter';
+import { UsageTrackingService } from '~/lib/services/usageTracking';
+import { ModelSelectionService } from '~/lib/services/modelSelection';
+import type { UserPlan } from '~/types/pricing';
 
 export const aiRouter = createTRPCRouter({
   generateCode: protectedProcedure
@@ -41,9 +44,26 @@ export const aiRouter = createTRPCRouter({
         });
       }
 
-      // Get user plan (default to 'free' since there's no User model yet)
-      const userPlan: UserPlan = 'free';
+      // Check generation limit (monthly usage)
+      try {
+        await UsageTrackingService.checkGenerationLimit(ctx.auth.userId);
+      } catch (error) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Generation limit exceeded',
+        });
+      }
 
+      // Get user plan from database
+      const userUsage = await UsageTrackingService.getUserUsage(
+        ctx.auth.userId
+      );
+      const userPlan = userUsage.plan;
+
+      // Check rate limits (minute/day limits for anti-spam)
       const rateLimit = await rateLimiter.checkRateLimit(
         ctx.auth.userId,
         userPlan
@@ -55,6 +75,17 @@ export const aiRouter = createTRPCRouter({
           message: `Rate limit exceeded. You can make ${rateLimit.limit} requests per minute. Try again after ${rateLimit.resetAt.toISOString()}`,
         });
       }
+
+      // Select appropriate model based on prompt complexity and user plan
+      const selectedModel = ModelSelectionService.selectModel(
+        input.prompt,
+        userPlan
+      );
+      const modelId = ModelSelectionService.getModelId(selectedModel);
+
+      console.log(
+        `[AI Router] Using model: ${selectedModel} (${modelId}) for plan: ${userPlan}`
+      );
 
       let context: ProjectContext | undefined;
       let sandboxId: string | undefined;
@@ -211,6 +242,7 @@ export const aiRouter = createTRPCRouter({
           response: result.data.explanation ?? '',
           tokens: result.data.tokensUsed,
           duration: result.data.duration,
+          model: selectedModel, // Track which model was used
           clerkUserId: ctx.auth.userId,
           projectId: input.projectId ?? null,
           sessionId: result.data.sessionId ?? null,
@@ -218,7 +250,11 @@ export const aiRouter = createTRPCRouter({
         },
       });
 
-      await rateLimiter.incrementCount(ctx.auth.userId);
+      // Increment usage counters
+      await Promise.all([
+        rateLimiter.incrementCount(ctx.auth.userId),
+        UsageTrackingService.incrementGenerationCount(ctx.auth.userId),
+      ]);
 
       // Enhanced logging for file generation
       console.log(`[AI Router] Generation result:`, {
@@ -400,10 +436,11 @@ export const aiRouter = createTRPCRouter({
     }),
 
   getRateLimitStatus: protectedProcedure.query(async ({ ctx }) => {
-    // Get user plan (default to 'free' since there's no User model yet)
-    const userPlan: UserPlan = 'free';
+    // Get user plan from database
+    const userUsage = await UsageTrackingService.getUserUsage(ctx.auth.userId);
+    const userPlan = userUsage.plan;
 
-    // Get usage stats
+    // Get rate limit stats
     const stats = await rateLimiter.getUsageStats(ctx.auth.userId, userPlan);
 
     return {
@@ -448,10 +485,26 @@ export const aiRouter = createTRPCRouter({
         });
       }
 
-      // Get user plan
-      const userPlan: UserPlan = 'free';
+      // Check generation limit (monthly usage)
+      try {
+        await UsageTrackingService.checkGenerationLimit(ctx.auth.userId);
+      } catch (error) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Generation limit exceeded',
+        });
+      }
 
-      // Check rate limits
+      // Get user plan from database
+      const userUsage = await UsageTrackingService.getUserUsage(
+        ctx.auth.userId
+      );
+      const userPlan = userUsage.plan;
+
+      // Check rate limits (minute/day limits for anti-spam)
       const rateLimit = await rateLimiter.checkRateLimit(
         ctx.auth.userId,
         userPlan
@@ -463,6 +516,17 @@ export const aiRouter = createTRPCRouter({
           message: `Rate limit exceeded. You can make ${rateLimit.limit} requests per minute. Try again after ${rateLimit.resetAt.toISOString()}`,
         });
       }
+
+      // Select appropriate model based on prompt complexity and user plan
+      const selectedModel = ModelSelectionService.selectModel(
+        input.prompt,
+        userPlan
+      );
+      const modelId = ModelSelectionService.getModelId(selectedModel);
+
+      console.log(
+        `[AI Stream] Using model: ${selectedModel} (${modelId}) for plan: ${userPlan}`
+      );
 
       // Create observable stream
       return observable<StreamEvent>((emit) => {
@@ -647,6 +711,7 @@ export const aiRouter = createTRPCRouter({
                     response: completionResult.content ?? '',
                     tokens: completionResult.tokensUsed,
                     duration: completionResult.duration,
+                    model: selectedModel, // Track which model was used
                     clerkUserId: ctx.auth.userId,
                     projectId: input.projectId,
                     sessionId: completionResult.sessionId ?? null,
@@ -708,8 +773,13 @@ export const aiRouter = createTRPCRouter({
                   }
                 }
 
-                // Increment rate limit counter
-                await rateLimiter.incrementCount(ctx.auth.userId);
+                // Increment usage counters
+                await Promise.all([
+                  rateLimiter.incrementCount(ctx.auth.userId),
+                  UsageTrackingService.incrementGenerationCount(
+                    ctx.auth.userId
+                  ),
+                ]);
               } catch (dbError) {
                 console.error(
                   '[AI Stream] ❌ Failed to persist to database:',
