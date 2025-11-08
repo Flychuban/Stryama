@@ -1,36 +1,93 @@
 import { SignIn } from '@clerk/nextjs';
+import Link from 'next/link';
+import { Logo } from '@/components/shared/Logo';
 
 export default function SignInPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
-      {/* Animated Background */}
-      <div className="fixed inset-0 -z-10">
-        <div className="gradient-mesh absolute inset-0 opacity-30" />
-        <div className="absolute right-20 top-20 h-96 w-96 animate-float rounded-full bg-primary/20 blur-3xl" />
-        <div
-          className="absolute bottom-20 left-20 h-96 w-96 animate-float rounded-full bg-accent/20 blur-3xl"
-          style={{ animationDelay: '2s' }}
-        />
+    <div className="flex min-h-screen">
+      {/* Left Side - Auth Form */}
+      <div className="flex flex-1 items-center justify-center p-8">
+        <div className="w-full max-w-md">
+          <div className="mb-8 text-center">
+            <Link href="/" className="mb-6 inline-flex">
+              <Logo size={40} showText={true} />
+            </Link>
+          </div>
+
+          <SignIn
+            fallbackRedirectUrl="/dashboard"
+            appearance={{
+              elements: {
+                rootBox: 'w-full',
+                card: 'shadow-none border-0 bg-transparent w-full',
+
+                // Header
+                headerTitle: 'text-3xl font-bold tracking-tight text-center',
+                headerSubtitle: 'text-muted-foreground text-center mt-2',
+
+                // Form container
+                formContainer: 'space-y-6',
+                formFieldRow: 'space-y-2',
+
+                // Form fields
+                formFieldLabel: 'text-foreground font-medium',
+                formFieldInput:
+                  'h-11 border-border focus:border-primary focus:ring-primary bg-background',
+                formFieldInputShowPasswordButton:
+                  'text-muted-foreground hover:text-foreground',
+
+                // Buttons
+                formButtonPrimary:
+                  'w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium normal-case shadow-sm',
+
+                // Divider
+                dividerLine: 'bg-border',
+                dividerText: 'text-xs uppercase text-muted-foreground',
+
+                // Social buttons
+                socialButtonsBlockButton:
+                  'h-11 border-border hover:bg-accent/5 text-foreground font-normal normal-case',
+                socialButtonsBlockButtonText: 'font-normal text-sm',
+
+                // Footer
+                footerActionText: 'text-center text-sm text-muted-foreground',
+                footerActionLink: 'text-primary hover:underline font-medium',
+
+                // Form field errors
+                formFieldErrorText: 'text-xs text-destructive',
+
+                // Internal card
+                cardBox: 'w-full shadow-none',
+                main: 'w-full',
+              },
+              layout: {
+                socialButtonsPlacement: 'bottom',
+                socialButtonsVariant: 'blockButton',
+              },
+            }}
+          />
+        </div>
       </div>
 
-      <SignIn
-        fallbackRedirectUrl="/dashboard"
-        appearance={{
-          elements: {
-            formButtonPrimary:
-              'bg-primary hover:bg-primary/90 text-sm normal-case',
-            card: 'shadow-2xl',
-            headerTitle: 'text-2xl font-bold',
-            headerSubtitle: 'text-muted-foreground',
-            socialButtonsBlockButton:
-              'border-border hover:bg-accent/5 text-foreground',
-            formFieldLabel: 'text-foreground',
-            formFieldInput:
-              'border-border focus:border-primary focus:ring-primary',
-            footerActionLink: 'text-primary hover:text-primary/80',
-          },
-        }}
-      />
+      {/* Right Side - Hero */}
+      <div className="relative hidden flex-1 overflow-hidden bg-gradient-to-br from-primary/10 via-accent/5 to-background lg:flex">
+        <div className="absolute inset-0">
+          <div className="absolute right-20 top-20 h-72 w-72 animate-float rounded-full bg-primary/20 blur-3xl" />
+          <div
+            className="absolute bottom-20 left-20 h-96 w-96 animate-float rounded-full bg-accent/20 blur-3xl"
+            style={{ animationDelay: '2s' }}
+          />
+        </div>
+        <div className="relative flex items-center justify-center p-12">
+          <div className="max-w-md space-y-6 text-center">
+            <h2 className="text-4xl font-bold">Build Without Limits</h2>
+            <p className="text-lg text-muted-foreground">
+              Create stunning applications with the power of AI. No coding
+              required.
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
