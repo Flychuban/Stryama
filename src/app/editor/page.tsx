@@ -2,45 +2,21 @@
 
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Plus,
-  Send,
-  Monitor,
-  Smartphone,
-  Code2,
-  Eye,
-  RefreshCw,
-  AlertCircle,
-} from 'lucide-react';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { cn } from '@/lib/utils';
 import { AppHeader } from '@/components/shared/AppHeader';
-import ChatMessage from '@/components/editor/ChatMessage';
 import AILoadingAnimation from '@/components/editor/AILoadingAnimation';
-import CodeView from '@/components/editor/CodeView';
-import { StreamingIndicator } from '@/components/editor/StreamingIndicator';
 import { useAIGenerationStream } from '@/hooks/useAIGenerationStream';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { api } from '@/trpc/react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
-
-type Message = {
-  role: 'user' | 'assistant';
-  content: string;
-  thinking?: string[];
-  files?: string[];
-};
-
-type ViewMode = 'preview' | 'code';
-type DeviceMode = 'desktop' | 'mobile';
+import { useEditorLayout } from '@/hooks/useEditorLayout';
+import { ChatPanel, type Message } from '@/components/editor/ChatPanel';
+import {
+  ControlBar,
+  type ViewMode,
+  type DeviceMode,
+} from '@/components/editor/ControlBar';
+import { PreviewCodePanel } from '@/components/editor/PreviewCodePanel';
+import { MobileEditorTabs } from '@/components/editor/MobileEditorTabs';
 
 const checkPreviewHealth = async (url: string): Promise<boolean> => {
   try {
@@ -400,839 +376,104 @@ function EditorContent() {
 
   // Get files from project or use empty state
   const projectFiles = project?.files ?? [];
-  const currentFile = projectFiles[selectedFileIndex] ?? null;
+
+  // Use layout hook to determine mobile/desktop
+  const { isMobile } = useEditorLayout();
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background pt-16">
       <AppHeader />
 
-      {/* Mobile: Stack panels vertically, Desktop: Resizable panels */}
-      <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
-        <PanelGroup
-          direction="horizontal"
-          className="hidden flex-1 overflow-hidden lg:flex"
-        >
-          {/* Left Panel - Chat Interface */}
-          <Panel
-            defaultSize={chatPanelSize}
-            minSize={20}
-            maxSize={60}
-            onResize={(size) => setChatPanelSize(size)}
-            className="relative flex flex-col"
-          >
-            {/* Subtle gradient overlay */}
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-primary/[0.02] to-transparent" />
+      {/* Desktop: Resizable panels, Mobile: Tab-based navigation */}
+      {isMobile ? (
+        <MobileEditorTabs
+          messages={messages}
+          input={input}
+          onInputChange={setInput}
+          onSend={handleSend}
+          isStreaming={isStreaming}
+          streamState={streamState}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          deviceMode={deviceMode}
+          onDeviceModeChange={setDeviceMode}
+          previewUrl={previewUrl}
+          previewError={previewError}
+          isGeneratingPreview={isGeneratingPreview}
+          isRegeneratingPreview={isRegeneratingPreview}
+          projectFiles={projectFiles}
+          selectedFileIndex={selectedFileIndex}
+          onFileSelect={setSelectedFileIndex}
+          onRestartPreview={handleRestartPreview}
+          onRegeneratePreview={handleRegeneratePreview}
+        />
+      ) : (
+        <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
+          <PanelGroup direction="horizontal" className="flex-1 overflow-hidden">
+            {/* Left Panel - Chat Interface */}
+            <Panel
+              defaultSize={chatPanelSize}
+              minSize={20}
+              maxSize={60}
+              onResize={(size) => setChatPanelSize(size)}
+              className="relative flex flex-col"
+            >
+              <ChatPanel
+                messages={messages}
+                input={input}
+                onInputChange={setInput}
+                onSend={handleSend}
+                isStreaming={isStreaming}
+                streamState={streamState}
+              />
+            </Panel>
 
-            {/* Chat Messages */}
-            <ScrollArea className="relative flex-1 p-6">
-              <div className="space-y-6">
-                {messages.length === 0 ? (
-                  <div className="flex h-[calc(100vh-220px)] items-center justify-center px-8 text-center">
-                    <div className="max-w-sm space-y-6">
-                      <div className="relative">
-                        <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl border border-primary/10 bg-gradient-to-br from-primary/10 via-accent/5 to-transparent backdrop-blur-sm">
-                          <Code2 className="h-9 w-9 text-primary" />
-                        </div>
-                        <div className="absolute -inset-2 -z-10 rounded-2xl bg-gradient-to-r from-primary/20 to-accent/20 opacity-30 blur-xl" />
-                      </div>
-                      <div className="space-y-2">
-                        <h3 className="text-xl font-semibold tracking-tight">
-                          Start Building
-                        </h3>
-                        <p className="text-sm leading-relaxed text-muted-foreground">
-                          Describe what you want to build and I&apos;ll help you
-                          create it step by step
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    {messages.map((message, i) => (
-                      <ChatMessage key={i} {...message} />
-                    ))}
-
-                    {/* Show streaming indicator when AI is generating or has just completed */}
-                    {(isStreaming || streamState.status !== 'idle') && (
-                      <div className="mt-4">
-                        <StreamingIndicator state={streamState} />
-                      </div>
-                    )}
-                  </>
-                )}
+            {/* Resize Handle */}
+            <PanelResizeHandle className="group relative w-1.5 cursor-col-resize transition-all hover:w-2">
+              <div className="h-full w-px bg-gradient-to-b from-transparent via-border to-transparent transition-colors group-hover:via-primary/50" />
+              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+                <div className="h-12 w-4 rounded-full bg-primary/0 transition-colors group-hover:bg-primary/10" />
               </div>
-            </ScrollArea>
+            </PanelResizeHandle>
 
-            {/* Input Area */}
-            <div className="relative border-t border-border/50 bg-background/80 p-4 backdrop-blur-xl">
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-background via-background/95 to-transparent" />
-              <div className="relative flex gap-3">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-12 w-12 flex-shrink-0 rounded-xl border-border/50 transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
-                >
-                  <Plus className="h-5 w-5" />
-                </Button>
-                <Textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Describe what you want to build..."
-                  className="max-h-[120px] min-h-[48px] resize-none rounded-xl border-border/50 bg-background/50 backdrop-blur-sm transition-all duration-200 focus-visible:border-primary/50 focus-visible:ring-primary/20"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      void handleSend();
-                    }
-                  }}
+            {/* Right Panel - Preview/Code */}
+            <Panel
+              defaultSize={65}
+              minSize={40}
+              className="relative flex flex-col bg-muted/20"
+            >
+              <ControlBar
+                viewMode={viewMode}
+                onViewModeChange={setViewMode}
+                deviceMode={deviceMode}
+                onDeviceModeChange={setDeviceMode}
+                onRestartPreview={handleRestartPreview}
+                onRegeneratePreview={handleRegeneratePreview}
+                isGeneratingPreview={isGeneratingPreview}
+                isRegeneratingPreview={isRegeneratingPreview}
+                previewError={previewError}
+                previewUrl={previewUrl}
+                hasFiles={projectFiles.length > 0}
+              />
+              <div className="flex-1 overflow-auto p-8">
+                <PreviewCodePanel
+                  viewMode={viewMode}
+                  deviceMode={deviceMode}
+                  previewUrl={previewUrl}
+                  previewError={previewError}
+                  isGeneratingPreview={isGeneratingPreview}
+                  isRegeneratingPreview={isRegeneratingPreview}
+                  projectFiles={projectFiles}
+                  selectedFileIndex={selectedFileIndex}
+                  onFileSelect={setSelectedFileIndex}
+                  onRestartPreview={handleRestartPreview}
+                  onRegeneratePreview={handleRegeneratePreview}
                 />
-                <Button
-                  size="icon"
-                  onClick={handleSend}
-                  disabled={!input.trim() || isStreaming}
-                  className="to-primary-hover h-12 w-12 flex-shrink-0 rounded-xl bg-gradient-to-br from-primary transition-all duration-200 hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50"
-                >
-                  <Send className="h-5 w-5" />
-                </Button>
               </div>
-            </div>
-          </Panel>
-
-          {/* Resize Handle */}
-          <PanelResizeHandle className="group relative w-1.5 cursor-col-resize transition-all hover:w-2">
-            <div className="h-full w-px bg-gradient-to-b from-transparent via-border to-transparent transition-colors group-hover:via-primary/50" />
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-              <div className="h-12 w-4 rounded-full bg-primary/0 transition-colors group-hover:bg-primary/10" />
-            </div>
-          </PanelResizeHandle>
-
-          {/* Right Panel - Preview/Code */}
-          <Panel
-            defaultSize={65}
-            minSize={40}
-            className="relative flex flex-col bg-muted/20"
-          >
-            {/* Control Bar */}
-            <div className="relative z-10 flex items-center justify-between border-b border-border/50 bg-background/60 px-6 py-4 backdrop-blur-xl">
-              <div className="flex items-center gap-1 rounded-lg border border-border/30 bg-muted/40 p-1 backdrop-blur-sm">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  aria-pressed={viewMode === 'preview'}
-                  onClick={() => setViewMode('preview')}
-                  className={cn(
-                    'rounded-md transition-all duration-200',
-                    viewMode === 'preview'
-                      ? 'bg-primary/10 text-primary shadow-sm hover:bg-primary/10 hover:text-primary'
-                      : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
-                  )}
-                >
-                  <Eye className="mr-2 h-4 w-4" />
-                  Preview
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  aria-pressed={viewMode === 'code'}
-                  onClick={() => setViewMode('code')}
-                  className={cn(
-                    'rounded-md transition-all duration-200',
-                    viewMode === 'code'
-                      ? 'bg-primary/10 text-primary shadow-sm hover:bg-primary/10 hover:text-primary'
-                      : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
-                  )}
-                >
-                  <Code2 className="mr-2 h-4 w-4" />
-                  Code
-                </Button>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {viewMode === 'preview' && projectFiles.length > 0 && (
-                  <>
-                    {previewError?.includes('not found') ||
-                    previewError?.includes('Sandbox Not Found') ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleRegeneratePreview}
-                        disabled={isRegeneratingPreview}
-                        className="rounded-lg border-border/50 transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
-                        title="Regenerate preview from database files"
-                      >
-                        <RefreshCw
-                          className={cn(
-                            'mr-2 h-4 w-4',
-                            isRegeneratingPreview && 'animate-spin'
-                          )}
-                        />
-                        Regenerate Preview
-                      </Button>
-                    ) : (
-                      previewUrl && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleRestartPreview}
-                          disabled={isGeneratingPreview}
-                          className="rounded-lg border-border/50 transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
-                          title="Restart preview server"
-                        >
-                          <RefreshCw
-                            className={cn(
-                              'mr-2 h-4 w-4',
-                              isGeneratingPreview && 'animate-spin'
-                            )}
-                          />
-                          Restart Preview
-                        </Button>
-                      )
-                    )}
-                  </>
-                )}
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="rounded-lg border-border/50 transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
-                    >
-                      {deviceMode === 'desktop' ? (
-                        <>
-                          <Monitor className="mr-2 h-4 w-4" />
-                          Desktop
-                        </>
-                      ) : (
-                        <>
-                          <Smartphone className="mr-2 h-4 w-4" />
-                          Mobile
-                        </>
-                      )}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="rounded-lg">
-                    <DropdownMenuItem
-                      onClick={() => setDeviceMode('desktop')}
-                      className="rounded-md"
-                    >
-                      <Monitor className="mr-2 h-4 w-4" />
-                      Desktop
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setDeviceMode('mobile')}
-                      className="rounded-md"
-                    >
-                      <Smartphone className="mr-2 h-4 w-4" />
-                      Mobile
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
-
-            {/* Content Area */}
-            <div className="flex-1 overflow-auto p-8">
-              {isGeneratingPreview || isRegeneratingPreview ? (
-                <div className="flex h-full items-center justify-center">
-                  <div className="space-y-4 text-center">
-                    <div className="mx-auto h-16 w-16 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
-                    <div>
-                      <h3 className="text-lg font-semibold">
-                        {isRegeneratingPreview
-                          ? 'Restoring preview...'
-                          : 'Starting preview server...'}
-                      </h3>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        {isRegeneratingPreview
-                          ? 'Syncing files from database and starting preview (20-30s)'
-                          : 'Installing dependencies and starting the development server'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : viewMode === 'code' ? (
-                projectFiles.length > 0 && currentFile ? (
-                  <div className="space-y-4">
-                    {/* File selector if multiple files */}
-                    {projectFiles.length > 1 && (
-                      <div className="flex gap-2 overflow-x-auto pb-2">
-                        {projectFiles.map((file, index) => (
-                          <Button
-                            key={file.id}
-                            variant={
-                              index === selectedFileIndex
-                                ? 'default'
-                                : 'outline'
-                            }
-                            size="sm"
-                            onClick={() => setSelectedFileIndex(index)}
-                            className="whitespace-nowrap"
-                          >
-                            {file.path}
-                          </Button>
-                        ))}
-                      </div>
-                    )}
-                    <CodeView
-                      code={currentFile.content}
-                      filename={currentFile.path}
-                    />
-                  </div>
-                ) : (
-                  <div className="flex h-full items-center justify-center p-8 text-center">
-                    <div className="max-w-md space-y-4">
-                      <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-muted/50">
-                        <Code2 className="h-10 w-10 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-semibold">No Files Yet</h3>
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          Start a conversation with the AI to generate code
-                          files for your project.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )
-              ) : (
-                <div className="flex h-full items-center justify-center">
-                  <div
-                    className={cn(
-                      'relative overflow-hidden rounded-2xl border border-border/50 bg-background shadow-2xl transition-all duration-500',
-                      deviceMode === 'mobile' && 'ring-8 ring-muted/30'
-                    )}
-                    style={{
-                      width: deviceMode === 'desktop' ? '100%' : '375px',
-                      height: deviceMode === 'desktop' ? '100%' : '667px',
-                      maxWidth: '100%',
-                    }}
-                  >
-                    {/* Browser-style header */}
-                    {deviceMode === 'desktop' && (
-                      <div className="flex h-10 items-center gap-2 border-b border-border/50 bg-muted/50 px-4">
-                        <div className="flex gap-2">
-                          <div className="h-3 w-3 rounded-full bg-destructive/70" />
-                          <div className="h-3 w-3 rounded-full bg-accent/70" />
-                          <div className="h-3 w-3 rounded-full bg-primary/70" />
-                        </div>
-                        <div className="flex flex-1 justify-center">
-                          <div className="rounded-md border border-border/30 bg-background/50 px-4 py-1 font-mono text-xs text-muted-foreground">
-                            {previewUrl
-                              ? new URL(previewUrl).host
-                              : 'localhost:5173'}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div
-                      className={cn(
-                        'w-full',
-                        deviceMode === 'desktop'
-                          ? 'h-[calc(100%-40px)]'
-                          : 'h-full'
-                      )}
-                    >
-                      {previewError ? (
-                        <div className="flex h-full items-center justify-center p-8 text-center">
-                          <div className="max-w-md space-y-4">
-                            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-destructive/20">
-                              <AlertCircle className="h-10 w-10 text-destructive" />
-                            </div>
-                            <h3 className="text-xl font-semibold">
-                              {previewError.includes('not found') ||
-                              previewError.includes('Sandbox Not Found')
-                                ? 'Preview Expired'
-                                : 'Preview Failed'}
-                            </h3>
-                            <p className="text-muted-foreground">
-                              {previewError.includes('not found') ||
-                              previewError.includes('Sandbox Not Found')
-                                ? 'The preview sandbox has expired. Click below to regenerate from your saved files.'
-                                : previewError}
-                            </p>
-                            {previewError.includes('not found') ||
-                            previewError.includes('Sandbox Not Found') ? (
-                              <Button
-                                onClick={handleRegeneratePreview}
-                                variant="default"
-                                disabled={isRegeneratingPreview}
-                              >
-                                <RefreshCw
-                                  className={cn(
-                                    'mr-2 h-4 w-4',
-                                    isRegeneratingPreview && 'animate-spin'
-                                  )}
-                                />
-                                Regenerate Preview
-                              </Button>
-                            ) : (
-                              <Button
-                                onClick={handleRestartPreview}
-                                variant="outline"
-                              >
-                                Restart Preview
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      ) : previewUrl ? (
-                        <>
-                          <div className="absolute right-4 top-4 z-10">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => window.open(previewUrl, '_blank')}
-                              className="rounded-lg border-border/50 bg-background/80 backdrop-blur-sm transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
-                            >
-                              Open in New Tab
-                            </Button>
-                          </div>
-                          <iframe
-                            src={previewUrl ?? undefined}
-                            className="h-full w-full border-0"
-                            title="Live Preview"
-                            referrerPolicy="no-referrer-when-downgrade"
-                            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
-                            allow="accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; clipboard-read; clipboard-write"
-                          />
-                        </>
-                      ) : (
-                        <div className="flex h-full items-center justify-center p-8 text-center">
-                          <div className="space-y-6">
-                            <div className="relative">
-                              <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-2xl border border-primary/10 bg-gradient-to-br from-primary/10 via-accent/5 to-transparent backdrop-blur-sm">
-                                <Monitor className="h-12 w-12 text-primary" />
-                              </div>
-                              <div className="absolute -inset-3 -z-10 rounded-2xl bg-gradient-to-r from-primary/20 to-accent/20 opacity-30 blur-2xl" />
-                            </div>
-                            <div className="space-y-2">
-                              <h3 className="text-xl font-semibold tracking-tight">
-                                Preview will appear here
-                              </h3>
-                              <p className="text-sm leading-relaxed text-muted-foreground">
-                                Start a conversation to generate your
-                                application
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </Panel>
-        </PanelGroup>
-
-        {/* Mobile Layout - Stacked panels (no resizing) */}
-        <div className="flex flex-1 flex-col overflow-hidden lg:hidden">
-          {/* Chat Panel - Mobile */}
-          <div className="relative flex w-full flex-col">
-            {/* Subtle gradient overlay */}
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-primary/[0.02] to-transparent" />
-
-            {/* Chat Messages */}
-            <ScrollArea className="relative flex-1 p-6">
-              <div className="space-y-6">
-                {messages.length === 0 ? (
-                  <div className="flex h-[calc(100vh-220px)] items-center justify-center px-8 text-center">
-                    <div className="max-w-sm space-y-6">
-                      <div className="relative">
-                        <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl border border-primary/10 bg-gradient-to-br from-primary/10 via-accent/5 to-transparent backdrop-blur-sm">
-                          <Code2 className="h-9 w-9 text-primary" />
-                        </div>
-                        <div className="absolute -inset-2 -z-10 rounded-2xl bg-gradient-to-r from-primary/20 to-accent/20 opacity-30 blur-xl" />
-                      </div>
-                      <div className="space-y-2">
-                        <h3 className="text-xl font-semibold tracking-tight">
-                          Start Building
-                        </h3>
-                        <p className="text-sm leading-relaxed text-muted-foreground">
-                          Describe what you want to build and I&apos;ll help you
-                          create it step by step
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    {messages.map((message, i) => (
-                      <ChatMessage key={i} {...message} />
-                    ))}
-
-                    {/* Show streaming indicator when AI is generating or has just completed */}
-                    {(isStreaming || streamState.status !== 'idle') && (
-                      <div className="mt-4">
-                        <StreamingIndicator state={streamState} />
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </ScrollArea>
-
-            {/* Input Area */}
-            <div className="relative border-t border-border/50 bg-background/80 p-4 backdrop-blur-xl">
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-background via-background/95 to-transparent" />
-              <div className="relative flex gap-3">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-12 w-12 flex-shrink-0 rounded-xl border-border/50 transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
-                >
-                  <Plus className="h-5 w-5" />
-                </Button>
-                <Textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Describe what you want to build..."
-                  className="max-h-[120px] min-h-[48px] resize-none rounded-xl border-border/50 bg-background/50 backdrop-blur-sm transition-all duration-200 focus-visible:border-primary/50 focus-visible:ring-primary/20"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      void handleSend();
-                    }
-                  }}
-                />
-                <Button
-                  size="icon"
-                  onClick={handleSend}
-                  disabled={!input.trim() || isStreaming}
-                  className="to-primary-hover h-12 w-12 flex-shrink-0 rounded-xl bg-gradient-to-br from-primary transition-all duration-200 hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50"
-                >
-                  <Send className="h-5 w-5" />
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* Divider - Mobile */}
-          <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent" />
-
-          {/* Preview/Code Panel - Mobile */}
-          <div className="relative flex flex-1 flex-col bg-muted/20">
-            {/* Control Bar */}
-            <div className="relative z-10 flex items-center justify-between border-b border-border/50 bg-background/60 px-6 py-4 backdrop-blur-xl">
-              <div className="flex items-center gap-1 rounded-lg border border-border/30 bg-muted/40 p-1 backdrop-blur-sm">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  aria-pressed={viewMode === 'preview'}
-                  onClick={() => setViewMode('preview')}
-                  className={cn(
-                    'rounded-md transition-all duration-200',
-                    viewMode === 'preview'
-                      ? 'bg-primary/10 text-primary shadow-sm hover:bg-primary/10 hover:text-primary'
-                      : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
-                  )}
-                >
-                  <Eye className="mr-2 h-4 w-4" />
-                  Preview
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  aria-pressed={viewMode === 'code'}
-                  onClick={() => setViewMode('code')}
-                  className={cn(
-                    'rounded-md transition-all duration-200',
-                    viewMode === 'code'
-                      ? 'bg-primary/10 text-primary shadow-sm hover:bg-primary/10 hover:text-primary'
-                      : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
-                  )}
-                >
-                  <Code2 className="mr-2 h-4 w-4" />
-                  Code
-                </Button>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {viewMode === 'preview' && projectFiles.length > 0 && (
-                  <>
-                    {previewError?.includes('not found') ||
-                    previewError?.includes('Sandbox Not Found') ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleRegeneratePreview}
-                        disabled={isRegeneratingPreview}
-                        className="rounded-lg border-border/50 transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
-                        title="Regenerate preview from database files"
-                      >
-                        <RefreshCw
-                          className={cn(
-                            'mr-2 h-4 w-4',
-                            isRegeneratingPreview && 'animate-spin'
-                          )}
-                        />
-                        Regenerate Preview
-                      </Button>
-                    ) : (
-                      previewUrl && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleRestartPreview}
-                          disabled={isGeneratingPreview}
-                          className="rounded-lg border-border/50 transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
-                          title="Restart preview server"
-                        >
-                          <RefreshCw
-                            className={cn(
-                              'mr-2 h-4 w-4',
-                              isGeneratingPreview && 'animate-spin'
-                            )}
-                          />
-                          Restart Preview
-                        </Button>
-                      )
-                    )}
-                  </>
-                )}
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="rounded-lg border-border/50 transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
-                    >
-                      {deviceMode === 'desktop' ? (
-                        <>
-                          <Monitor className="mr-2 h-4 w-4" />
-                          Desktop
-                        </>
-                      ) : (
-                        <>
-                          <Smartphone className="mr-2 h-4 w-4" />
-                          Mobile
-                        </>
-                      )}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="rounded-lg">
-                    <DropdownMenuItem
-                      onClick={() => setDeviceMode('desktop')}
-                      className="rounded-md"
-                    >
-                      <Monitor className="mr-2 h-4 w-4" />
-                      Desktop
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setDeviceMode('mobile')}
-                      className="rounded-md"
-                    >
-                      <Smartphone className="mr-2 h-4 w-4" />
-                      Mobile
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
-
-            {/* Content Area */}
-            <div className="flex-1 overflow-auto p-8">
-              {isGeneratingPreview || isRegeneratingPreview ? (
-                <div className="flex h-full items-center justify-center">
-                  <div className="space-y-4 text-center">
-                    <div className="mx-auto h-16 w-16 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
-                    <div>
-                      <h3 className="text-lg font-semibold">
-                        {isRegeneratingPreview
-                          ? 'Restoring preview...'
-                          : 'Starting preview server...'}
-                      </h3>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        {isRegeneratingPreview
-                          ? 'Syncing files from database and starting preview (20-30s)'
-                          : 'Installing dependencies and starting the development server'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : viewMode === 'code' ? (
-                projectFiles.length > 0 && currentFile ? (
-                  <div className="space-y-4">
-                    {/* File selector if multiple files */}
-                    {projectFiles.length > 1 && (
-                      <div className="flex gap-2 overflow-x-auto pb-2">
-                        {projectFiles.map((file, index) => (
-                          <Button
-                            key={file.id}
-                            variant={
-                              index === selectedFileIndex
-                                ? 'default'
-                                : 'outline'
-                            }
-                            size="sm"
-                            onClick={() => setSelectedFileIndex(index)}
-                            className="whitespace-nowrap"
-                          >
-                            {file.path}
-                          </Button>
-                        ))}
-                      </div>
-                    )}
-                    <CodeView
-                      code={currentFile.content}
-                      filename={currentFile.path}
-                    />
-                  </div>
-                ) : (
-                  <div className="flex h-full items-center justify-center p-8 text-center">
-                    <div className="max-w-md space-y-4">
-                      <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-muted/50">
-                        <Code2 className="h-10 w-10 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-semibold">No Files Yet</h3>
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          Start a conversation with the AI to generate code
-                          files for your project.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )
-              ) : (
-                <div className="flex h-full items-center justify-center">
-                  <div
-                    className={cn(
-                      'relative overflow-hidden rounded-2xl border border-border/50 bg-background shadow-2xl transition-all duration-500',
-                      deviceMode === 'mobile' && 'ring-8 ring-muted/30'
-                    )}
-                    style={{
-                      width: deviceMode === 'desktop' ? '100%' : '375px',
-                      height: deviceMode === 'desktop' ? '100%' : '667px',
-                      maxWidth: '100%',
-                    }}
-                  >
-                    {/* Browser-style header */}
-                    {deviceMode === 'desktop' && (
-                      <div className="flex h-10 items-center gap-2 border-b border-border/50 bg-muted/50 px-4">
-                        <div className="flex gap-2">
-                          <div className="h-3 w-3 rounded-full bg-destructive/70" />
-                          <div className="h-3 w-3 rounded-full bg-accent/70" />
-                          <div className="h-3 w-3 rounded-full bg-primary/70" />
-                        </div>
-                        <div className="flex flex-1 justify-center">
-                          <div className="rounded-md border border-border/30 bg-background/50 px-4 py-1 font-mono text-xs text-muted-foreground">
-                            {previewUrl
-                              ? new URL(previewUrl).host
-                              : 'localhost:5173'}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div
-                      className={cn(
-                        'w-full',
-                        deviceMode === 'desktop'
-                          ? 'h-[calc(100%-40px)]'
-                          : 'h-full'
-                      )}
-                    >
-                      {previewError ? (
-                        <div className="flex h-full items-center justify-center p-8 text-center">
-                          <div className="max-w-md space-y-4">
-                            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-destructive/20">
-                              <AlertCircle className="h-10 w-10 text-destructive" />
-                            </div>
-                            <h3 className="text-xl font-semibold">
-                              {previewError.includes('not found') ||
-                              previewError.includes('Sandbox Not Found')
-                                ? 'Preview Expired'
-                                : 'Preview Failed'}
-                            </h3>
-                            <p className="text-muted-foreground">
-                              {previewError.includes('not found') ||
-                              previewError.includes('Sandbox Not Found')
-                                ? 'The preview sandbox has expired. Click below to regenerate from your saved files.'
-                                : previewError}
-                            </p>
-                            {previewError.includes('not found') ||
-                            previewError.includes('Sandbox Not Found') ? (
-                              <Button
-                                onClick={handleRegeneratePreview}
-                                variant="default"
-                                disabled={isRegeneratingPreview}
-                              >
-                                <RefreshCw
-                                  className={cn(
-                                    'mr-2 h-4 w-4',
-                                    isRegeneratingPreview && 'animate-spin'
-                                  )}
-                                />
-                                Regenerate Preview
-                              </Button>
-                            ) : (
-                              <Button
-                                onClick={handleRestartPreview}
-                                variant="outline"
-                              >
-                                Restart Preview
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      ) : previewUrl ? (
-                        <>
-                          <div className="absolute right-4 top-4 z-10">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => window.open(previewUrl, '_blank')}
-                              className="rounded-lg border-border/50 bg-background/80 backdrop-blur-sm transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
-                            >
-                              Open in New Tab
-                            </Button>
-                          </div>
-                          <iframe
-                            src={previewUrl ?? undefined}
-                            className="h-full w-full border-0"
-                            title="Live Preview"
-                            referrerPolicy="no-referrer-when-downgrade"
-                            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
-                            allow="accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; clipboard-read; clipboard-write"
-                          />
-                        </>
-                      ) : (
-                        <div className="flex h-full items-center justify-center p-8 text-center">
-                          <div className="space-y-6">
-                            <div className="relative">
-                              <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-2xl border border-primary/10 bg-gradient-to-br from-primary/10 via-accent/5 to-transparent backdrop-blur-sm">
-                                <Monitor className="h-12 w-12 text-primary" />
-                              </div>
-                              <div className="absolute -inset-3 -z-10 rounded-2xl bg-gradient-to-r from-primary/20 to-accent/20 opacity-30 blur-2xl" />
-                            </div>
-                            <div className="space-y-2">
-                              <h3 className="text-xl font-semibold tracking-tight">
-                                Preview will appear here
-                              </h3>
-                              <p className="text-sm leading-relaxed text-muted-foreground">
-                                Start a conversation to generate your
-                                application
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+            </Panel>
+          </PanelGroup>
         </div>
-      </div>
+      )}
     </div>
   );
 }
