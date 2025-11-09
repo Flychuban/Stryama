@@ -104,7 +104,7 @@ export function UsageDashboard() {
               : 'Upgrade your plan for more generations and features.'}
           </p>
           <Link
-            href="/pricing"
+            href="/#pricing"
             className="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
           >
             {stats.plan === 'FREE'

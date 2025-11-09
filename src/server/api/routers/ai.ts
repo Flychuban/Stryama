@@ -24,7 +24,7 @@ import { E2B_CONFIG } from '~/lib/integrations/e2b/config';
 import type { Sandbox } from '@e2b/code-interpreter';
 import { UsageTrackingService } from '~/lib/services/usageTracking';
 import { ModelSelectionService } from '~/lib/services/modelSelection';
-import type { UserPlan } from '~/types/pricing';
+import { getUserPlanFromClerk } from '~/lib/clerk/authorization';
 
 export const aiRouter = createTRPCRouter({
   generateCode: protectedProcedure
@@ -57,11 +57,12 @@ export const aiRouter = createTRPCRouter({
         });
       }
 
-      // Get user plan from database
-      const userUsage = await UsageTrackingService.getUserUsage(
-        ctx.auth.userId
+      // Get user plan from Clerk session entitlements (no database query needed)
+      const userPlan = await getUserPlanFromClerk();
+
+      console.log(
+        `[AI Router] User ${ctx.auth.userId} has plan: ${userPlan} (from Clerk session)`
       );
-      const userPlan = userUsage.plan;
 
       // Check rate limits (minute/day limits for anti-spam)
       const rateLimit = await rateLimiter.checkRateLimit(
@@ -436,9 +437,8 @@ export const aiRouter = createTRPCRouter({
     }),
 
   getRateLimitStatus: protectedProcedure.query(async ({ ctx }) => {
-    // Get user plan from database
-    const userUsage = await UsageTrackingService.getUserUsage(ctx.auth.userId);
-    const userPlan = userUsage.plan;
+    // Get user plan from Clerk session (source of truth)
+    const userPlan = await getUserPlanFromClerk();
 
     // Get rate limit stats
     const stats = await rateLimiter.getUsageStats(ctx.auth.userId, userPlan);
@@ -498,11 +498,12 @@ export const aiRouter = createTRPCRouter({
         });
       }
 
-      // Get user plan from database
-      const userUsage = await UsageTrackingService.getUserUsage(
-        ctx.auth.userId
+      // Get user plan from Clerk session entitlements (no database query needed)
+      const userPlan = await getUserPlanFromClerk();
+
+      console.log(
+        `[AI Router] User ${ctx.auth.userId} has plan: ${userPlan} (from Clerk session)`
       );
-      const userPlan = userUsage.plan;
 
       // Check rate limits (minute/day limits for anti-spam)
       const rateLimit = await rateLimiter.checkRateLimit(

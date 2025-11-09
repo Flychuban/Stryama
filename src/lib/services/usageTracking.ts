@@ -1,5 +1,7 @@
 import { db } from '~/server/db';
 import { PLAN_LIMITS, type UserPlan } from '~/types/pricing';
+import { type SubscriptionDetails } from '~/types/subscription';
+import { getUserPlanFromClerk } from '~/lib/clerk/authorization';
 
 /**
  * Service for tracking and enforcing user usage limits
@@ -12,7 +14,10 @@ export class UsageTrackingService {
    */
   static async checkGenerationLimit(userId: string): Promise<void> {
     const usage = await this.getUserUsage(userId);
-    const limits = PLAN_LIMITS[usage.plan as UserPlan];
+
+    // Get current plan from Clerk session (source of truth)
+    const clerkPlan = await getUserPlanFromClerk();
+    const limits = PLAN_LIMITS[clerkPlan as UserPlan];
 
     // Check if billing period has reset
     if (new Date() > usage.currentPeriodEnd) {
@@ -20,7 +25,7 @@ export class UsageTrackingService {
       return; // Fresh period, allow generation
     }
 
-    // Check generation limit
+    // Check generation limit based on current Clerk plan
     if (usage.generationsThisMonth >= limits.generationsPerMonth) {
       throw new Error(
         `Generation limit reached. You've used ${usage.generationsThisMonth}/${limits.generationsPerMonth} generations this month. Upgrade your plan for more generations.`
@@ -46,8 +51,9 @@ export class UsageTrackingService {
    * @throws Error if limit exceeded
    */
   static async checkProjectLimit(userId: string): Promise<void> {
-    const usage = await this.getUserUsage(userId);
-    const limits = PLAN_LIMITS[usage.plan as UserPlan];
+    // Get current plan from Clerk session (source of truth)
+    const clerkPlan = await getUserPlanFromClerk();
+    const limits = PLAN_LIMITS[clerkPlan as UserPlan];
 
     // Count active projects
     const projectCount = await db.project.count({
@@ -110,7 +116,9 @@ export class UsageTrackingService {
   }
 
   /**
-   * Update user plan (called by billing webhook or admin)
+   * Update user plan
+   * Note: With Clerk Billing, plan is primarily determined by Clerk session.
+   * This method is kept for manual updates or syncing if needed.
    */
   static async updateUserPlan(userId: string, plan: UserPlan): Promise<void> {
     await db.userUsage.upsert({
@@ -130,10 +138,14 @@ export class UsageTrackingService {
 
   /**
    * Get usage stats for display in UI
+   * Plan comes from Clerk session (source of truth), usage data from database
    */
   static async getUsageStats(userId: string) {
     const usage = await this.getUserUsage(userId);
-    const limits = PLAN_LIMITS[usage.plan as UserPlan];
+
+    // Get plan from Clerk session (source of truth for authorization)
+    const clerkPlan = await getUserPlanFromClerk();
+    const limits = PLAN_LIMITS[clerkPlan as UserPlan];
 
     const projectCount = await db.project.count({
       where: { clerkUserId: userId },
@@ -144,7 +156,7 @@ export class UsageTrackingService {
     );
 
     return {
-      plan: usage.plan,
+      plan: clerkPlan, // Return Clerk plan (not database cached plan)
       generationsUsed: usage.generationsThisMonth,
       generationsLimit: limits.generationsPerMonth,
       generationsRemaining: Math.max(
@@ -163,13 +175,34 @@ export class UsageTrackingService {
   /**
    * Get E2B sandbox limits for user's plan
    */
-  static async getSandboxLimits(userId: string) {
-    const usage = await this.getUserUsage(userId);
-    const limits = PLAN_LIMITS[usage.plan as UserPlan];
+  static async getSandboxLimits(_userId: string) {
+    // Get current plan from Clerk session (source of truth)
+    const clerkPlan = await getUserPlanFromClerk();
+    const limits = PLAN_LIMITS[clerkPlan as UserPlan];
 
     return {
       concurrent: limits.e2bConcurrent,
       timeoutSeconds: limits.e2bTimeoutSeconds,
+    };
+  }
+
+  /**
+   * Get subscription details for user
+   * With Clerk Billing, subscription state comes from Clerk session.
+   * This returns usage period info for display purposes.
+   */
+  static async getSubscriptionDetails(
+    userId: string
+  ): Promise<SubscriptionDetails> {
+    const usage = await this.getUserUsage(userId);
+
+    // Get current plan from Clerk session (source of truth)
+    const clerkPlan = await getUserPlanFromClerk();
+
+    return {
+      plan: clerkPlan as 'FREE' | 'BUILDER' | 'PRO',
+      currentPeriodStart: usage.currentPeriodStart,
+      currentPeriodEnd: usage.currentPeriodEnd,
     };
   }
 }

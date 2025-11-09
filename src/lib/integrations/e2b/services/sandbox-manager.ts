@@ -10,7 +10,7 @@ import {
 import { SandboxTimeoutError, E2BSandboxError, E2BErrorType } from '../errors';
 import { withRetry } from '../errors/retry-handler';
 import type { ServiceResult, SandboxInstance } from '../types';
-import { UsageTrackingService } from '~/lib/services/usageTracking';
+import { getUserPlanFromClerk } from '~/lib/clerk/authorization';
 
 class SandboxManager {
   private activeSandboxes = new Map<string, E2BSandbox>();
@@ -25,9 +25,9 @@ class SandboxManager {
     timeoutMs: number = E2B_CONFIG.defaultTimeoutMs
   ): Promise<ServiceResult<SandboxInstance>> {
     try {
-      // Check concurrent sandbox limit for user's plan
-      const userUsage = await UsageTrackingService.getUserUsage(userId);
-      const concurrentLimit = getConcurrentLimitForPlan(userUsage.plan);
+      // Check concurrent sandbox limit for user's plan (from Clerk session)
+      const userPlan = await getUserPlanFromClerk();
+      const concurrentLimit = getConcurrentLimitForPlan(userPlan);
 
       // Count active sandboxes for this user
       const activeSandboxCount = await db.sandbox.count({
