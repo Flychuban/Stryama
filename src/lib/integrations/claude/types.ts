@@ -1,7 +1,6 @@
 export enum ClaudeModel {
-  SONNET_4 = 'claude-sonnet-4-20250514',
-  OPUS = 'claude-opus-4-20250514',
-  HAIKU = 'claude-haiku-4-20250301',
+  SONNET_4_5 = 'claude-sonnet-4-5',
+  HAIKU_4_5 = 'claude-haiku-4-5',
 }
 
 export enum GenerationStatus {

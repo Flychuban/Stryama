@@ -2,10 +2,15 @@ import type { PrismaClient } from '@prisma/client';
 import type { Sandbox as E2BSandbox } from '@e2b/code-interpreter';
 import { Sandbox } from '@e2b/code-interpreter';
 import { e2bClient } from '../client';
-import { E2B_CONFIG, FEATURE_FLAGS } from '../config';
+import {
+  E2B_CONFIG,
+  FEATURE_FLAGS,
+  getConcurrentLimitForPlan,
+} from '../config';
 import { SandboxTimeoutError, E2BSandboxError, E2BErrorType } from '../errors';
 import { withRetry } from '../errors/retry-handler';
 import type { ServiceResult, SandboxInstance } from '../types';
+import { UsageTrackingService } from '~/lib/services/usageTracking';
 
 class SandboxManager {
   private activeSandboxes = new Map<string, E2BSandbox>();
@@ -20,6 +25,32 @@ class SandboxManager {
     timeoutMs: number = E2B_CONFIG.defaultTimeoutMs
   ): Promise<ServiceResult<SandboxInstance>> {
     try {
+      // Check concurrent sandbox limit for user's plan
+      const userUsage = await UsageTrackingService.getUserUsage(userId);
+      const concurrentLimit = getConcurrentLimitForPlan(userUsage.plan);
+
+      // Count active sandboxes for this user
+      const activeSandboxCount = await db.sandbox.count({
+        where: {
+          metadata: {
+            path: ['userId'],
+            equals: userId,
+          },
+          status: 'ACTIVE',
+          expiresAt: {
+            gt: new Date(),
+          },
+        },
+      });
+
+      if (activeSandboxCount >= concurrentLimit) {
+        return {
+          success: false,
+          data: null,
+          error: `Concurrent sandbox limit reached. You have ${activeSandboxCount}/${concurrentLimit} active sandboxes. Please close other projects or upgrade your plan.`,
+        };
+      }
+
       // Create E2B sandbox with retry
       const e2bSandbox = await withRetry(
         () =>

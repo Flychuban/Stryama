@@ -16,6 +16,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
 import { Camera } from 'lucide-react';
+import { UsageDashboard } from '@/components/dashboard/UsageDashboard';
 
 export default function ProfilePage() {
   const { user, isLoaded } = useUser();
@@ -123,6 +124,9 @@ export default function ProfilePage() {
               <p className="text-muted-foreground">{userEmail}</p>
             </div>
           </div>
+
+          {/* Usage & Plan */}
+          <UsageDashboard />
 
           {/* Profile Settings */}
           <Card className="border-border/50 shadow-lg">

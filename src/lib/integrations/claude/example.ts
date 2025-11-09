@@ -27,7 +27,7 @@ async function example1_basicGeneration(): Promise<void> {
     prompt:
       'Create a modern landing page for a SaaS product with hero section and pricing',
     options: {
-      model: ClaudeModel.SONNET_4,
+      model: ClaudeModel.SONNET_4_5,
       maxTurns: 5,
     },
   };
@@ -72,7 +72,7 @@ async function example2_promptTemplates(): Promise<void> {
   const result = await claudeClient.generateCode({
     prompt,
     options: {
-      model: ClaudeModel.SONNET_4,
+      model: ClaudeModel.SONNET_4_5,
     },
   });
 }
@@ -107,7 +107,7 @@ async function example3_promptValidation(): Promise<void> {
  */
 async function example4_rateLimiting(userId: string): Promise<void> {
   // Check rate limit before making request
-  const rateLimit = await rateLimiter.checkRateLimit(userId, 'free');
+  const rateLimit = await rateLimiter.checkRateLimit(userId, 'FREE');
 
   if (!rateLimit.allowed) {
     console.error(
@@ -161,7 +161,7 @@ export function UserProfile({ name, email }: UserProfileProps) {
       dependencies: ['react', 'next'],
     },
     options: {
-      model: ClaudeModel.SONNET_4,
+      model: ClaudeModel.SONNET_4_5,
       maxTurns: 3,
     },
   };
@@ -201,7 +201,7 @@ async function example7_completeWorkflow(userId: string): Promise<void> {
   }
 
   // Step 2: Check rate limit
-  const rateLimit = await rateLimiter.checkRateLimit(userId, 'pro');
+  const rateLimit = await rateLimiter.checkRateLimit(userId, 'PRO');
   if (!rateLimit.allowed) {
     throw new Error(
       `Rate limit exceeded. Try again at ${rateLimit.resetAt.toLocaleString()}`
@@ -220,7 +220,7 @@ async function example7_completeWorkflow(userId: string): Promise<void> {
   const result = await claudeClient.generateCode({
     prompt,
     options: {
-      model: ClaudeModel.SONNET_4,
+      model: ClaudeModel.SONNET_4_5,
       maxTurns: 5,
     },
   });
@@ -245,7 +245,7 @@ async function example7_completeWorkflow(userId: string): Promise<void> {
  * Example 8: Get usage statistics
  */
 async function example8_usageStats(userId: string): Promise<void> {
-  const stats = await rateLimiter.getUsageStats(userId, 'free');
+  const stats = await rateLimiter.getUsageStats(userId, 'FREE');
 
   console.log('Usage Statistics:');
   console.log('- Requests this minute:', stats.minuteCount);

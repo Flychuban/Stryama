@@ -46,11 +46,11 @@ export default async function CheckoutPage({
   const billingParam = params.billing?.toLowerCase();
 
   // Validate plan parameter
-  const validPlans = ['pro', 'enterprise'] as const;
+  const validPlans = ['builder', 'pro'] as const;
   type ValidPlan = (typeof validPlans)[number];
   const plan: ValidPlan = validPlans.includes(planParam as ValidPlan)
     ? (planParam as ValidPlan)
-    : 'pro';
+    : 'builder';
 
   // Validate billing parameter
   const validBilling = ['monthly', 'annual'] as const;

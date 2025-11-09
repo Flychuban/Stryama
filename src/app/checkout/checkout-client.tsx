@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Zap, Crown } from 'lucide-react';
+import { ArrowLeft, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AppHeader } from '@/components/shared/AppHeader';
 import { OrderSummary } from '@/components/checkout/OrderSummary';
@@ -13,45 +13,43 @@ import { type BillingCycle, type CheckoutPlan } from '@/types';
  * Plan configurations for checkout
  * These should match the plans configured in Clerk Billing Dashboard
  */
-const CHECKOUT_PLANS: Record<'pro' | 'enterprise', CheckoutPlan> = {
+const CHECKOUT_PLANS: Record<'builder' | 'pro', CheckoutPlan> = {
+  builder: {
+    id: 'builder',
+    name: 'Builder',
+    icon: Zap,
+    monthlyPrice: 19,
+    annualPrice: 182, // 20% discount
+    features: [
+      '100 AI generations per month',
+      '5 active projects',
+      'Smart AI (Haiku + Sonnet)',
+      'E2B sandbox (30min timeout)',
+      'Email support (48hr)',
+      'Private projects',
+      'GitHub export',
+    ],
+  },
   pro: {
     id: 'pro',
     name: 'Pro',
     icon: Zap,
-    monthlyPrice: 29,
-    annualPrice: 278, // 20% discount
+    monthlyPrice: 49,
+    annualPrice: 470, // 20% discount
     features: [
-      'Unlimited projects',
-      'Advanced AI features',
-      'Priority support',
-      'All premium templates',
-      'Team collaboration (up to 5)',
-      'Custom domains',
-      'Advanced exports',
-      'API access',
-    ],
-  },
-  enterprise: {
-    id: 'enterprise',
-    name: 'Enterprise',
-    icon: Crown,
-    monthlyPrice: 99,
-    annualPrice: 950, // 20% discount
-    features: [
-      'Everything in Pro',
-      'Unlimited team members',
-      'Dedicated support',
-      'Custom integrations',
-      'SLA guarantee',
-      'Advanced security',
-      'Custom AI training',
-      'White-label options',
+      '350 AI generations per month',
+      '20 active projects',
+      'Smart AI with priority routing',
+      'E2B sandbox (2hr timeout)',
+      'Priority support + chat',
+      'Custom domains (coming soon)',
+      'API access (coming soon)',
     ],
   },
 };
 
 interface CheckoutPageClientProps {
-  initialPlan: 'pro' | 'enterprise';
+  initialPlan: 'builder' | 'pro';
   initialBilling: BillingCycle;
 }
 

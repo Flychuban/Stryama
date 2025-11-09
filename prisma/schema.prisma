@@ -57,6 +57,7 @@ model AIGeneration {
     response    String   @db.Text
     tokens      Int?
     duration    Int?
+    model       String?  // Claude model used (haiku, sonnet, etc.)
     clerkUserId String   // References Clerk's user ID directly
     projectId   String?
     sessionId   String?  // Claude session ID for resumption
@@ -86,6 +87,13 @@ enum SandboxStatus {
     ERROR
 }
 
+// User plan enum for subscription tiers
+enum UserPlan {
+    FREE
+    BUILDER
+    PRO
+}
+
 // Sandbox model - tracks E2B sandbox environments
 model Sandbox {
     id           String        @id @default(cuid())
@@ -106,4 +114,26 @@ model Sandbox {
     @@index([projectId])
     @@index([status])
     @@index([expiresAt])
+}
+
+// UserUsage model - tracks user subscription and usage limits
+model UserUsage {
+    id                   String   @id @default(cuid())
+    clerkUserId          String   @unique // References Clerk's user ID directly
+    plan                 UserPlan @default(FREE)
+
+    // Billing period tracking
+    currentPeriodStart   DateTime @default(now())
+    currentPeriodEnd     DateTime
+
+    // Usage tracking
+    generationsThisMonth Int      @default(0)
+    lastGenerationAt     DateTime?
+
+    // Metadata
+    createdAt            DateTime @default(now())
+    updatedAt            DateTime @updatedAt
+
+    @@index([clerkUserId])
+    @@index([currentPeriodEnd])
 }

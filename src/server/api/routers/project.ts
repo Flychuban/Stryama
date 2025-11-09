@@ -2,6 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { Framework } from '@prisma/client';
 import { createTRPCRouter, protectedProcedure } from '~/server/api/trpc';
+import { UsageTrackingService } from '~/lib/services/usageTracking';
 
 export const projectRouter = createTRPCRouter({
   // Get all projects for the authenticated user
@@ -53,6 +54,17 @@ export const projectRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      // Check project limit before creating
+      try {
+        await UsageTrackingService.checkProjectLimit(ctx.auth.userId);
+      } catch (error) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message:
+            error instanceof Error ? error.message : 'Project limit exceeded',
+        });
+      }
+
       const project = await ctx.db.project.create({
         data: {
           name: input.name,

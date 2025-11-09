@@ -1,4 +1,5 @@
 import { env } from '~/env';
+import { PLAN_LIMITS, type UserPlan } from '~/types/pricing';
 
 export const E2B_CONFIG = {
   apiKey: env.E2B_API_KEY,
@@ -6,7 +7,7 @@ export const E2B_CONFIG = {
   maxTimeoutMs: 60 * 60 * 1000, // 60 minutes
   retryAttempts: 3,
   retryDelayMs: 100, // Initial delay for exponential backoff
-  maxConcurrentSandboxes: 5, // Maximum concurrent sandboxes per user
+  maxConcurrentSandboxes: 5, // Maximum concurrent sandboxes per user (deprecated - use plan-based limits)
 } as const;
 
 export const SANDBOX_TIMEOUTS = {
@@ -18,3 +19,17 @@ export const SANDBOX_TIMEOUTS = {
 export const FEATURE_FLAGS = {
   usePersistence: true, // Use E2B pause/resume API for reconnecting to existing sandboxes
 } as const;
+
+/**
+ * Get timeout in milliseconds for a user's plan
+ */
+export function getTimeoutForPlan(plan: UserPlan): number {
+  return PLAN_LIMITS[plan].e2bTimeoutSeconds * 1000;
+}
+
+/**
+ * Get concurrent sandbox limit for a user's plan
+ */
+export function getConcurrentLimitForPlan(plan: UserPlan): number {
+  return PLAN_LIMITS[plan].e2bConcurrent;
+}
