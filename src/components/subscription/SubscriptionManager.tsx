@@ -119,10 +119,6 @@ export function SubscriptionManager() {
               <Button asChild className="w-full" variant="outline">
                 <Link href="/checkout">Change Plan</Link>
               </Button>
-              <p className="text-center text-xs text-muted-foreground">
-                Manage your subscription, payment method, and billing info
-                through Clerk&apos;s secure portal
-              </p>
             </>
           )}
         </div>

@@ -126,10 +126,10 @@ export async function getUserLimits() {
 
   const limitsMap = {
     FREE: {
-      generationsPerMonth: 10,
-      maxProjects: 2,
+      generationsPerMonth: 15,
+      maxProjects: 1,
       models: ['haiku'] as const,
-      sandboxTimeout: 5 * 60 * 1000, // 5 minutes
+      sandboxTimeout: 10 * 60 * 1000, // 10 minutes
       supportLevel: 'community',
     },
     BUILDER: {
