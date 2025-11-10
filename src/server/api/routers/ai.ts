@@ -284,11 +284,36 @@ export const aiRouter = createTRPCRouter({
               await sandboxManager.readAllFiles(sandboxInstance);
 
             if (sandboxFilesResult.success && sandboxFilesResult.data) {
-              filesToSave = sandboxFilesResult.data;
+              // Filter out infrastructure files before saving to database
+              const infrastructureFiles = [
+                'package.json',
+                'vite.config.ts',
+                'tsconfig.json',
+                'next.config.js',
+                'next.config.ts',
+              ];
+
+              const allFiles = sandboxFilesResult.data;
+              filesToSave = allFiles.filter(
+                (file) => !infrastructureFiles.includes(file.path)
+              );
+
+              const filteredCount = allFiles.length - filesToSave.length;
               console.log(
-                `[AI Router] ✅ Found ${filesToSave.length} files in sandbox to save:`,
+                `[AI Router] ✅ Found ${allFiles.length} files in sandbox, filtered out ${filteredCount} infrastructure file(s)`
+              );
+              console.log(
+                `[AI Router] 📁 Saving ${filesToSave.length} application files:`,
                 filesToSave.map((f) => f.path)
               );
+              if (filteredCount > 0) {
+                console.log(
+                  `[AI Router] 🚫 Skipped infrastructure files (will be generated fresh):`,
+                  allFiles
+                    .filter((f) => infrastructureFiles.includes(f.path))
+                    .map((f) => f.path)
+                );
+              }
             } else {
               console.error(
                 `[AI Router] ❌ Failed to read files from sandbox: ${sandboxFilesResult.error}`
