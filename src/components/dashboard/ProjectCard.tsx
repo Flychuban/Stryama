@@ -6,12 +6,10 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Code2, Copy, Trash2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-import { Framework } from '@prisma/client';
 
 // 4. UI components
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,17 +24,8 @@ import {
 type Project = {
   id: string;
   name: string;
-  framework: Framework;
   lastModified: Date;
   thumbnailUrl?: string;
-};
-
-// Framework display names
-const FRAMEWORK_LABELS: Record<Framework, string> = {
-  [Framework.REACT]: 'React',
-  [Framework.NEXTJS]: 'Next.js',
-  [Framework.VUE]: 'Vue',
-  [Framework.VANILLA]: 'Vanilla JS',
 };
 
 type ProjectCardProps = {
@@ -140,12 +129,6 @@ export function ProjectCard({
                 {formatDistanceToNow(project.lastModified, { addSuffix: true })}
               </p>
             </div>
-            <Badge
-              variant="secondary"
-              className="flex-shrink-0 border-primary/20 bg-primary/10 text-xs text-primary"
-            >
-              {FRAMEWORK_LABELS[project.framework]}
-            </Badge>
           </div>
         </CardContent>
       </Card>

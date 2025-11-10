@@ -45,10 +45,11 @@ export {
   ClaudeModel,
   GenerationStatus,
   ClaudeErrorType,
-  FrameworkType,
+  FRAMEWORK_TYPE,
   ProgrammingLanguage,
 } from './types';
 export type {
+  FrameworkType,
   ProjectFile,
   GenerationOptions,
   ProjectContext,

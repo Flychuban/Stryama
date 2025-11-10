@@ -14,7 +14,7 @@ import {
   rateLimiter,
   validatePrompt,
   ClaudeModel,
-  FrameworkType,
+  FRAMEWORK_TYPE,
   ProgrammingLanguage,
 } from './index';
 import type { AIGenerationRequest, PromptContext } from './index';
@@ -58,7 +58,6 @@ async function example2_promptTemplates(): Promise<void> {
   // Build prompt from template
   const context: PromptContext = {
     userInput,
-    framework: FrameworkType.NEXTJS,
     dependencies: ['recharts', 'date-fns', '@tanstack/react-table'],
   };
 
@@ -137,7 +136,6 @@ async function example5_withContext(): Promise<void> {
     prompt: 'Add a bio field to the user profile component',
     projectId: 'proj_123',
     context: {
-      framework: FrameworkType.NEXTJS,
       existingFiles: [
         {
           path: 'components/UserProfile.tsx',
@@ -212,7 +210,6 @@ async function example7_completeWorkflow(userId: string): Promise<void> {
   const templateType = PromptBuilder.detectTemplateType(userInput);
   const prompt = PromptBuilder.buildPrompt(templateType, {
     userInput,
-    framework: FrameworkType.NEXTJS,
     dependencies: ['@tanstack/react-table', 'date-fns'],
   });
 

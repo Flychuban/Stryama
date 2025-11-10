@@ -19,7 +19,6 @@ model Project {
     id            String    @id @default(cuid())
     name          String
     description   String?
-    framework     Framework @default(REACT)
     fileStructure Json?
     clerkUserId   String    // References Clerk's user ID directly
     createdAt     DateTime  @default(now())
@@ -70,14 +69,6 @@ model AIGeneration {
     @@index([clerkUserId])
     @@index([projectId])
     @@index([sessionId])
-}
-
-// Framework type enum for project templates
-enum Framework {
-    REACT
-    NEXTJS
-    VUE
-    VANILLA
 }
 
 // Sandbox status enum for type safety

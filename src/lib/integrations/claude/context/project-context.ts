@@ -3,7 +3,6 @@ import type {
   ProjectFile,
   ProjectContext,
   ProgrammingLanguage,
-  FrameworkType,
 } from '../types';
 
 type GatherOptions = {
@@ -42,7 +41,6 @@ export class ProjectContextGatherer {
     if (!project) {
       return {
         existingFiles: [],
-        framework: undefined,
         dependencies: [],
       };
     }
@@ -69,7 +67,6 @@ export class ProjectContextGatherer {
 
     return {
       existingFiles,
-      framework: project.framework as unknown as FrameworkType | undefined, // Use framework from database
       dependencies: [], // Not needed - package.json created by infrastructure
     };
   }

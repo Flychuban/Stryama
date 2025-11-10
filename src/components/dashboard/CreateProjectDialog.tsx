@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { Framework } from '@prisma/client';
 import {
   Dialog,
   DialogContent,
@@ -13,40 +12,14 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
 
 interface CreateProjectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreateProject: (data: {
-    name: string;
-    description?: string;
-    framework: Framework;
-  }) => void;
+  onCreateProject: (data: { name: string; description?: string }) => void;
   isCreating: boolean;
 }
-
-const FRAMEWORK_OPTIONS = [
-  { value: Framework.REACT, label: 'React', description: 'React with Vite' },
-  {
-    value: Framework.NEXTJS,
-    label: 'Next.js',
-    description: 'React with Next.js framework',
-  },
-  { value: Framework.VUE, label: 'Vue', description: 'Vue 3 with Vite' },
-  {
-    value: Framework.VANILLA,
-    label: 'Vanilla JS',
-    description: 'Plain JavaScript',
-  },
-] as const;
 
 export function CreateProjectDialog({
   open,
@@ -56,7 +29,6 @@ export function CreateProjectDialog({
 }: CreateProjectDialogProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [framework, setFramework] = useState<Framework>(Framework.REACT);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,12 +36,10 @@ export function CreateProjectDialog({
       onCreateProject({
         name: name.trim(),
         description: description.trim() || undefined,
-        framework,
       });
       // Reset form
       setName('');
       setDescription('');
-      setFramework(Framework.REACT);
     }
   };
 
@@ -79,7 +49,7 @@ export function CreateProjectDialog({
         <DialogHeader>
           <DialogTitle>Create New Project</DialogTitle>
           <DialogDescription>
-            Choose a framework and give your project a name to get started.
+            Create a new React + Vite project and start building your web app.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
@@ -104,30 +74,6 @@ export function CreateProjectDialog({
                 onChange={(e) => setDescription(e.target.value)}
                 disabled={isCreating}
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="framework">Framework</Label>
-              <Select
-                value={framework}
-                onValueChange={(value) => setFramework(value as Framework)}
-                disabled={isCreating}
-              >
-                <SelectTrigger id="framework">
-                  <SelectValue placeholder="Select a framework" />
-                </SelectTrigger>
-                <SelectContent>
-                  {FRAMEWORK_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      <div className="flex flex-col">
-                        <span className="font-medium">{option.label}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {option.description}
-                        </span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
           </div>
           <DialogFooter>

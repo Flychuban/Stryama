@@ -15,7 +15,6 @@ async function main() {
     data: {
       name: 'Sample React App',
       description: 'A sample React application for testing',
-      framework: 'REACT',
       clerkUserId: testClerkUserId1,
       fileStructure: {
         src: {
@@ -32,15 +31,14 @@ async function main() {
 
   const project2 = await prisma.project.create({
     data: {
-      name: 'Node.js API',
-      description: 'A Node.js REST API project',
-      framework: 'NEXTJS',
+      name: 'Task Manager App',
+      description: 'A React task manager application',
       clerkUserId: testClerkUserId2,
       fileStructure: {
         src: {
-          'server.ts': 'file',
-          routes: {
-            'users.ts': 'file',
+          'App.tsx': 'file',
+          components: {
+            'TaskList.tsx': 'file',
           },
         },
       },
@@ -92,19 +90,28 @@ export const Button: React.FC<ButtonProps> = ({ onClick, children }) => {
 
   const file3 = await prisma.file.create({
     data: {
-      path: 'src/server.ts',
-      content: `import express from 'express';
+      path: 'src/components/TaskList.tsx',
+      content: `import React from 'react';
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+type Task = {
+  id: string;
+  title: string;
+  completed: boolean;
+};
 
-app.get('/', (req, res) => {
-  res.json({ message: 'Hello World' });
-});
+type TaskListProps = {
+  tasks: Task[];
+};
 
-app.listen(PORT, () => {
-  console.log(\`Server running on port \${PORT}\`);
-});`,
+export const TaskList: React.FC<TaskListProps> = ({ tasks }) => {
+  return (
+    <ul>
+      {tasks.map((task) => (
+        <li key={task.id}>{task.title}</li>
+      ))}
+    </ul>
+  );
+};`,
       language: 'typescript',
       projectId: project2.id,
     },

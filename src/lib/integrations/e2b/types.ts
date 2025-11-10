@@ -63,14 +63,12 @@ export type PreviewUrl = string;
 export type PreviewStatus = 'starting' | 'ready' | 'failed';
 
 export type PreviewConfig = {
-  readonly framework: FrameworkType;
   readonly port: number;
   readonly command: string;
 };
 
 export type PreviewResult = {
   readonly url: PreviewUrl;
-  readonly framework: FrameworkType;
   readonly port: number;
   readonly startTime: Date;
 };
