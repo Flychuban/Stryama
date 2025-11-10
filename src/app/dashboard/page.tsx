@@ -5,7 +5,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { type Framework } from '@prisma/client';
 
 // 2. Internal utilities
 import { api } from '@/trpc/react';
@@ -27,7 +26,6 @@ export default function DashboardPage() {
   const [isAutoCreating, setIsAutoCreating] = useState(false);
   const [pendingPromptData, setPendingPromptData] = useState<{
     prompt: string;
-    framework: Framework;
   } | null>(null);
 
   // Prevent duplicate execution in React 18 Strict Mode
@@ -100,7 +98,6 @@ export default function DashboardPage() {
   const handleCreateProject = (data: {
     name: string;
     description?: string;
-    framework: Framework;
   }): void => {
     createProject.mutate(data);
   };
@@ -115,7 +112,6 @@ export default function DashboardPage() {
       duplicateProject.mutate({
         name: `${projectToDuplicate.name} (Copy)`,
         description: projectToDuplicate.description ?? '',
-        framework: projectToDuplicate.framework,
       });
     }
   };
@@ -155,7 +151,6 @@ export default function DashboardPage() {
       createProject.mutate({
         name: generateProjectName(storedData.prompt),
         description: storedData.prompt,
-        framework: storedData.framework,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -166,7 +161,6 @@ export default function DashboardPage() {
     projects?.map((project) => ({
       id: project.id,
       name: project.name,
-      framework: project.framework,
       lastModified: project.updatedAt,
       thumbnailUrl: undefined,
     })) ?? [];

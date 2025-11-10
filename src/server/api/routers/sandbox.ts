@@ -425,12 +425,11 @@ export const sandboxRouter = createTRPCRouter({
         `[Preview] Starting preview server (files already in sandbox from MCP tools)`
       );
 
-      // Start preview server with project framework
+      // Start preview server (React+Vite)
       const previewResult = await startPreviewServer(
         sandboxResult.data.instance,
         input.projectId,
-        project.files,
-        project.framework // Pass the framework from project settings
+        project.files
       );
 
       if (!previewResult.success || !previewResult.data) {
@@ -453,7 +452,6 @@ export const sandboxRouter = createTRPCRouter({
           previewUrl: previewResult.data.url,
           metadata: {
             ...(currentSandbox?.metadata as object | undefined),
-            previewFramework: previewResult.data.framework,
             previewPort: previewResult.data.port,
             previewStartedAt: previewResult.data.startTime.toISOString(),
           },
@@ -462,7 +460,6 @@ export const sandboxRouter = createTRPCRouter({
 
       return {
         url: previewResult.data.url,
-        framework: previewResult.data.framework,
         port: previewResult.data.port,
         sandboxId: sandboxResult.data.id,
       };
@@ -509,7 +506,6 @@ export const sandboxRouter = createTRPCRouter({
       if (!sandbox?.previewUrl) {
         return {
           url: null,
-          framework: null,
           port: null,
         };
       }
@@ -518,7 +514,6 @@ export const sandboxRouter = createTRPCRouter({
 
       return {
         url: sandbox.previewUrl,
-        framework: metadata?.previewFramework as string | null,
         port: metadata?.previewPort as number | null,
       };
     }),
@@ -700,8 +695,7 @@ export const sandboxRouter = createTRPCRouter({
         const previewResult = await startPreviewServer(
           sandbox,
           input.projectId,
-          project.files,
-          project.framework
+          project.files
         );
 
         if (!previewResult.success || !previewResult.data) {
@@ -898,12 +892,11 @@ export const sandboxRouter = createTRPCRouter({
         `[Preview] Restarting preview server (files already in sandbox from MCP tools)`
       );
 
-      // Restart preview server with project framework
+      // Restart preview server
       const previewResult = await restartPreviewServer(
         sandboxResult.data.instance,
         input.projectId,
-        project.files,
-        project.framework // Pass the framework from project settings
+        project.files
       );
 
       if (!previewResult.success || !previewResult.data) {
@@ -926,7 +919,6 @@ export const sandboxRouter = createTRPCRouter({
           previewUrl: previewResult.data.url,
           metadata: {
             ...(currentSandbox?.metadata as object | undefined),
-            previewFramework: previewResult.data.framework,
             previewPort: previewResult.data.port,
             previewStartedAt: previewResult.data.startTime.toISOString(),
           },
@@ -935,7 +927,6 @@ export const sandboxRouter = createTRPCRouter({
 
       return {
         url: previewResult.data.url,
-        framework: previewResult.data.framework,
         port: previewResult.data.port,
         sandboxId: sandboxResult.data.id,
       };

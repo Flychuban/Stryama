@@ -10,17 +10,11 @@ import { Badge } from '@/components/ui/badge';
 import { Logo } from '@/components/shared/Logo';
 import { api } from '@/trpc/react';
 import { usePromptHandoff } from '@/hooks/usePromptHandoff';
-import { Framework } from '@prisma/client';
 import { useToast } from '@/hooks/use-toast';
 
 type SuggestionPill = {
   icon: React.ReactNode;
   text: string;
-};
-
-type FrameworkOption = {
-  value: Framework;
-  label: string;
 };
 
 const suggestions: SuggestionPill[] = [
@@ -30,18 +24,8 @@ const suggestions: SuggestionPill[] = [
   { icon: <Code2 className="h-3.5 w-3.5" />, text: 'Dashboard' },
 ];
 
-const frameworkOptions: FrameworkOption[] = [
-  { value: Framework.REACT, label: 'React' },
-  { value: Framework.NEXTJS, label: 'Next.js' },
-  { value: Framework.VUE, label: 'Vue' },
-  { value: Framework.VANILLA, label: 'Vanilla JS' },
-];
-
 export function Hero() {
   const [prompt, setPrompt] = useState('');
-  const [selectedFramework, setSelectedFramework] = useState<Framework>(
-    Framework.REACT
-  );
   const [isCreating, setIsCreating] = useState(false);
 
   const router = useRouter();
@@ -75,11 +59,10 @@ export function Hero() {
       createProjectMutation.mutate({
         name: generateProjectName(prompt),
         description: prompt,
-        framework: selectedFramework,
       });
     } else {
       // User is not authenticated - store prompt and redirect to sign-up
-      storePrompt(prompt, selectedFramework);
+      storePrompt(prompt);
       router.push('/sign-up');
     }
   };
@@ -181,27 +164,6 @@ export function Hero() {
                   </Button>
                 </div>
               </div>
-            </div>
-
-            {/* Framework selector */}
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <span className="text-sm text-muted-foreground">Framework:</span>
-              {frameworkOptions.map((framework) => (
-                <Button
-                  key={framework.value}
-                  variant={
-                    selectedFramework === framework.value
-                      ? 'default'
-                      : 'outline'
-                  }
-                  size="sm"
-                  className="rounded-full transition-all"
-                  onClick={() => setSelectedFramework(framework.value)}
-                  disabled={isCreating}
-                >
-                  {framework.label}
-                </Button>
-              ))}
             </div>
 
             {/* Suggestion pills */}

@@ -157,7 +157,6 @@ export const aiRouter = createTRPCRouter({
             console.log('[AI Router] Setting up infrastructure in sandbox');
             const infraResult = await setupInfrastructure(
               sandboxResult.data.instance,
-              project.framework,
               project.name
             );
 
@@ -634,7 +633,6 @@ export const aiRouter = createTRPCRouter({
 
                 const infraResult = await setupInfrastructure(
                   sandboxInstance,
-                  project.framework,
                   project.name
                 );
 

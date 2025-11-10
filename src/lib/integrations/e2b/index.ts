@@ -17,7 +17,7 @@ export {
   getPreviewLogs,
 } from './services/preview-manager';
 export {
-  detectFramework,
+  getFrameworkType,
   getFrameworkPort,
   getFrameworkCommand,
 } from './utils/framework-detector';

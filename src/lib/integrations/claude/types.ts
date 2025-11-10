@@ -20,12 +20,11 @@ export enum ClaudeErrorType {
   NETWORK_ERROR = 'network_error',
 }
 
-export enum FrameworkType {
-  NEXTJS = 'nextjs',
-  REACT = 'react',
-  VANILLA = 'vanilla',
-  CUSTOM = 'custom',
-}
+/**
+ * Framework type constant - app is specialized for React+Vite
+ */
+export const FRAMEWORK_TYPE = 'react' as const;
+export type FrameworkType = typeof FRAMEWORK_TYPE;
 
 export enum ProgrammingLanguage {
   TYPESCRIPT = 'typescript',
