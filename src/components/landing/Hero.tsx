@@ -141,7 +141,10 @@ export function Hero() {
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
                     placeholder={placeholderText}
-                    className="min-h-[100px] resize-none border-0 bg-transparent text-base placeholder:text-muted-foreground/60 focus-visible:ring-0 focus-visible:ring-offset-0"
+                    autoGrow
+                    minHeight={100}
+                    maxHeight={300}
+                    className="border-0 bg-transparent text-base placeholder:text-muted-foreground/60 focus-visible:ring-0 focus-visible:ring-offset-0"
                     disabled={isCreating}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {

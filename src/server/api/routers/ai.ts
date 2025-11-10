@@ -27,6 +27,81 @@ import { ModelSelectionService } from '~/lib/services/modelSelection';
 import { getUserPlanFromClerk } from '~/lib/clerk/authorization';
 
 export const aiRouter = createTRPCRouter({
+  /**
+   * Initialize a generation with prompt data
+   *
+   * This mutation creates a pending generation record with the prompt.
+   * Used to avoid sending large prompts via URL parameters in subscriptions.
+   *
+   * Returns a generationId that can be used with streamGeneration.
+   */
+  initializeGeneration: protectedProcedure
+    .input(
+      z.object({
+        prompt: z.string().min(1, 'Prompt cannot be empty'),
+        projectId: z.string().optional(),
+        useSandbox: z.boolean().default(true),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const validation = validatePrompt(input.prompt);
+      if (!validation.valid) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: validation.errors[0] ?? 'Invalid prompt',
+        });
+      }
+
+      // Check generation limit (monthly usage)
+      try {
+        await UsageTrackingService.checkGenerationLimit(ctx.auth.userId);
+      } catch (error) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Generation limit exceeded',
+        });
+      }
+
+      // Get user plan for rate limiting
+      const userPlan = await getUserPlanFromClerk();
+
+      // Check rate limits
+      const rateLimit = await rateLimiter.checkRateLimit(
+        ctx.auth.userId,
+        userPlan
+      );
+
+      if (!rateLimit.allowed) {
+        throw new TRPCError({
+          code: 'TOO_MANY_REQUESTS',
+          message: `Rate limit exceeded. You can make ${rateLimit.limit} requests per minute. Try again after ${rateLimit.resetAt.toISOString()}`,
+        });
+      }
+
+      // Create a pending generation record
+      const generation = await ctx.db.aIGeneration.create({
+        data: {
+          prompt: input.prompt,
+          response: '', // Will be filled during streaming
+          clerkUserId: ctx.auth.userId,
+          projectId: input.projectId ?? null,
+        },
+      });
+
+      console.log(
+        `[AI Router] Initialized generation ${generation.id} for user ${ctx.auth.userId}`
+      );
+
+      return {
+        generationId: generation.id,
+        projectId: input.projectId,
+        useSandbox: input.useSandbox,
+      };
+    }),
+
   generateCode: protectedProcedure
     .input(
       z.object({
@@ -490,63 +565,45 @@ export const aiRouter = createTRPCRouter({
    * - Content streaming
    * - Token usage updates
    * - Completion/error notifications
+   *
+   * IMPORTANT: This subscription accepts a generationId (from initializeGeneration)
+   * instead of the full prompt to avoid 431 errors with large prompts.
    */
   streamGeneration: protectedProcedure
     .input(
       z.object({
-        prompt: z.string().min(1, 'Prompt cannot be empty'),
-        projectId: z.string().optional(),
-        useSandbox: z.boolean().default(true),
+        generationId: z.string(),
       })
     )
     .subscription(async ({ ctx, input }) => {
-      // Validate prompt
-      const validation = validatePrompt(input.prompt);
-      if (!validation.valid) {
+      // Fetch the generation record to get the prompt
+      const generation = await ctx.db.aIGeneration.findFirst({
+        where: {
+          id: input.generationId,
+          clerkUserId: ctx.auth.userId,
+        },
+      });
+
+      if (!generation) {
         throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: validation.errors[0] ?? 'Invalid prompt',
+          code: 'NOT_FOUND',
+          message: 'Generation not found or you do not have access to it',
         });
       }
 
-      // Check generation limit (monthly usage)
-      try {
-        await UsageTrackingService.checkGenerationLimit(ctx.auth.userId);
-      } catch (error) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message:
-            error instanceof Error
-              ? error.message
-              : 'Generation limit exceeded',
-        });
-      }
-
-      // Get user plan from Clerk session entitlements (no database query needed)
-      const userPlan = await getUserPlanFromClerk();
+      const prompt = generation.prompt;
+      const projectId = generation.projectId ?? undefined;
+      const useSandbox = true; // Default to true
 
       console.log(
-        `[AI Router] User ${ctx.auth.userId} has plan: ${userPlan} (from Clerk session)`
+        `[AI Stream] Starting generation ${input.generationId} for user ${ctx.auth.userId}`
       );
 
-      // Check rate limits (minute/day limits for anti-spam)
-      const rateLimit = await rateLimiter.checkRateLimit(
-        ctx.auth.userId,
-        userPlan
-      );
-
-      if (!rateLimit.allowed) {
-        throw new TRPCError({
-          code: 'TOO_MANY_REQUESTS',
-          message: `Rate limit exceeded. You can make ${rateLimit.limit} requests per minute. Try again after ${rateLimit.resetAt.toISOString()}`,
-        });
-      }
+      // Get user plan from Clerk session entitlements
+      const userPlan = await getUserPlanFromClerk();
 
       // Select appropriate model based on prompt complexity and user plan
-      const selectedModel = ModelSelectionService.selectModel(
-        input.prompt,
-        userPlan
-      );
+      const selectedModel = ModelSelectionService.selectModel(prompt, userPlan);
       const modelId = ModelSelectionService.getModelId(selectedModel);
 
       console.log(
@@ -574,10 +631,10 @@ export const aiRouter = createTRPCRouter({
             } | null = null;
 
             // Gather project context if project ID provided
-            if (input.projectId) {
+            if (projectId) {
               project = await ctx.db.project.findFirst({
                 where: {
-                  id: input.projectId,
+                  id: projectId,
                   clerkUserId: ctx.auth.userId,
                 },
               });
@@ -596,7 +653,7 @@ export const aiRouter = createTRPCRouter({
               // Get existing session ID for continuity
               const lastGeneration = await ctx.db.aIGeneration.findFirst({
                 where: {
-                  projectId: input.projectId,
+                  projectId: projectId,
                   sessionId: { not: null },
                 },
                 orderBy: { createdAt: 'desc' },
@@ -607,13 +664,13 @@ export const aiRouter = createTRPCRouter({
 
               // Gather project context
               const gatherer = new ProjectContextGatherer(ctx.db);
-              context = await gatherer.gatherContext(input.projectId, {
+              context = await gatherer.gatherContext(projectId, {
                 maxFiles: 5,
                 maxFileSize: 3000,
               });
 
               // Set up E2B sandbox if enabled
-              if (input.useSandbox) {
+              if (useSandbox) {
                 emit.next(
                   createSandboxEvent(
                     'creating',
@@ -624,7 +681,7 @@ export const aiRouter = createTRPCRouter({
 
                 const sandboxResult = await sandboxManager.getOrCreateSandbox(
                   ctx.db,
-                  input.projectId,
+                  projectId,
                   ctx.auth.userId,
                   E2B_CONFIG.maxTimeoutMs
                 );
@@ -705,7 +762,7 @@ export const aiRouter = createTRPCRouter({
             // Start streaming generation
             const streamIterator = claudeClient.generateCodeStreaming(
               {
-                prompt: input.prompt,
+                prompt: prompt,
                 context,
                 sessionId,
               },
@@ -723,21 +780,19 @@ export const aiRouter = createTRPCRouter({
               }
             }
 
-            // CRITICAL: Persist to database after stream completes
-            if (completionResult && input.projectId && project) {
-              console.log('[AI Stream] Persisting generation to database...');
+            // CRITICAL: Update the existing generation record after stream completes
+            if (completionResult && projectId && project) {
+              console.log('[AI Stream] Updating generation in database...');
 
               try {
-                // Save AI generation record
-                await ctx.db.aIGeneration.create({
+                // Update the existing generation record with results
+                await ctx.db.aIGeneration.update({
+                  where: { id: input.generationId },
                   data: {
-                    prompt: input.prompt,
                     response: completionResult.content ?? '',
                     tokens: completionResult.tokensUsed,
                     duration: completionResult.duration,
-                    model: selectedModel, // Track which model was used
-                    clerkUserId: ctx.auth.userId,
-                    projectId: input.projectId,
+                    model: selectedModel,
                     sessionId: completionResult.sessionId ?? null,
                     totalCost: completionResult.totalCost ?? null,
                   },
@@ -763,12 +818,17 @@ export const aiRouter = createTRPCRouter({
                       `[AI Stream] Saving ${sandboxFilesResult.data.length} files to database...`
                     );
 
+                    // projectId is guaranteed to exist here due to the parent if condition
+                    if (!projectId) {
+                      throw new Error('ProjectId is required for file saving');
+                    }
+
                     await Promise.all(
                       sandboxFilesResult.data.map((file) =>
                         ctx.db.file.upsert({
                           where: {
                             projectId_path: {
-                              projectId: input.projectId!,
+                              projectId: projectId,
                               path: file.path,
                             },
                           },
@@ -776,7 +836,7 @@ export const aiRouter = createTRPCRouter({
                             path: file.path,
                             content: file.content,
                             language: file.language,
-                            projectId: input.projectId!,
+                            projectId: projectId,
                           },
                           update: {
                             content: file.content,

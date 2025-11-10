@@ -5,7 +5,7 @@ const promptSchema = z.object({
   content: z
     .string()
     .min(10, 'Prompt must be at least 10 characters')
-    .max(2000, 'Prompt must not exceed 2000 characters'),
+    .max(50000, 'Prompt must not exceed 50,000 characters'),
   framework: z.string().optional(),
 });
 
@@ -54,9 +54,9 @@ export function validatePrompt(prompt: string): PromptValidationResult {
     );
   }
 
-  if (prompt.length > 3000) {
+  if (prompt.length > 30000) {
     warnings.push(
-      'Prompt is very long. Consider breaking it into smaller, focused requests.'
+      'Prompt is very long. Consider breaking it into smaller, focused requests for better results.'
     );
   }
 
