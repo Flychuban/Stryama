@@ -11,6 +11,10 @@ import { Logo } from '@/components/shared/Logo';
 import { api } from '@/trpc/react';
 import { usePromptHandoff } from '@/hooks/usePromptHandoff';
 import { useToast } from '@/hooks/use-toast';
+import {
+  LimitReachedDialog,
+  type LimitType,
+} from '@/components/shared/LimitReachedDialog';
 
 type SuggestionPill = {
   icon: React.ReactNode;
@@ -34,11 +38,23 @@ const PROJECT_NAME_CONFIG = {
 export function Hero() {
   const [prompt, setPrompt] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [showLimitDialog, setShowLimitDialog] = useState(false);
+  const [limitDialogData, setLimitDialogData] = useState<{
+    type: LimitType;
+    currentUsage: number;
+    limit: number;
+    plan: 'FREE' | 'BUILDER' | 'PRO';
+  } | null>(null);
 
   const router = useRouter();
   const { isSignedIn } = useAuth();
   const { toast } = useToast();
   const { storePrompt } = usePromptHandoff();
+
+  // Fetch usage stats for authenticated users
+  const { data: usageStats } = api.usage.getStats.useQuery(undefined, {
+    enabled: isSignedIn,
+  });
 
   const createProjectMutation = api.project.create.useMutation({
     onSuccess: (newProject) => {
@@ -58,6 +74,47 @@ export function Hero() {
 
   const handleSubmit = (): void => {
     if (!prompt.trim()) return;
+
+    // Check limits for authenticated users before proceeding
+    if (isSignedIn && usageStats) {
+      // Check project limit
+      if (usageStats.projectsUsed >= usageStats.projectsLimit) {
+        setLimitDialogData({
+          type: 'project',
+          currentUsage: usageStats.projectsUsed,
+          limit: usageStats.projectsLimit,
+          plan: usageStats.plan,
+        });
+        setShowLimitDialog(true);
+        return; // Block submission
+      }
+
+      // Warn if approaching generation limit (but allow submission)
+      if (
+        usageStats.generationsRemaining < 5 &&
+        usageStats.generationsRemaining > 0
+      ) {
+        toast({
+          title: 'Low on generations',
+          description: `Only ${usageStats.generationsRemaining} generation${
+            usageStats.generationsRemaining === 1 ? '' : 's'
+          } remaining this month.`,
+          variant: 'default',
+        });
+      }
+
+      // Block if no generations remaining
+      if (usageStats.generationsRemaining === 0) {
+        setLimitDialogData({
+          type: 'generation',
+          currentUsage: usageStats.generationsUsed,
+          limit: usageStats.generationsLimit,
+          plan: usageStats.plan,
+        });
+        setShowLimitDialog(true);
+        return; // Block submission
+      }
+    }
 
     setIsCreating(true);
 
@@ -205,13 +262,62 @@ export function Hero() {
 
             <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
               <Logo size={16} showText={false} />
-              {isSignedIn
-                ? 'Start creating instantly'
-                : 'Sign up to save your project'}
+              {isSignedIn ? (
+                usageStats ? (
+                  <div className="flex items-center gap-3">
+                    <span>Start creating instantly</span>
+                    <span className="text-xs">•</span>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`font-medium ${
+                          usageStats.projectsUsed >= usageStats.projectsLimit
+                            ? 'text-destructive'
+                            : usageStats.projectsUsed /
+                                  usageStats.projectsLimit >
+                                0.8
+                              ? 'text-yellow-600 dark:text-yellow-500'
+                              : 'text-primary'
+                        }`}
+                      >
+                        {usageStats.projectsUsed}/{usageStats.projectsLimit}{' '}
+                        projects
+                      </span>
+                      <span className="text-xs">•</span>
+                      <span
+                        className={`font-medium ${
+                          usageStats.generationsRemaining === 0
+                            ? 'text-destructive'
+                            : usageStats.generationsRemaining < 5
+                              ? 'text-yellow-600 dark:text-yellow-500'
+                              : 'text-primary'
+                        }`}
+                      >
+                        {usageStats.generationsRemaining} generations left
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  'Start creating instantly'
+                )
+              ) : (
+                'Sign up to save your project'
+              )}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Limit reached dialog */}
+      {limitDialogData && (
+        <LimitReachedDialog
+          open={showLimitDialog}
+          onOpenChange={setShowLimitDialog}
+          limitType={limitDialogData.type}
+          currentUsage={limitDialogData.currentUsage}
+          limit={limitDialogData.limit}
+          plan={limitDialogData.plan}
+        />
+      )}
     </section>
   );
 }

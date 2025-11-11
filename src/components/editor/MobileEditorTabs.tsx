@@ -10,6 +10,7 @@ import type { Message } from './ChatPanel';
 import type { StreamState } from '@/hooks/useAIGenerationStream';
 import type { ProjectFile } from './PreviewCodePanel';
 import type { ViewMode, DeviceMode } from './ControlBar';
+import type { RefObject } from 'react';
 
 interface MobileEditorTabsProps {
   // Chat props
@@ -34,6 +35,8 @@ interface MobileEditorTabsProps {
   onFileSelect: (index: number) => void;
   onRestartPreview?: () => void;
   onRegeneratePreview?: () => void;
+  iframeRef?: RefObject<HTMLIFrameElement | null>;
+  iframeKey?: number;
 }
 
 type MobileTab = 'chat' | 'preview';
@@ -58,6 +61,8 @@ export function MobileEditorTabs({
   onFileSelect,
   onRestartPreview,
   onRegeneratePreview,
+  iframeRef,
+  iframeKey,
 }: MobileEditorTabsProps) {
   const [activeTab, setActiveTab] = useLocalStorage<MobileTab>(
     'stryama_mobile_active_tab',
@@ -141,6 +146,8 @@ export function MobileEditorTabs({
             onRestartPreview={onRestartPreview}
             onRegeneratePreview={onRegeneratePreview}
             isMobile={true}
+            iframeRef={iframeRef}
+            iframeKey={iframeKey}
           />
         </div>
       </TabsContent>

@@ -3,6 +3,7 @@ import { Code2, Monitor, AlertCircle, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import CodeView from './CodeView';
 import type { DeviceMode, ViewMode } from './ControlBar';
+import type { RefObject } from 'react';
 
 export type ProjectFile = {
   id: string;
@@ -23,6 +24,8 @@ interface PreviewCodePanelProps {
   onRestartPreview?: () => void;
   onRegeneratePreview?: () => void;
   isMobile?: boolean;
+  iframeRef?: RefObject<HTMLIFrameElement | null>;
+  iframeKey?: number;
 }
 
 export function PreviewCodePanel({
@@ -38,6 +41,8 @@ export function PreviewCodePanel({
   onRestartPreview,
   onRegeneratePreview,
   isMobile = false,
+  iframeRef,
+  iframeKey = 0,
 }: PreviewCodePanelProps) {
   const currentFile = projectFiles[selectedFileIndex] ?? null;
 
@@ -206,7 +211,9 @@ export function PreviewCodePanel({
                 </Button>
               </div>
               <iframe
-                src={previewUrl ?? undefined}
+                ref={iframeRef}
+                key={iframeKey}
+                src={previewUrl ? `${previewUrl}?v=${iframeKey}` : undefined}
                 className="h-full w-full border-0"
                 title="Live Preview"
                 referrerPolicy="no-referrer-when-downgrade"

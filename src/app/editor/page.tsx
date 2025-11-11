@@ -54,6 +54,7 @@ function EditorContent() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
   const [isRegeneratingPreview, setIsRegeneratingPreview] = useState(false);
+  const [iframeKey, setIframeKey] = useState(0);
 
   // Persist chat panel width in localStorage
   const [chatPanelSize, setChatPanelSize] = useLocalStorage<number>(
@@ -70,6 +71,9 @@ function EditorContent() {
   // Track which sessions we've already handled to prevent duplicate processing
   const handledCompletionsRef = useRef(new Set<string>());
   const handledErrorsRef = useRef(new Set<string>());
+
+  // Ref to iframe for reloading on subsequent prompts
+  const previewIframeRef = useRef<HTMLIFrameElement>(null);
 
   // tRPC mutations for E2B sandbox operations
   const startPreviewMutation = api.sandbox.startPreview.useMutation();
@@ -114,7 +118,7 @@ function EditorContent() {
       };
       setMessages((prev) => [...prev, aiMessage]);
 
-      // Refetch project files and start preview
+      // Refetch project files and start/refresh preview
       if (projectId && result.sandboxId) {
         try {
           // IMPORTANT: Refetch project to get updated files and trigger re-render
@@ -122,13 +126,26 @@ function EditorContent() {
           // when messages.length > 0
           await refetchProject();
 
-          setIsGeneratingPreview(true);
-          const previewResult = await startPreviewMutation.mutateAsync({
-            projectId,
-            sandboxId: result.sandboxId,
-          });
-          setPreviewUrl(previewResult.url);
-          setPreviewError(null);
+          // Check if preview is already running (subsequent prompt)
+          const isSubsequentPrompt = !!previewUrl;
+
+          if (isSubsequentPrompt) {
+            // Preview already exists - force iframe reload by updating key
+            // Give Vite a moment to detect and process file changes
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+
+            // Increment key to force iframe reload (avoids CORS issues)
+            setIframeKey((prev) => prev + 1);
+          } else {
+            // First prompt - start preview server
+            setIsGeneratingPreview(true);
+            const previewResult = await startPreviewMutation.mutateAsync({
+              projectId,
+              sandboxId: result.sandboxId,
+            });
+            setPreviewUrl(previewResult.url);
+            setPreviewError(null);
+          }
         } catch (error) {
           console.error('[Editor] Failed to start preview server', error);
           setPreviewError(
@@ -406,6 +423,8 @@ function EditorContent() {
           onFileSelect={setSelectedFileIndex}
           onRestartPreview={handleRestartPreview}
           onRegeneratePreview={handleRegeneratePreview}
+          iframeRef={previewIframeRef}
+          iframeKey={iframeKey}
         />
       ) : (
         <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
@@ -468,6 +487,8 @@ function EditorContent() {
                   onFileSelect={setSelectedFileIndex}
                   onRestartPreview={handleRestartPreview}
                   onRegeneratePreview={handleRegeneratePreview}
+                  iframeRef={previewIframeRef}
+                  iframeKey={iframeKey}
                 />
               </div>
             </Panel>
