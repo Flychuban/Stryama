@@ -36,6 +36,7 @@ interface MobileEditorTabsProps {
   onRestartPreview?: () => void;
   onRegeneratePreview?: () => void;
   iframeRef?: RefObject<HTMLIFrameElement | null>;
+  iframeKey?: number;
 }
 
 type MobileTab = 'chat' | 'preview';
@@ -61,6 +62,7 @@ export function MobileEditorTabs({
   onRestartPreview,
   onRegeneratePreview,
   iframeRef,
+  iframeKey,
 }: MobileEditorTabsProps) {
   const [activeTab, setActiveTab] = useLocalStorage<MobileTab>(
     'stryama_mobile_active_tab',
@@ -145,6 +147,7 @@ export function MobileEditorTabs({
             onRegeneratePreview={onRegeneratePreview}
             isMobile={true}
             iframeRef={iframeRef}
+            iframeKey={iframeKey}
           />
         </div>
       </TabsContent>

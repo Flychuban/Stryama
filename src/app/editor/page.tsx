@@ -54,6 +54,7 @@ function EditorContent() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
   const [isRegeneratingPreview, setIsRegeneratingPreview] = useState(false);
+  const [iframeKey, setIframeKey] = useState(0);
 
   // Persist chat panel width in localStorage
   const [chatPanelSize, setChatPanelSize] = useLocalStorage<number>(
@@ -129,13 +130,12 @@ function EditorContent() {
           const isSubsequentPrompt = !!previewUrl;
 
           if (isSubsequentPrompt) {
-            // Preview already exists - just reload iframe to show new changes
+            // Preview already exists - force iframe reload by updating key
             // Give Vite a moment to detect and process file changes
             await new Promise((resolve) => setTimeout(resolve, 1500));
 
-            if (previewIframeRef.current?.contentWindow) {
-              previewIframeRef.current.contentWindow.location.reload();
-            }
+            // Increment key to force iframe reload (avoids CORS issues)
+            setIframeKey((prev) => prev + 1);
           } else {
             // First prompt - start preview server
             setIsGeneratingPreview(true);
@@ -424,6 +424,7 @@ function EditorContent() {
           onRestartPreview={handleRestartPreview}
           onRegeneratePreview={handleRegeneratePreview}
           iframeRef={previewIframeRef}
+          iframeKey={iframeKey}
         />
       ) : (
         <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
@@ -487,6 +488,7 @@ function EditorContent() {
                   onRestartPreview={handleRestartPreview}
                   onRegeneratePreview={handleRegeneratePreview}
                   iframeRef={previewIframeRef}
+                  iframeKey={iframeKey}
                 />
               </div>
             </Panel>

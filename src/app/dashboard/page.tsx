@@ -19,6 +19,10 @@ import { ProjectGrid } from '@/components/dashboard/ProjectGrid';
 import { EmptyState } from '@/components/dashboard/EmptyState';
 import { AppHeader } from '@/components/shared/AppHeader';
 import { CreateProjectDialog } from '@/components/dashboard/CreateProjectDialog';
+import {
+  LimitReachedDialog,
+  type LimitType,
+} from '@/components/shared/LimitReachedDialog';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -26,6 +30,13 @@ export default function DashboardPage() {
   const [isAutoCreating, setIsAutoCreating] = useState(false);
   const [pendingPromptData, setPendingPromptData] = useState<{
     prompt: string;
+  } | null>(null);
+  const [showLimitDialog, setShowLimitDialog] = useState(false);
+  const [limitDialogData, setLimitDialogData] = useState<{
+    type: LimitType;
+    currentUsage: number;
+    limit: number;
+    plan: 'FREE' | 'BUILDER' | 'PRO';
   } | null>(null);
 
   // Prevent duplicate execution in React 18 Strict Mode
@@ -63,7 +74,34 @@ export default function DashboardPage() {
       }
     },
     onError: (error) => {
-      toast.error('Failed to create project: ' + error.message);
+      const errorMessage = error.message.toLowerCase();
+      const isProjectLimit = errorMessage.includes('project limit');
+      const isGenerationLimit = errorMessage.includes('generation limit');
+      const isLimitError = isProjectLimit || isGenerationLimit;
+
+      if (isLimitError && usageStats) {
+        // Show limit dialog instead of just a toast
+        setLimitDialogData({
+          type: isProjectLimit ? 'project' : 'generation',
+          currentUsage: isProjectLimit
+            ? usageStats.projectsUsed
+            : usageStats.generationsUsed,
+          limit: isProjectLimit
+            ? usageStats.projectsLimit
+            : usageStats.generationsLimit,
+          plan: usageStats.plan,
+        });
+        setShowLimitDialog(true);
+
+        // Clear the pending prompt since we can't proceed
+        if (pendingPromptData) {
+          clearPrompt();
+        }
+      } else {
+        // Show regular error toast for non-limit errors
+        toast.error('Failed to create project: ' + error.message);
+      }
+
       setIsAutoCreating(false);
       setPendingPromptData(null);
       // Reset the flag so user can retry
@@ -273,6 +311,18 @@ export default function DashboardPage() {
         onCreateProject={handleCreateProject}
         isCreating={createProject.isPending}
       />
+
+      {/* Limit reached dialog */}
+      {limitDialogData && (
+        <LimitReachedDialog
+          open={showLimitDialog}
+          onOpenChange={setShowLimitDialog}
+          limitType={limitDialogData.type}
+          currentUsage={limitDialogData.currentUsage}
+          limit={limitDialogData.limit}
+          plan={limitDialogData.plan}
+        />
+      )}
     </div>
   );
 }
