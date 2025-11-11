@@ -25,8 +25,84 @@ import type { Sandbox } from '@e2b/code-interpreter';
 import { UsageTrackingService } from '~/lib/services/usageTracking';
 import { ModelSelectionService } from '~/lib/services/modelSelection';
 import { getUserPlanFromClerk } from '~/lib/clerk/authorization';
+import { saveGeneratedFilesToDatabase } from '~/lib/integrations/e2b/utils/file-saver';
 
 export const aiRouter = createTRPCRouter({
+  /**
+   * Initialize a generation with prompt data
+   *
+   * This mutation creates a pending generation record with the prompt.
+   * Used to avoid sending large prompts via URL parameters in subscriptions.
+   *
+   * Returns a generationId that can be used with streamGeneration.
+   */
+  initializeGeneration: protectedProcedure
+    .input(
+      z.object({
+        prompt: z.string().min(1, 'Prompt cannot be empty'),
+        projectId: z.string().optional(),
+        useSandbox: z.boolean().default(true),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const validation = validatePrompt(input.prompt);
+      if (!validation.valid) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: validation.errors[0] ?? 'Invalid prompt',
+        });
+      }
+
+      // Check generation limit (monthly usage)
+      try {
+        await UsageTrackingService.checkGenerationLimit(ctx.auth.userId);
+      } catch (error) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Generation limit exceeded',
+        });
+      }
+
+      // Get user plan for rate limiting
+      const userPlan = await getUserPlanFromClerk();
+
+      // Check rate limits
+      const rateLimit = await rateLimiter.checkRateLimit(
+        ctx.auth.userId,
+        userPlan
+      );
+
+      if (!rateLimit.allowed) {
+        throw new TRPCError({
+          code: 'TOO_MANY_REQUESTS',
+          message: `Rate limit exceeded. You can make ${rateLimit.limit} requests per minute. Try again after ${rateLimit.resetAt.toISOString()}`,
+        });
+      }
+
+      // Create a pending generation record
+      const generation = await ctx.db.aIGeneration.create({
+        data: {
+          prompt: input.prompt,
+          response: '', // Will be filled during streaming
+          clerkUserId: ctx.auth.userId,
+          projectId: input.projectId ?? null,
+        },
+      });
+
+      console.log(
+        `[AI Router] Initialized generation ${generation.id} for user ${ctx.auth.userId}`
+      );
+
+      return {
+        generationId: generation.id,
+        projectId: input.projectId,
+        useSandbox: input.useSandbox,
+      };
+    }),
+
   generateCode: protectedProcedure
     .input(
       z.object({
@@ -268,115 +344,13 @@ export const aiRouter = createTRPCRouter({
       // Save generated files to database
       if (input.projectId) {
         try {
-          let filesToSave: Array<{
-            path: string;
-            content: string;
-            language: string;
-          }> = [...result.data.files];
-
-          // If using E2B mode and no files in response, read from sandbox
-          if (sandboxId && sandboxInstance && result.data.files.length === 0) {
-            console.log(
-              '[AI Router] 🔄 E2B mode: No files in response, reading from sandbox filesystem...'
-            );
-
-            const sandboxFilesResult =
-              await sandboxManager.readAllFiles(sandboxInstance);
-
-            if (sandboxFilesResult.success && sandboxFilesResult.data) {
-              // Filter out infrastructure files before saving to database
-              const infrastructureFiles = [
-                'package.json',
-                'vite.config.ts',
-                'tsconfig.json',
-                'next.config.js',
-                'next.config.ts',
-              ];
-
-              const allFiles = sandboxFilesResult.data;
-              filesToSave = allFiles.filter(
-                (file) => !infrastructureFiles.includes(file.path)
-              );
-
-              const filteredCount = allFiles.length - filesToSave.length;
-              console.log(
-                `[AI Router] ✅ Found ${allFiles.length} files in sandbox, filtered out ${filteredCount} infrastructure file(s)`
-              );
-              console.log(
-                `[AI Router] 📁 Saving ${filesToSave.length} application files:`,
-                filesToSave.map((f) => f.path)
-              );
-              if (filteredCount > 0) {
-                console.log(
-                  `[AI Router] 🚫 Skipped infrastructure files (will be generated fresh):`,
-                  allFiles
-                    .filter((f) => infrastructureFiles.includes(f.path))
-                    .map((f) => f.path)
-                );
-              }
-            } else {
-              console.error(
-                `[AI Router] ❌ Failed to read files from sandbox: ${sandboxFilesResult.error}`
-              );
-            }
-          } else if (
-            sandboxId &&
-            !sandboxInstance &&
-            result.data.files.length === 0
-          ) {
-            console.error(
-              '[AI Router] ❌ CRITICAL: Sandbox ID exists but instance is missing - cannot read files',
-              {
-                sandboxId,
-                hasSandboxId: !!sandboxId,
-                hasInstance: !!sandboxInstance,
-              }
-            );
-          } else if (result.data.files.length > 0) {
-            console.log(
-              `[AI Router] ✅ Using ${result.data.files.length} files from Claude response`
-            );
-          }
-
-          if (filesToSave.length > 0) {
-            console.log(
-              `[AI Router] 💾 Saving ${filesToSave.length} file(s) to database for project ${input.projectId}`
-            );
-
-            // Use upsert to handle both creation and updates
-            await Promise.all(
-              filesToSave.map((file) =>
-                ctx.db.file.upsert({
-                  where: {
-                    projectId_path: {
-                      projectId: input.projectId!,
-                      path: file.path,
-                    },
-                  },
-                  create: {
-                    path: file.path,
-                    content: file.content,
-                    language: file.language,
-                    projectId: input.projectId!,
-                  },
-                  update: {
-                    content: file.content,
-                    language: file.language,
-                    updatedAt: new Date(),
-                  },
-                })
-              )
-            );
-
-            console.log(
-              `[AI Router] ✅ Successfully saved ${filesToSave.length} file(s) to database:`,
-              filesToSave.map((f) => `${f.path} (${f.language})`)
-            );
-          } else {
-            console.warn(
-              '[AI Router] ⚠️ No files to save to database - this may cause issues when regenerating preview'
-            );
-          }
+          await saveGeneratedFilesToDatabase(
+            ctx.db,
+            input.projectId,
+            sandboxInstance,
+            result.data.files,
+            '[AI Router]'
+          );
         } catch (error) {
           console.error(
             '[AI Router] ❌ Error saving files to database:',
@@ -490,63 +464,52 @@ export const aiRouter = createTRPCRouter({
    * - Content streaming
    * - Token usage updates
    * - Completion/error notifications
+   *
+   * IMPORTANT: This subscription accepts a generationId (from initializeGeneration)
+   * instead of the full prompt to avoid 431 errors with large prompts.
    */
   streamGeneration: protectedProcedure
     .input(
       z.object({
-        prompt: z.string().min(1, 'Prompt cannot be empty'),
-        projectId: z.string().optional(),
-        useSandbox: z.boolean().default(true),
+        generationId: z.string(),
       })
     )
     .subscription(async ({ ctx, input }) => {
-      // Validate prompt
-      const validation = validatePrompt(input.prompt);
-      if (!validation.valid) {
+      // Fetch the generation record to get the prompt
+      const generation = await ctx.db.aIGeneration.findFirst({
+        where: {
+          id: input.generationId,
+          clerkUserId: ctx.auth.userId,
+        },
+      });
+
+      if (!generation) {
         throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: validation.errors[0] ?? 'Invalid prompt',
+          code: 'NOT_FOUND',
+          message: 'Generation not found or you do not have access to it',
         });
       }
 
-      // Check generation limit (monthly usage)
-      try {
-        await UsageTrackingService.checkGenerationLimit(ctx.auth.userId);
-      } catch (error) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message:
-            error instanceof Error
-              ? error.message
-              : 'Generation limit exceeded',
-        });
-      }
-
-      // Get user plan from Clerk session entitlements (no database query needed)
-      const userPlan = await getUserPlanFromClerk();
+      const prompt = generation.prompt;
+      const projectId = generation.projectId ?? undefined;
+      const useSandbox = true; // Default to true
 
       console.log(
-        `[AI Router] User ${ctx.auth.userId} has plan: ${userPlan} (from Clerk session)`
+        `[AI Stream] Starting generation ${input.generationId} for user ${ctx.auth.userId}`
+      );
+      console.log(
+        `[AI Stream] 📝 User prompt (${prompt.length} chars):`,
+        prompt.substring(0, 200) + (prompt.length > 200 ? '...' : '')
+      );
+      console.log(
+        `[AI Stream] 📦 Project ID: ${projectId ?? 'none'}, Use Sandbox: ${useSandbox}`
       );
 
-      // Check rate limits (minute/day limits for anti-spam)
-      const rateLimit = await rateLimiter.checkRateLimit(
-        ctx.auth.userId,
-        userPlan
-      );
-
-      if (!rateLimit.allowed) {
-        throw new TRPCError({
-          code: 'TOO_MANY_REQUESTS',
-          message: `Rate limit exceeded. You can make ${rateLimit.limit} requests per minute. Try again after ${rateLimit.resetAt.toISOString()}`,
-        });
-      }
+      // Get user plan from Clerk session entitlements
+      const userPlan = await getUserPlanFromClerk();
 
       // Select appropriate model based on prompt complexity and user plan
-      const selectedModel = ModelSelectionService.selectModel(
-        input.prompt,
-        userPlan
-      );
+      const selectedModel = ModelSelectionService.selectModel(prompt, userPlan);
       const modelId = ModelSelectionService.getModelId(selectedModel);
 
       console.log(
@@ -574,10 +537,10 @@ export const aiRouter = createTRPCRouter({
             } | null = null;
 
             // Gather project context if project ID provided
-            if (input.projectId) {
+            if (projectId) {
               project = await ctx.db.project.findFirst({
                 where: {
-                  id: input.projectId,
+                  id: projectId,
                   clerkUserId: ctx.auth.userId,
                 },
               });
@@ -596,7 +559,7 @@ export const aiRouter = createTRPCRouter({
               // Get existing session ID for continuity
               const lastGeneration = await ctx.db.aIGeneration.findFirst({
                 where: {
-                  projectId: input.projectId,
+                  projectId: projectId,
                   sessionId: { not: null },
                 },
                 orderBy: { createdAt: 'desc' },
@@ -607,13 +570,13 @@ export const aiRouter = createTRPCRouter({
 
               // Gather project context
               const gatherer = new ProjectContextGatherer(ctx.db);
-              context = await gatherer.gatherContext(input.projectId, {
+              context = await gatherer.gatherContext(projectId, {
                 maxFiles: 5,
                 maxFileSize: 3000,
               });
 
               // Set up E2B sandbox if enabled
-              if (input.useSandbox) {
+              if (useSandbox) {
                 emit.next(
                   createSandboxEvent(
                     'creating',
@@ -624,7 +587,7 @@ export const aiRouter = createTRPCRouter({
 
                 const sandboxResult = await sandboxManager.getOrCreateSandbox(
                   ctx.db,
-                  input.projectId,
+                  projectId,
                   ctx.auth.userId,
                   E2B_CONFIG.maxTimeoutMs
                 );
@@ -703,9 +666,16 @@ export const aiRouter = createTRPCRouter({
             }
 
             // Start streaming generation
+            console.log(
+              '[AI Stream] 🚀 Calling Claude generateCodeStreaming...'
+            );
+            console.log(
+              `[AI Stream] Context: ${context?.existingFiles?.length ?? 0} existing files, Session: ${sessionId ?? 'new'}`
+            );
+
             const streamIterator = claudeClient.generateCodeStreaming(
               {
-                prompt: input.prompt,
+                prompt: prompt,
                 context,
                 sessionId,
               },
@@ -713,8 +683,20 @@ export const aiRouter = createTRPCRouter({
               sandboxId
             );
 
+            let eventCount = 0;
             // Yield all events from the stream and capture completion data
             for await (const event of streamIterator) {
+              eventCount++;
+              if (
+                eventCount <= 3 ||
+                event.type === 'complete' ||
+                event.type.startsWith('error')
+              ) {
+                console.log(
+                  `[AI Stream] 📨 Event #${eventCount}: ${event.type}`
+                );
+              }
+
               emit.next(event);
 
               // Capture completion data for database persistence
@@ -723,21 +705,33 @@ export const aiRouter = createTRPCRouter({
               }
             }
 
-            // CRITICAL: Persist to database after stream completes
-            if (completionResult && input.projectId && project) {
-              console.log('[AI Stream] Persisting generation to database...');
+            console.log(
+              `[AI Stream] ✅ Stream completed. Total events: ${eventCount}`
+            );
+            console.log(
+              `[AI Stream] Completion result:`,
+              completionResult
+                ? {
+                    tokensUsed: completionResult.tokensUsed,
+                    duration: completionResult.duration,
+                    contentLength: completionResult.content?.length ?? 0,
+                  }
+                : 'none'
+            );
+
+            // CRITICAL: Update the existing generation record after stream completes
+            if (completionResult && projectId && project) {
+              console.log('[AI Stream] Updating generation in database...');
 
               try {
-                // Save AI generation record
-                await ctx.db.aIGeneration.create({
+                // Update the existing generation record with results
+                await ctx.db.aIGeneration.update({
+                  where: { id: input.generationId },
                   data: {
-                    prompt: input.prompt,
                     response: completionResult.content ?? '',
                     tokens: completionResult.tokensUsed,
                     duration: completionResult.duration,
-                    model: selectedModel, // Track which model was used
-                    clerkUserId: ctx.auth.userId,
-                    projectId: input.projectId,
+                    model: selectedModel,
                     sessionId: completionResult.sessionId ?? null,
                     totalCost: completionResult.totalCost ?? null,
                   },
@@ -745,57 +739,14 @@ export const aiRouter = createTRPCRouter({
 
                 console.log('[AI Stream] ✅ AI generation saved to database');
 
-                // Save files to database if using sandbox
-                if (sandboxId && sandboxInstance) {
-                  console.log(
-                    '[AI Stream] Reading files from sandbox to save to database...'
-                  );
-
-                  const sandboxFilesResult =
-                    await sandboxManager.readAllFiles(sandboxInstance);
-
-                  if (
-                    sandboxFilesResult.success &&
-                    sandboxFilesResult.data &&
-                    sandboxFilesResult.data.length > 0
-                  ) {
-                    console.log(
-                      `[AI Stream] Saving ${sandboxFilesResult.data.length} files to database...`
-                    );
-
-                    await Promise.all(
-                      sandboxFilesResult.data.map((file) =>
-                        ctx.db.file.upsert({
-                          where: {
-                            projectId_path: {
-                              projectId: input.projectId!,
-                              path: file.path,
-                            },
-                          },
-                          create: {
-                            path: file.path,
-                            content: file.content,
-                            language: file.language,
-                            projectId: input.projectId!,
-                          },
-                          update: {
-                            content: file.content,
-                            language: file.language,
-                            updatedAt: new Date(),
-                          },
-                        })
-                      )
-                    );
-
-                    console.log(
-                      `[AI Stream] ✅ Successfully saved ${sandboxFilesResult.data.length} files to database`
-                    );
-                  } else {
-                    console.warn(
-                      '[AI Stream] ⚠️ No files found in sandbox to save'
-                    );
-                  }
-                }
+                // Save files to database (supports both E2B sandbox and direct response)
+                await saveGeneratedFilesToDatabase(
+                  ctx.db,
+                  projectId,
+                  sandboxInstance,
+                  [], // Empty array - will read from sandbox if needed
+                  '[AI Stream]'
+                );
 
                 // Increment usage counters
                 await Promise.all([

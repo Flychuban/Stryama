@@ -24,6 +24,10 @@ import {
   generatePackageJson,
   generateConfigFiles,
 } from '../utils/package-generator';
+import {
+  detectDependencies,
+  logDetectedDependencies,
+} from '../utils/dependency-detector';
 
 const HEALTH_CHECK_CONFIG = {
   INTERVAL_MS: 2000,
@@ -32,10 +36,79 @@ const HEALTH_CHECK_CONFIG = {
 } as const;
 
 /**
+ * Log entry structure for dev server output
+ */
+type LogEntry = {
+  timestamp: number;
+  type: 'stdout' | 'stderr';
+  line: string;
+};
+
+/**
+ * Preview process information including logs
+ */
+type PreviewProcessInfo = {
+  pid: number;
+  port: number;
+  logs: LogEntry[];
+  lastActivity: number;
+};
+
+/**
  * Map to store running preview processes by sandbox ID
  * This allows us to track and kill preview servers when needed
+ * Also stores stdout/stderr logs for debugging
  */
-const previewProcesses = new Map<string, { pid: number; port: number }>();
+const previewProcesses = new Map<string, PreviewProcessInfo>();
+
+/**
+ * Maximum number of log lines to store per process (prevent memory bloat)
+ */
+const MAX_LOG_LINES = 200;
+
+/**
+ * Time-to-live for process tracking entries (30 minutes)
+ * After this time of inactivity, entries are removed to prevent memory leaks
+ */
+const PROCESS_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Interval for running cleanup of stale process entries (5 minutes)
+ */
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Clean up stale process entries from the previewProcesses Map
+ * Removes entries that haven't been active for longer than PROCESS_TTL_MS
+ */
+function cleanupStaleProcesses(): void {
+  const now = Date.now();
+  let cleanedCount = 0;
+
+  for (const [sandboxId, info] of previewProcesses.entries()) {
+    if (now - info.lastActivity > PROCESS_TTL_MS) {
+      previewProcesses.delete(sandboxId);
+      cleanedCount++;
+    }
+  }
+
+  if (cleanedCount > 0) {
+    console.log(
+      `[Preview] Cleaned up ${cleanedCount} stale process tracking entries`
+    );
+  }
+}
+
+// Set up periodic cleanup to prevent memory leaks
+// Only run in server environment (not during build or in browser)
+if (typeof setInterval !== 'undefined' && typeof process !== 'undefined') {
+  const cleanupTimer = setInterval(cleanupStaleProcesses, CLEANUP_INTERVAL_MS);
+
+  // Prevent the timer from keeping the process alive
+  if (cleanupTimer.unref) {
+    cleanupTimer.unref();
+  }
+}
 
 async function isPreviewHealthy(url: string): Promise<boolean> {
   try {
@@ -86,10 +159,15 @@ async function checkPreviewHealth(
  * Setup ONLY infrastructure files (package.json, vite.config.ts, tsconfig.json)
  * This is called BEFORE Claude runs to prepare the sandbox
  * Claude will create all application files (index.html, src/*, etc.)
+ *
+ * @param sandbox - E2B sandbox instance
+ * @param projectName - Name for package.json
+ * @param files - Optional array of files to scan for dependencies
  */
 export async function setupInfrastructure(
   sandbox: Sandbox,
-  projectName: string
+  projectName: string,
+  files?: readonly File[]
 ): Promise<ServiceResult<boolean>> {
   try {
     const workDir = '/project';
@@ -107,8 +185,21 @@ export async function setupInfrastructure(
     // Generate and write package.json if it doesn't exist
     if (!packageJsonExists) {
       console.log('[Preview] Creating package.json');
+
+      // Detect dependencies from files if provided
+      let detectedDeps = { dependencies: {}, devDependencies: {} };
+      if (files && files.length > 0) {
+        console.log(
+          `[Preview] Scanning ${files.length} files for npm dependencies...`
+        );
+        detectedDeps = detectDependencies(files);
+        logDetectedDependencies(detectedDeps, '[Preview]');
+      }
+
       const packageJsonContent = generatePackageJson({
         name: projectName,
+        additionalDependencies: detectedDeps.dependencies,
+        additionalDevDependencies: detectedDeps.devDependencies,
       });
 
       await sandbox.files.write(`${workDir}/package.json`, packageJsonContent);
@@ -322,21 +413,67 @@ export async function startPreviewServer(
 
     const workDir = '/project';
 
+    // Validate port number to prevent command injection
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new PreviewServerStartError(
+        `Invalid port number: ${port}. Port must be an integer between 1 and 65535.`,
+        { projectId, port }
+      );
+    }
+
     // Check if dev server is already running (Claude might have started it)
-    const checkProcess = await sandbox.commands.run(
-      `lsof -ti:${port} || echo "none"`,
-      { timeoutMs: 5000 }
+    console.log(
+      `[Preview] 🔍 Checking if dev server is already running on port ${port}...`
     );
-    const existingPid = checkProcess.stdout.trim();
-    const serverAlreadyRunning = existingPid !== 'none' && existingPid !== '';
+
+    // Helper function to check for running process
+    // Uses lsof as primary method with fallback to echo
+    const checkForRunningProcess = async (): Promise<{
+      running: boolean;
+      pid: string;
+    }> => {
+      // Use Number() to ensure type safety in template literal
+      const safePort = Number(port);
+      const checkProcess = await sandbox.commands.run(
+        `lsof -ti:${safePort} 2>/dev/null || echo "none"`,
+        { timeoutMs: 5000 }
+      );
+
+      const existingPid = checkProcess.stdout.trim();
+      const running = existingPid !== 'none' && existingPid !== '';
+
+      return { running, pid: existingPid };
+    };
+
+    // First check
+    let processCheck = await checkForRunningProcess();
+
+    // If no process found, wait and retry (Claude might have just started it)
+    if (!processCheck.running) {
+      console.log(
+        '[Preview] No process detected on first check. Waiting 3s and retrying...'
+      );
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      processCheck = await checkForRunningProcess();
+    }
+
+    const serverAlreadyRunning = processCheck.running;
+
+    console.log(
+      `[Preview] Process check result: "${processCheck.pid}" (${serverAlreadyRunning ? 'RUNNING' : 'NOT RUNNING'})`
+    );
 
     if (serverAlreadyRunning) {
       console.log(
-        `[Preview] Dev server already running on port ${port} (PID: ${existingPid})`
+        `[Preview] ✅ Dev server already running on port ${port} (PID: ${processCheck.pid})`
       );
       console.log(
         `[Preview] Skipping infrastructure setup and dev server start - Claude already handled it`
       );
+
+      // Wait a bit to ensure the server is fully ready
+      console.log('[Preview] Waiting for dev server to be fully ready...');
+      await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second wait
     } else {
       console.log(
         `[Preview] No dev server running, setting up infrastructure and starting server`
@@ -361,7 +498,12 @@ export async function startPreviewServer(
         // Step 1: Ensure infrastructure files exist (package.json, configs)
         // Note: Claude should have already created all application files (index.html, src/*, etc.)
         // We only create infrastructure if missing
-        const setupResult = await setupInfrastructure(sandbox, projectId);
+        // Pass files array to detect dependencies from generated code
+        const setupResult = await setupInfrastructure(
+          sandbox,
+          projectId,
+          files
+        );
 
         if (!setupResult.success) {
           throw new PreviewServerStartError(
@@ -381,7 +523,20 @@ export async function startPreviewServer(
         }
       }
 
-      // Step 3: Start the dev server
+      // Step 3: Start the dev server with log capture
+      const processInfo: PreviewProcessInfo = {
+        pid: 0, // Will be updated after process starts
+        port: port,
+        logs: [],
+        lastActivity: Date.now(),
+      };
+
+      // Store process info early so handlers can access it
+      previewProcesses.set(sandbox.sandboxId, processInfo);
+
+      let logLineCount = 0;
+      const MAX_INITIAL_LOGS = 20; // Log first 20 lines to console for diagnostics
+
       const process = await sandbox.commands.run(
         `cd ${workDir} && ${command}`,
         {
@@ -390,15 +545,78 @@ export async function startPreviewServer(
             CI: 'true',
             PORT: port.toString(),
           },
+          onStdout: (data) => {
+            const lines = data.split('\n').filter((line) => line.trim() !== '');
+            for (const line of lines) {
+              const entry: LogEntry = {
+                timestamp: Date.now(),
+                type: 'stdout',
+                line: line,
+              };
+
+              // Add to logs array (keep only last MAX_LOG_LINES)
+              processInfo.logs.push(entry);
+              if (processInfo.logs.length > MAX_LOG_LINES) {
+                processInfo.logs.shift();
+              }
+
+              processInfo.lastActivity = Date.now();
+
+              // Log first few lines to console for immediate diagnostics
+              if (logLineCount < MAX_INITIAL_LOGS) {
+                console.log(`[Preview] [stdout] ${line}`);
+                logLineCount++;
+              }
+
+              // Detect when Vite server is ready
+              if (line.includes('ready in') || line.includes('Local:')) {
+                console.log(`[Preview] ✅ Vite server ready: ${line}`);
+              }
+            }
+          },
+          onStderr: (data) => {
+            const lines = data.split('\n').filter((line) => line.trim() !== '');
+            for (const line of lines) {
+              const entry: LogEntry = {
+                timestamp: Date.now(),
+                type: 'stderr',
+                line: line,
+              };
+
+              // Add to logs array (keep only last MAX_LOG_LINES)
+              processInfo.logs.push(entry);
+              if (processInfo.logs.length > MAX_LOG_LINES) {
+                processInfo.logs.shift();
+              }
+
+              processInfo.lastActivity = Date.now();
+
+              // Always log stderr to console (errors are critical)
+              console.error(`[Preview] [stderr] ${line}`);
+
+              // Detect compilation errors
+              if (
+                line.toLowerCase().includes('error') &&
+                !line.includes('0 error')
+              ) {
+                console.error(
+                  `[Preview] ❌ Compilation error detected: ${line}`
+                );
+              }
+            }
+          },
         }
       );
 
-      previewProcesses.set(sandbox.sandboxId, {
-        pid: process.pid,
-        port: port,
-      });
+      // Update PID after process starts
+      processInfo.pid = process.pid;
 
-      console.log(`[Preview] Process started with PID ${process.pid}`);
+      console.log(
+        `[Preview] Dev server process started with PID ${process.pid}`
+      );
+      console.log(
+        `[Preview] Capturing stdout/stderr - will log first ${MAX_INITIAL_LOGS} lines`
+      );
     }
 
     // CRITICAL: Validate E2B sandbox is accessible before generating preview URL
@@ -437,6 +655,59 @@ export async function startPreviewServer(
     }
 
     console.log('[Preview] ✅ Application files validated - index.html exists');
+
+    // Check if we received any log output (diagnostic for silent failures)
+    const processInfo = previewProcesses.get(sandbox.sandboxId);
+    if (processInfo && !serverAlreadyRunning) {
+      // Wait 5 seconds for dev server to start producing output
+      console.log('[Preview] Waiting 5s for dev server output...');
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+
+      if (processInfo.logs.length === 0) {
+        console.warn(
+          '[Preview] ⚠️ WARNING: No output received from dev server after 5 seconds!'
+        );
+        console.warn(
+          '[Preview] This may indicate the dev server failed to start or is hanging.'
+        );
+      } else {
+        console.log(
+          `[Preview] ✅ Received ${processInfo.logs.length} log lines from dev server`
+        );
+
+        // Check for specific error patterns
+        const errorLogs = processInfo.logs.filter(
+          (log) =>
+            log.type === 'stderr' &&
+            log.line.toLowerCase().includes('error') &&
+            !log.line.includes('0 error')
+        );
+
+        if (errorLogs.length > 0) {
+          console.error(
+            `[Preview] ❌ Found ${errorLogs.length} error(s) in dev server logs:`
+          );
+          errorLogs.slice(0, 5).forEach((log) => {
+            console.error(`[Preview]   - ${log.line}`);
+          });
+        }
+
+        // Check if Vite reported ready
+        const viteReady = processInfo.logs.some(
+          (log) =>
+            log.type === 'stdout' &&
+            (log.line.includes('ready in') || log.line.includes('Local:'))
+        );
+
+        if (viteReady) {
+          console.log('[Preview] ✅ Vite server reported ready');
+        } else {
+          console.warn(
+            '[Preview] ⚠️ Vite has not reported ready yet - compilation may still be in progress'
+          );
+        }
+      }
+    }
 
     const healthCheckResult = await checkPreviewHealth(previewUrl);
 
@@ -491,9 +762,39 @@ export async function getPreviewLogs(
       };
     }
 
+    // Get last 100 log lines (most recent)
+    const MAX_RETURN_LOGS = 100;
+    const recentLogs = processInfo.logs.slice(-MAX_RETURN_LOGS);
+
+    // Format logs with timestamps
+    const formattedLogs = recentLogs
+      .map((entry) => {
+        const timestamp = new Date(entry.timestamp).toISOString();
+        const prefix = entry.type === 'stderr' ? '[ERROR]' : '[INFO]';
+        return `${timestamp} ${prefix} ${entry.line}`;
+      })
+      .join('\n');
+
+    // Count stderr vs stdout lines
+    const stderrCount = recentLogs.filter((e) => e.type === 'stderr').length;
+    const stdoutCount = recentLogs.filter((e) => e.type === 'stdout').length;
+
+    // Build summary header
+    const header = [
+      `=== Preview Server Logs ===`,
+      `PID: ${processInfo.pid}`,
+      `Port: ${processInfo.port}`,
+      `Total logs: ${processInfo.logs.length} (showing last ${recentLogs.length})`,
+      `Stdout: ${stdoutCount} lines | Stderr: ${stderrCount} lines`,
+      `Last activity: ${new Date(processInfo.lastActivity).toISOString()}`,
+      `=========================\n`,
+    ].join('\n');
+
+    const fullOutput = header + formattedLogs;
+
     return {
       success: true,
-      data: `Preview server running on port ${processInfo.port} (PID: ${processInfo.pid})`,
+      data: fullOutput || 'No logs captured yet',
       error: null,
     };
   } catch (error) {

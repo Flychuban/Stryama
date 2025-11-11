@@ -114,17 +114,37 @@ export function useAIGenerationStream(
     hasError: false,
   });
 
-  const [currentPrompt, setCurrentPrompt] = useState<string | null>(null);
+  const [generationId, setGenerationId] = useState<string | null>(null);
   const subscriptionRef = useRef<{ unsubscribe: () => void } | null>(null);
 
+  // Initialize generation mutation (Phase 1: Store prompt in database)
+  const initializeGenerationMutation = api.ai.initializeGeneration.useMutation({
+    onSuccess: (data) => {
+      console.log('[Stream] Generation initialized:', data.generationId);
+      setGenerationId(data.generationId);
+    },
+    onError: (error) => {
+      console.error('[Stream] Failed to initialize generation:', error);
+      setState((prev) => ({
+        ...prev,
+        status: 'error',
+        hasError: true,
+        isStreaming: false,
+        error: {
+          message: error.message,
+          code: 'INITIALIZATION_ERROR',
+        },
+      }));
+    },
+  });
+
   // Memoize subscription input to prevent unnecessary subscription restarts
+  // Phase 2: Stream using generationId
   const subscriptionInput = useMemo(
     () => ({
-      prompt: currentPrompt ?? '',
-      projectId,
-      useSandbox,
+      generationId: generationId ?? '',
     }),
-    [currentPrompt, projectId, useSandbox]
+    [generationId]
   );
 
   // Process stream events
@@ -214,7 +234,7 @@ export function useAIGenerationStream(
     });
   }, []);
 
-  // Subscribe to stream
+  // Start streaming (two-phase approach)
   const startStreaming = useCallback(
     (prompt: string) => {
       if (!prompt || state.isStreaming) {
@@ -236,9 +256,16 @@ export function useAIGenerationStream(
         hasError: false,
       });
 
-      setCurrentPrompt(prompt);
+      // Phase 1: Initialize generation with prompt
+      // This stores the prompt in the database and returns a generationId
+      // The generationId is then used for streaming to avoid 431 errors
+      initializeGenerationMutation.mutate({
+        prompt,
+        projectId,
+        useSandbox,
+      });
     },
-    [state.isStreaming]
+    [state.isStreaming, initializeGenerationMutation, projectId, useSandbox]
   );
 
   // Memoize error handler to prevent subscription restarts
@@ -258,9 +285,10 @@ export function useAIGenerationStream(
     }));
   }, []);
 
-  // Set up tRPC subscription with memoized input
+  // Set up tRPC subscription with memoized input (Phase 2)
+  // Only start subscription when generationId is available
   api.ai.streamGeneration.useSubscription(subscriptionInput, {
-    enabled: !!currentPrompt,
+    enabled: !!generationId,
     onData: handleStreamEvent,
     onError: handleSubscriptionError,
   });
@@ -278,7 +306,7 @@ export function useAIGenerationStream(
       subscriptionRef.current.unsubscribe();
       subscriptionRef.current = null;
     }
-    setCurrentPrompt(null);
+    setGenerationId(null);
     setState((prev) => ({
       ...prev,
       isStreaming: false,

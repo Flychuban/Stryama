@@ -97,7 +97,10 @@ export function ChatPanel({
             value={input}
             onChange={(e) => onInputChange(e.target.value)}
             placeholder="Describe what you want to build..."
-            className="max-h-[120px] min-h-[48px] resize-none rounded-xl border-border/50 bg-background/50 backdrop-blur-sm transition-all duration-200 focus-visible:border-primary/50 focus-visible:ring-primary/20"
+            autoGrow
+            minHeight={48}
+            maxHeight={200}
+            className="rounded-xl border-border/50 bg-background/50 backdrop-blur-sm transition-all duration-200 focus-visible:border-primary/50 focus-visible:ring-primary/20"
             onKeyDown={handleKeyDown}
           />
           <Button

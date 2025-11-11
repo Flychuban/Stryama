@@ -22,7 +22,7 @@ type PromptPanelProps = {
   isLoading: boolean;
 };
 
-const MAX_CHARS = 2000;
+const MAX_CHARS = 50000;
 
 const PromptPanel = ({
   prompt,
@@ -56,7 +56,10 @@ const PromptPanel = ({
             value={prompt}
             onChange={(e) => onPromptChange(e.target.value)}
             placeholder="E.g., Create a todo list app with dark mode, categories, and priority levels..."
-            className="min-h-[200px] resize-none border-border/50 bg-background/80 text-base backdrop-blur-sm transition-all duration-300 focus:border-primary/50 group-hover:border-primary/30"
+            autoGrow
+            minHeight={200}
+            maxHeight={400}
+            className="border-border/50 bg-background/80 text-base backdrop-blur-sm transition-all duration-300 focus:border-primary/50 group-hover:border-primary/30"
             disabled={isLoading}
           />
           <div

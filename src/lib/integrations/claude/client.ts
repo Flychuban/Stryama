@@ -306,8 +306,14 @@ export class ClaudeClient {
 
     if (sandboxId) {
       // E2B Sandbox Mode: Instruct Claude to use E2B tools
+      const hasExistingFiles =
+        request.context?.existingFiles &&
+        request.context.existingFiles.length > 0;
+
       prompt += `\n\n---
 IMPORTANT INSTRUCTIONS FOR E2B SANDBOX INTEGRATION:
+
+${!hasExistingFiles ? `**NEW PROJECT**: This is a brand new project. You need to create ALL application files from scratch based on the user's request.` : ''}
 
 You are working with an E2B sandbox environment (Sandbox ID: ${sandboxId}).
 
@@ -320,11 +326,19 @@ The following files are ALREADY created and configured:
 
 **YOUR RESPONSIBILITIES - Create ALL Application Files:**
 1. Use E2B_Write to create ALL application/source files:
-   - index.html (entry point for Vite projects)
-   - src/main.tsx or src/main.ts (application entry point)
-   - src/App.tsx (main component)
-   - src/index.css or src/App.css (styles)
+   - index.html (entry point for Vite projects) - REQUIRED
+   - src/main.tsx or src/main.ts (application entry point) - REQUIRED
+   - src/App.tsx (main component) - REQUIRED
+   - src/index.css or src/App.css (styles) - REQUIRED
    - All other components, utilities, and source files the user requested
+
+CRITICAL: You MUST create at least these 4 files:
+  1. index.html
+  2. src/main.tsx
+  3. src/App.tsx
+  4. src/App.css or src/index.css
+
+If you do NOT create these files, the application will not work!
 
 **DO NOT CREATE:**
 - ❌ package.json (already exists)
