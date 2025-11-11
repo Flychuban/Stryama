@@ -24,6 +24,13 @@ const suggestions: SuggestionPill[] = [
   { icon: <Code2 className="h-3.5 w-3.5" />, text: 'Dashboard' },
 ];
 
+const PROJECT_NAME_CONFIG = {
+  MAX_WORDS: 5,
+  MAX_LENGTH: 50,
+  TRUNCATE_SUFFIX: '...',
+  DEFAULT_NAME: 'New Project',
+} as const;
+
 export function Hero() {
   const [prompt, setPrompt] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -75,14 +82,21 @@ export function Hero() {
 
   const placeholderText = 'Describe your app idea here...';
 
-  // Generate a concise project name from prompt (max 50 chars)
+  // Generate a concise project name from prompt
   const generateProjectName = (promptText: string): string => {
-    const words = promptText.trim().split(/\s+/).slice(0, 5);
+    const words = promptText
+      .trim()
+      .split(/\s+/)
+      .slice(0, PROJECT_NAME_CONFIG.MAX_WORDS);
     let name = words.join(' ');
-    if (name.length > 50) {
-      name = name.substring(0, 47) + '...';
+    if (name.length > PROJECT_NAME_CONFIG.MAX_LENGTH) {
+      const truncateAt =
+        PROJECT_NAME_CONFIG.MAX_LENGTH -
+        PROJECT_NAME_CONFIG.TRUNCATE_SUFFIX.length;
+      name =
+        name.substring(0, truncateAt) + PROJECT_NAME_CONFIG.TRUNCATE_SUFFIX;
     }
-    return name || 'New Project';
+    return name || PROJECT_NAME_CONFIG.DEFAULT_NAME;
   };
 
   return (

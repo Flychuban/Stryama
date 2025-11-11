@@ -9,6 +9,7 @@ import type {
 import { FileValidator } from '../utils/file-validator';
 import { withRetry } from '../errors/retry-handler';
 import { E2BSandboxError, E2BErrorType } from '../errors';
+import { isInfrastructureFile } from '~/lib/utils/file-filtering';
 
 type E2BWriteEntry = {
   path: string;
@@ -238,14 +239,9 @@ export class FileSync {
 
     // CRITICAL: Filter out infrastructure files - they should be generated fresh by setupInfrastructure()
     // This ensures we always use the latest package.json with current dependencies (e.g., patch-package)
-    const infrastructureFiles = [
-      'package.json',
-      'vite.config.ts',
-      'tsconfig.json',
-      'next.config.js',
-    ];
+    // Using shared utility to maintain consistency across the application
     const filesToSync = files.filter(
-      (file) => !infrastructureFiles.includes(file.path)
+      (file) => !isInfrastructureFile(file.path)
     );
 
     try {
@@ -256,7 +252,7 @@ export class FileSync {
 
       if (files.length !== filesToSync.length) {
         const skippedFiles = files
-          .filter((f) => infrastructureFiles.includes(f.path))
+          .filter((f) => isInfrastructureFile(f.path))
           .map((f) => f.path);
         console.log(
           `[FileSync] Skipping ${skippedFiles.length} infrastructure file(s) - will be generated fresh: ${skippedFiles.join(', ')}`

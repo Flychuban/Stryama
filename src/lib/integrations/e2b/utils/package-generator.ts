@@ -11,10 +11,15 @@ export interface PackageJsonConfig {
   name: string;
   version?: string;
   description?: string;
+  additionalDependencies?: Record<string, string>;
+  additionalDevDependencies?: Record<string, string>;
 }
 
 /**
  * Generate a package.json file for React+Vite projects
+ *
+ * @param config - Configuration including name and optional additional dependencies
+ * @returns JSON string of package.json
  */
 export function generatePackageJson(
   config: PackageJsonConfig = { name: 'project' }
@@ -34,6 +39,8 @@ export function generatePackageJson(
     dependencies: {
       react: '^18.3.1',
       'react-dom': '^18.3.1',
+      // Merge in any additional dependencies detected from code
+      ...(config.additionalDependencies ?? {}),
     },
     devDependencies: {
       '@types/react': '^18.3.12',
@@ -45,6 +52,8 @@ export function generatePackageJson(
       'eslint-plugin-react-refresh': '^0.4.16',
       typescript: '^5.7.3',
       'patch-package': '^8.0.0', // Required by rollup postinstall scripts
+      // Merge in any additional dev dependencies
+      ...(config.additionalDevDependencies ?? {}),
     },
   };
 
