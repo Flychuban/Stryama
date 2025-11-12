@@ -30,6 +30,7 @@ import {
   createErrorEvent,
 } from './stream-manager';
 import type { StreamEvent } from './types/stream-events';
+import { resolveClaudeCLIPath } from './utils/resolve-cli-path';
 
 export class ClaudeClient {
   private static instance: ClaudeClient;
@@ -95,6 +96,10 @@ export class ClaudeClient {
       const mcpServers =
         sandboxId && db ? { 'e2b-sandbox': createE2BTools(db) } : undefined;
 
+      // Resolve CLI path for Vercel serverless environment
+      // This is required because the SDK cannot auto-detect the CLI path in pnpm's directory structure
+      const cliPath = resolveClaudeCLIPath();
+
       // Start the query with streaming
       const sdkStream = query({
         prompt: enhancedPrompt,
@@ -109,6 +114,9 @@ export class ClaudeClient {
             ? [...GENERATION_CONFIG.e2bMode.allowedTools]
             : [...GENERATION_CONFIG.localMode.allowedTools],
           resume: request.sessionId,
+          // Explicitly set CLI path for Vercel serverless deployment
+          // Required because SDK auto-detection fails in pnpm's complex directory structure
+          pathToClaudeCodeExecutable: cliPath,
           // Serverless-friendly options for production deployment
           // SECURITY NOTE: bypassPermissions is safe in this architecture because:
           // 1. All file operations are restricted to E2B sandboxes (isolated VM environments)
@@ -180,6 +188,9 @@ export class ClaudeClient {
         console.log(`[Claude] Local mode enabled`);
       }
 
+      // Resolve CLI path for Vercel serverless environment
+      const cliPath = resolveClaudeCLIPath();
+
       for await (const message of query({
         prompt: enhancedPrompt,
         options: {
@@ -194,6 +205,11 @@ export class ClaudeClient {
             : [...GENERATION_CONFIG.localMode.allowedTools],
           // Resume existing session if provided
           resume: request.sessionId,
+          // Explicitly set CLI path for Vercel serverless deployment
+          pathToClaudeCodeExecutable: cliPath,
+          // Serverless-friendly options
+          permissionMode: 'bypassPermissions',
+          allowDangerouslySkipPermissions: true,
         },
       })) {
         if (message.type === 'system' && message.subtype === 'init') {
