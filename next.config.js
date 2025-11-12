@@ -19,6 +19,10 @@ const config = {
     optimizePackageImports: ['@clerk/nextjs'],
   },
 
+  // External packages that should not be bundled (Next.js 15+)
+  // This ensures Claude Agent SDK's cli.js is included in deployment
+  serverExternalPackages: ['@anthropic-ai/claude-agent-sdk'],
+
   // Security headers
   async headers() {
     return [
