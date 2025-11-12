@@ -109,6 +109,15 @@ export class ClaudeClient {
             ? [...GENERATION_CONFIG.e2bMode.allowedTools]
             : [...GENERATION_CONFIG.localMode.allowedTools],
           resume: request.sessionId,
+          // Serverless-friendly options for production deployment
+          // SECURITY NOTE: bypassPermissions is safe in this architecture because:
+          // 1. All file operations are restricted to E2B sandboxes (isolated VM environments)
+          // 2. Local filesystem tools (Write, Edit, Bash) are explicitly disallowed via disallowedTools
+          // 3. Only E2B proxy tools are allowed, which operate in sandboxed containers
+          // 4. Serverless environments cannot support interactive permission prompts
+          // 5. The Vercel serverless function itself runs in an isolated, read-only environment
+          permissionMode: 'bypassPermissions',
+          allowDangerouslySkipPermissions: true,
         },
       });
 

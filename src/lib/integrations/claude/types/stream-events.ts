@@ -5,8 +5,6 @@
  * These events provide real-time updates about the agent's activities.
  */
 
-import type { NonNullableUsage } from '@anthropic-ai/claude-agent-sdk';
-
 /**
  * Status event - Indicates current phase of generation
  */

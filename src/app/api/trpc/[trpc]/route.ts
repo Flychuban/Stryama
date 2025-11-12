@@ -5,6 +5,18 @@ import { appRouter } from '~/server/api/root';
 import { createTRPCContext } from '~/server/api/trpc';
 
 /**
+ * Route configuration for Vercel deployment
+ *
+ * - runtime: 'nodejs' - Use Node.js runtime (required for Claude Agent SDK CLI execution)
+ * - maxDuration: 300 - Maximum execution time in seconds (5 minutes for Pro plan)
+ *
+ * This timeout allows for long-running AI generation and streaming processes.
+ * The Claude Agent SDK spawns a CLI process that requires the Node.js runtime.
+ */
+export const runtime = 'nodejs';
+export const maxDuration = 300; // 5 minutes (requires Vercel Pro plan)
+
+/**
  * This wraps the `createTRPCContext` helper and provides the required context for the tRPC API when
  * handling a HTTP request (e.g. when you make requests from Client Components).
  */
