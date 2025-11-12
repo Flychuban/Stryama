@@ -20,8 +20,18 @@ const config = {
   },
 
   // External packages that should not be bundled (Next.js 15+)
-  // This ensures Claude Agent SDK's cli.js is included in deployment
+  // This prevents webpack from bundling the SDK, keeping it as external module
   serverExternalPackages: ['@anthropic-ai/claude-agent-sdk'],
+
+  // Include Claude Agent SDK CLI executable in deployment bundle
+  // This is required for Vercel serverless functions to have access to cli.js
+  // The glob pattern handles pnpm's nested directory structure
+  outputFileTracingIncludes: {
+    '/api/trpc/**/*': [
+      './node_modules/.pnpm/@anthropic-ai+claude-agent-sdk@*/node_modules/@anthropic-ai/claude-agent-sdk/cli.js',
+      './node_modules/.pnpm/@anthropic-ai+claude-agent-sdk@*/node_modules/@anthropic-ai/claude-agent-sdk/vendor/**/*',
+    ],
+  },
 
   // Security headers
   async headers() {
