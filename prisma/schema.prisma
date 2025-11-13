@@ -60,6 +60,7 @@ model AIGeneration {
     clerkUserId String   // References Clerk's user ID directly
     projectId   String?
     sessionId   String?  // Claude session ID for resumption
+    sessionData String?  @db.Text // Claude session .jsonl file content for resumption
     totalCost   Float?   // Cost in USD
     createdAt   DateTime @default(now())
 

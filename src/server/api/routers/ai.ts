@@ -26,6 +26,10 @@ import { UsageTrackingService } from '~/lib/services/usageTracking';
 import { ModelSelectionService } from '~/lib/services/modelSelection';
 import { getUserPlanFromClerk } from '~/lib/clerk/authorization';
 import { saveGeneratedFilesToDatabase } from '~/lib/integrations/e2b/utils/file-saver';
+import {
+  saveSessionToDB,
+  restoreSessionFromDB,
+} from '~/lib/integrations/claude/session-cache';
 
 export const aiRouter = createTRPCRouter({
   /**
@@ -568,6 +572,23 @@ export const aiRouter = createTRPCRouter({
 
               sessionId = lastGeneration?.sessionId ?? undefined;
 
+              // Restore session from database if resuming
+              if (sessionId) {
+                console.log(
+                  `[AI Router] Attempting to restore session ${sessionId} from database...`
+                );
+                const restored = await restoreSessionFromDB(ctx.db, sessionId);
+                if (restored) {
+                  console.log(`[AI Router] ✅ Session restored successfully`);
+                } else {
+                  console.log(
+                    `[AI Router] ⚠️ Could not restore session - Claude will start fresh`
+                  );
+                  // Don't fail the request, just log and continue
+                  // Claude will start a new session if the old one isn't found
+                }
+              }
+
               // Gather project context
               const gatherer = new ProjectContextGatherer(ctx.db);
               context = await gatherer.gatherContext(projectId, {
@@ -738,6 +759,24 @@ export const aiRouter = createTRPCRouter({
                 });
 
                 console.log('[AI Stream] ✅ AI generation saved to database');
+
+                // Save session to database for future resumption
+                if (completionResult.sessionId) {
+                  console.log(
+                    `[AI Stream] Saving session ${completionResult.sessionId} to database...`
+                  );
+                  const saved = await saveSessionToDB(
+                    ctx.db,
+                    completionResult.sessionId
+                  );
+                  if (saved) {
+                    console.log('[AI Stream] ✅ Session saved to database');
+                  } else {
+                    console.log(
+                      '[AI Stream] ⚠️ Failed to save session to database (non-critical)'
+                    );
+                  }
+                }
 
                 // Save files to database (supports both E2B sandbox and direct response)
                 await saveGeneratedFilesToDatabase(
