@@ -70,19 +70,6 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
               headers.set('x-trpc-source', 'nextjs-react');
               return headers;
             },
-            // Handle fetch errors including auth failures
-            fetch: (url, options) => {
-              return fetch(url, options).then((response) => {
-                // Check for 401 Unauthorized
-                if (response.status === 401) {
-                  if (typeof window !== 'undefined') {
-                    // Redirect to sign-in page
-                    window.location.href = '/sign-in';
-                  }
-                }
-                return response;
-              });
-            },
           }),
         }),
       ],
