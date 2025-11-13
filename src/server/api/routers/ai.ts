@@ -26,6 +26,10 @@ import { UsageTrackingService } from '~/lib/services/usageTracking';
 import { ModelSelectionService } from '~/lib/services/modelSelection';
 import { getUserPlanFromClerk } from '~/lib/clerk/authorization';
 import { saveGeneratedFilesToDatabase } from '~/lib/integrations/e2b/utils/file-saver';
+import {
+  saveSessionToKV,
+  restoreSessionFromKV,
+} from '~/lib/integrations/claude/session-cache';
 
 export const aiRouter = createTRPCRouter({
   /**
@@ -568,6 +572,26 @@ export const aiRouter = createTRPCRouter({
 
               sessionId = lastGeneration?.sessionId ?? undefined;
 
+              // Restore session from KV cache if resuming
+              if (sessionId && projectId) {
+                console.log(
+                  `[AI Router] Attempting to restore session ${sessionId} from KV...`
+                );
+                const restored = await restoreSessionFromKV(
+                  sessionId,
+                  projectId
+                );
+                if (restored) {
+                  console.log(`[AI Router] ✅ Session restored successfully`);
+                } else {
+                  console.log(
+                    `[AI Router] ⚠️ Could not restore session - Claude will start fresh`
+                  );
+                  // Don't fail the request, just log and continue
+                  // Claude will start a new session if the old one isn't found
+                }
+              }
+
               // Gather project context
               const gatherer = new ProjectContextGatherer(ctx.db);
               context = await gatherer.gatherContext(projectId, {
@@ -738,6 +762,24 @@ export const aiRouter = createTRPCRouter({
                 });
 
                 console.log('[AI Stream] ✅ AI generation saved to database');
+
+                // Save session to KV cache for future resumption
+                if (completionResult.sessionId && projectId) {
+                  console.log(
+                    `[AI Stream] Saving session ${completionResult.sessionId} to KV...`
+                  );
+                  const saved = await saveSessionToKV(
+                    completionResult.sessionId,
+                    projectId
+                  );
+                  if (saved) {
+                    console.log('[AI Stream] ✅ Session saved to KV cache');
+                  } else {
+                    console.log(
+                      '[AI Stream] ⚠️ Failed to save session to KV (non-critical)'
+                    );
+                  }
+                }
 
                 // Save files to database (supports both E2B sandbox and direct response)
                 await saveGeneratedFilesToDatabase(
