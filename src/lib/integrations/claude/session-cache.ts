@@ -11,20 +11,56 @@
  * Solution: Store session files in Postgres database between invocations.
  */
 
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { dirname } from 'path';
+import { readFile, writeFile, mkdir, readdir } from 'fs/promises';
+import { dirname, join } from 'path';
 import type { PrismaClient } from '@prisma/client';
 
 /**
- * Get the session file path for a given project and session ID
+ * Find the session file by searching the Claude projects directory
+ * Claude stores sessions at: ~/.claude/projects/{cwd-based-slug}/{session-id}.jsonl
+ * The slug is derived from the working directory, not our projectId
  */
-function getSessionFilePath(projectId: string, sessionId: string): string {
-  // Claude stores sessions at: ~/.claude/projects/{project-slug}/{session-id}.jsonl
-  // With HOME=/tmp, this becomes: /tmp/.claude/projects/{slug}/{sessionId}.jsonl
-  //
-  // Note: The project slug is typically a sanitized version of the project path
-  // For simplicity, we use the projectId as the slug
-  return `/tmp/.claude/projects/${projectId}/${sessionId}.jsonl`;
+async function findSessionFilePath(sessionId: string): Promise<string | null> {
+  const claudeProjectsDir = '/tmp/.claude/projects';
+
+  try {
+    // List all subdirectories in /tmp/.claude/projects/
+    const dirs = await readdir(claudeProjectsDir);
+
+    // Search each directory for the session file
+    for (const dir of dirs) {
+      const sessionPath = join(claudeProjectsDir, dir, `${sessionId}.jsonl`);
+      try {
+        await readFile(sessionPath);
+        return sessionPath; // Found it!
+      } catch {
+        continue; // File doesn't exist in this directory
+      }
+    }
+
+    return null; // Session file not found
+  } catch (error) {
+    console.error('[Session Cache] Error searching for session file:', error);
+    return null;
+  }
+}
+
+/**
+ * Get the expected session file path for restoration
+ * We need to determine the correct subdirectory where Claude expects the file
+ */
+async function getOrCreateSessionPath(sessionId: string): Promise<string> {
+  // Try to find existing session file first
+  const existingPath = await findSessionFilePath(sessionId);
+  if (existingPath) {
+    return existingPath;
+  }
+
+  // If not found, Claude will create it in a new directory based on CWD
+  // We need to use a consistent directory for restoration
+  // Use a generic 'default' slug
+  const defaultPath = `/tmp/.claude/projects/-default-/${sessionId}.jsonl`;
+  return defaultPath;
 }
 
 /**
@@ -34,7 +70,7 @@ function getSessionFilePath(projectId: string, sessionId: string): string {
  *
  * @param db - Prisma database client
  * @param sessionId - The Claude session ID returned from the SDK
- * @param projectId - The project ID (used to construct session file path)
+ * @param projectId - The project ID (used to find the AIGeneration record)
  * @returns true if saved successfully, false otherwise
  */
 export async function saveSessionToDB(
@@ -43,7 +79,15 @@ export async function saveSessionToDB(
   projectId: string
 ): Promise<boolean> {
   try {
-    const sessionPath = getSessionFilePath(projectId, sessionId);
+    // Find the session file by searching for it
+    const sessionPath = await findSessionFilePath(sessionId);
+
+    if (!sessionPath) {
+      console.warn(
+        `[Session Cache] ⚠️ Session file not found for ${sessionId}`
+      );
+      return false;
+    }
 
     // Read the session file created by Claude SDK
     const sessionData = await readFile(sessionPath, 'utf-8');
@@ -114,8 +158,8 @@ export async function restoreSessionFromDB(
       return false;
     }
 
-    // Write session file to the expected location
-    const sessionPath = getSessionFilePath(projectId, sessionId);
+    // Get the path where Claude expects the session file
+    const sessionPath = await getOrCreateSessionPath(sessionId);
 
     // Ensure directory exists
     await mkdir(dirname(sessionPath), { recursive: true });
