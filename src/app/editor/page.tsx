@@ -130,18 +130,25 @@ function EditorContent() {
           // when messages.length > 0
           await refetchProject();
 
-          // Check if preview is already running (subsequent prompt)
-          const isSubsequentPrompt = !!previewUrl;
+          // CRITICAL FIX: Always fetch preview URL from DB instead of relying on client state
+          // This prevents race conditions where client state is null but preview exists in DB
+          const previewData = await utils.sandbox.getPreviewUrl.fetch({
+            projectId,
+          });
 
-          if (isSubsequentPrompt) {
-            // Preview already exists - force iframe reload by updating key
-            // Give Vite a moment to detect and process file changes
-            await new Promise((resolve) => setTimeout(resolve, 1500));
+          if (previewData.url) {
+            // Preview exists in DB - reload iframe with latest changes
+            console.log('[Editor] Preview exists, reloading iframe...');
+            setPreviewUrl(previewData.url);
 
-            // Increment key to force iframe reload (avoids CORS issues)
+            // Give Vite HMR a moment to detect and process file changes
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+
+            // Increment key to force iframe reload (ensures fresh content)
             setIframeKey((prev) => prev + 1);
           } else {
-            // First prompt - start preview server
+            // No preview in DB - start new preview server
+            console.log('[Editor] No preview found, starting server...');
             setIsGeneratingPreview(true);
             const previewResult = await startPreviewMutation.mutateAsync({
               projectId,

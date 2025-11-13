@@ -223,6 +223,33 @@ export function createE2BTools(db: PrismaClient) {
           console.log(
             `[E2B Tool] ✅ Dev server started in background with PID: ${pid}`
           );
+
+          // Store dev server PID in sandbox metadata for preview manager coordination
+          if (typeof pid === 'number') {
+            try {
+              await db.sandbox.update({
+                where: { id: args.sandbox_id },
+                data: {
+                  metadata: {
+                    devServerPid: pid,
+                    devServerStartedAt: new Date().toISOString(),
+                    devServerPort: 5173, // Default Vite port
+                    devServerCommand: args.command,
+                  },
+                },
+              });
+              console.log(
+                `[E2B Tool] ✅ Stored dev server metadata in database (PID: ${pid})`
+              );
+            } catch (dbError) {
+              console.error(
+                `[E2B Tool] ⚠️ Failed to store dev server metadata:`,
+                dbError
+              );
+              // Don't fail the operation if metadata storage fails
+            }
+          }
+
           return {
             content: [
               {

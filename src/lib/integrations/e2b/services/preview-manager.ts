@@ -11,6 +11,7 @@
 import type { Sandbox } from '@e2b/code-interpreter';
 import type { File } from '@prisma/client';
 import type { ServiceResult, PreviewResult } from '../types';
+import { db } from '~/server/db';
 import {
   getFrameworkPort,
   getFrameworkCommand,
@@ -391,12 +392,14 @@ async function installDependencies(
  * @param sandbox - The E2B sandbox instance
  * @param projectId - The project ID for logging/tracking
  * @param files - Project files (kept for compatibility, not used for detection)
+ * @param sandboxId - Optional sandbox ID for checking metadata
  * @returns ServiceResult with preview URL and metadata
  */
 export async function startPreviewServer(
   sandbox: Sandbox,
   projectId: string,
-  files: readonly File[]
+  files: readonly File[],
+  sandboxId?: string
 ): Promise<ServiceResult<PreviewResult>> {
   try {
     // Use hard-coded React+Vite configuration
@@ -421,16 +424,78 @@ export async function startPreviewServer(
       );
     }
 
+    // CRITICAL FIX: Check database metadata for dev server PID from Claude's E2B_Bash
+    // This prevents race conditions where we try to start a server that Claude already started
+    let serverAlreadyRunning = false;
+    let existingPid = 'none';
+
+    if (sandboxId) {
+      try {
+        console.log(
+          '[Preview] 🔍 Checking database metadata for existing dev server...'
+        );
+        const dbSandbox = await db.sandbox.findUnique({
+          where: { id: sandboxId },
+          select: { metadata: true },
+        });
+
+        const metadata = dbSandbox?.metadata as
+          | {
+              devServerPid?: number;
+              devServerPort?: number;
+              devServerStartedAt?: string;
+            }
+          | null
+          | undefined;
+
+        if (metadata?.devServerPid) {
+          console.log(
+            `[Preview] Found dev server PID ${metadata.devServerPid} in DB metadata - verifying process is alive...`
+          );
+
+          // Verify the PID is still running using ps command
+          const pidCheck = await sandbox.commands.run(
+            `ps -p ${metadata.devServerPid} -o comm= 2>/dev/null || echo "dead"`,
+            { timeoutMs: 3000 }
+          );
+
+          const processOutput = pidCheck.stdout.trim();
+          if (processOutput !== 'dead' && processOutput !== '') {
+            console.log(
+              `[Preview] ✅ Dev server PID ${metadata.devServerPid} is still running (process: ${processOutput})`
+            );
+            serverAlreadyRunning = true;
+            existingPid = String(metadata.devServerPid);
+          } else {
+            console.log(
+              `[Preview] ⚠️ Dev server PID ${metadata.devServerPid} found in DB but process is dead - will start new server`
+            );
+          }
+        } else {
+          console.log(
+            '[Preview] No dev server metadata found in database - proceeding with port check'
+          );
+        }
+      } catch (metadataError) {
+        console.error(
+          '[Preview] ⚠️ Error checking database metadata:',
+          metadataError
+        );
+        // Continue with normal port detection if metadata check fails
+      }
+    }
+
     // Check if dev server is already running (Claude might have started it)
     console.log(
       `[Preview] 🔍 Checking if dev server is already running on port ${port}...`
     );
 
-    // Helper function to check for running process
-    // Uses lsof as primary method with fallback to echo
+    // Helper function to check for running process with HTTP health verification
+    // Uses lsof to check port binding AND HTTP health check to verify server is responding
     const checkForRunningProcess = async (): Promise<{
       running: boolean;
       pid: string;
+      isResponding: boolean;
     }> => {
       // Use Number() to ensure type safety in template literal
       const safePort = Number(port);
@@ -440,24 +505,63 @@ export async function startPreviewServer(
       );
 
       const existingPid = checkProcess.stdout.trim();
-      const running = existingPid !== 'none' && existingPid !== '';
+      const portBound = existingPid !== 'none' && existingPid !== '';
 
-      return { running, pid: existingPid };
+      // If port is bound, verify server is actually responding via HTTP
+      let isResponding = false;
+      if (portBound) {
+        const host = sandbox.getHost(port);
+        const previewUrl = `https://${host}`;
+        isResponding = await isPreviewHealthy(previewUrl);
+        console.log(
+          `[Preview] Port ${port} bound (PID: ${existingPid}), HTTP health: ${isResponding ? 'HEALTHY' : 'NOT RESPONDING'}`
+        );
+      }
+
+      return { running: portBound, pid: existingPid, isResponding };
     };
 
-    // First check
-    let processCheck = await checkForRunningProcess();
+    // Only check port if we didn't already find a running server in DB metadata
+    let processCheck = {
+      running: serverAlreadyRunning,
+      pid: existingPid,
+      isResponding: false,
+    };
 
-    // If no process found, wait and retry (Claude might have just started it)
-    if (!processCheck.running) {
-      console.log(
-        '[Preview] No process detected on first check. Waiting 3s and retrying...'
-      );
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+    if (!serverAlreadyRunning) {
+      // First check
       processCheck = await checkForRunningProcess();
-    }
 
-    const serverAlreadyRunning = processCheck.running;
+      // Retry if no process found OR if port is bound but server not responding yet
+      // (Claude might have just started it, Vite takes 5-10s to fully start)
+      if (
+        !processCheck.running ||
+        (processCheck.running && !processCheck.isResponding)
+      ) {
+        const maxRetries = 4;
+        const delays = [2000, 3000, 4000, 3000]; // Total: 12 seconds
+        let retryCount = 0;
+
+        while (
+          (!processCheck.running || !processCheck.isResponding) &&
+          retryCount < maxRetries
+        ) {
+          const delay = delays[retryCount];
+          const status = !processCheck.running
+            ? 'no process detected'
+            : 'port bound but not responding';
+          console.log(
+            `[Preview] ${status}, retry ${retryCount + 1}/${maxRetries} (waiting ${delay}ms)...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          processCheck = await checkForRunningProcess();
+          retryCount++;
+        }
+      }
+
+      // Server is considered "already running" if port is bound AND responding
+      serverAlreadyRunning = processCheck.running && processCheck.isResponding;
+    }
 
     console.log(
       `[Preview] Process check result: "${processCheck.pid}" (${serverAlreadyRunning ? 'RUNNING' : 'NOT RUNNING'})`
@@ -849,9 +953,10 @@ export async function stopPreviewServer(
 export async function restartPreviewServer(
   sandbox: Sandbox,
   projectId: string,
-  files: readonly File[]
+  files: readonly File[],
+  sandboxId?: string
 ): Promise<ServiceResult<PreviewResult>> {
   await stopPreviewServer(sandbox);
 
-  return startPreviewServer(sandbox, projectId, files);
+  return startPreviewServer(sandbox, projectId, files, sandboxId);
 }
