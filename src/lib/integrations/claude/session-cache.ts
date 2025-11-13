@@ -1,19 +1,19 @@
 /**
  * Claude Session Cache
  *
- * Manages Claude Agent SDK session file persistence in Vercel's serverless environment.
+ * Manages Claude Agent SDK session file persistence in serverless environments.
  *
  * The Claude SDK stores conversation state in ~/.claude/ filesystem. In Vercel:
  * - HOME is set to /tmp (for write access)
  * - /tmp is wiped between serverless function invocations
  * - This causes "No conversation found" errors on subsequent prompts
  *
- * Solution: Cache session files in Vercel KV (Redis) between invocations.
+ * Solution: Store session files in Postgres database between invocations.
  */
 
-import { kv } from '@vercel/kv';
 import { readFile, writeFile, mkdir } from 'fs/promises';
-import { dirname, join } from 'path';
+import { dirname } from 'path';
+import type { PrismaClient } from '@prisma/client';
 
 /**
  * Get the session file path for a given project and session ID
@@ -28,22 +28,17 @@ function getSessionFilePath(projectId: string, sessionId: string): string {
 }
 
 /**
- * Get the KV cache key for a session
- */
-function getSessionCacheKey(sessionId: string): string {
-  return `claude:session:${sessionId}`;
-}
-
-/**
- * Save a Claude session file to Vercel KV cache
+ * Save a Claude session file to the database
  *
  * Call this AFTER a Claude generation completes to persist the session state.
  *
+ * @param db - Prisma database client
  * @param sessionId - The Claude session ID returned from the SDK
  * @param projectId - The project ID (used to construct session file path)
  * @returns true if saved successfully, false otherwise
  */
-export async function saveSessionToKV(
+export async function saveSessionToDB(
+  db: PrismaClient,
   sessionId: string,
   projectId: string
 ): Promise<boolean> {
@@ -53,18 +48,32 @@ export async function saveSessionToKV(
     // Read the session file created by Claude SDK
     const sessionData = await readFile(sessionPath, 'utf-8');
 
-    // Store in Vercel KV with 24 hour expiration
-    // Sessions older than 24h can be considered stale
-    const cacheKey = getSessionCacheKey(sessionId);
-    await kv.set(cacheKey, sessionData, { ex: 86400 }); // 24 hours in seconds
+    // Find the AIGeneration record with this sessionId
+    const generation = await db.aIGeneration.findFirst({
+      where: { sessionId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!generation) {
+      console.warn(
+        `[Session Cache] ⚠️ No AIGeneration record found for session ${sessionId}`
+      );
+      return false;
+    }
+
+    // Update the AIGeneration record with session data
+    await db.aIGeneration.update({
+      where: { id: generation.id },
+      data: { sessionData },
+    });
 
     console.log(
-      `[Session Cache] ✅ Saved session ${sessionId} to KV (${sessionData.length} bytes)`
+      `[Session Cache] ✅ Saved session ${sessionId} to database (${sessionData.length} bytes)`
     );
     return true;
   } catch (error) {
     console.error(
-      `[Session Cache] ❌ Failed to save session ${sessionId} to KV:`,
+      `[Session Cache] ❌ Failed to save session ${sessionId} to database:`,
       error
     );
     // Don't throw - session save failure shouldn't break the response
@@ -73,27 +82,34 @@ export async function saveSessionToKV(
 }
 
 /**
- * Restore a Claude session file from Vercel KV cache
+ * Restore a Claude session file from the database
  *
  * Call this BEFORE a Claude generation to restore previous session state.
  *
+ * @param db - Prisma database client
  * @param sessionId - The Claude session ID to restore
  * @param projectId - The project ID (used to construct session file path)
  * @returns true if restored successfully, false if session not found or error
  */
-export async function restoreSessionFromKV(
+export async function restoreSessionFromDB(
+  db: PrismaClient,
   sessionId: string,
   projectId: string
 ): Promise<boolean> {
   try {
-    const cacheKey = getSessionCacheKey(sessionId);
+    // Retrieve session data from database
+    const generation = await db.aIGeneration.findFirst({
+      where: {
+        sessionId,
+        sessionData: { not: null },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { sessionData: true },
+    });
 
-    // Retrieve session data from KV
-    const sessionData = await kv.get<string>(cacheKey);
-
-    if (!sessionData) {
+    if (!generation?.sessionData) {
       console.log(
-        `[Session Cache] ⚠️ Session ${sessionId} not found in KV cache`
+        `[Session Cache] ⚠️ Session ${sessionId} not found in database`
       );
       return false;
     }
@@ -105,15 +121,15 @@ export async function restoreSessionFromKV(
     await mkdir(dirname(sessionPath), { recursive: true });
 
     // Write the session file
-    await writeFile(sessionPath, sessionData, 'utf-8');
+    await writeFile(sessionPath, generation.sessionData, 'utf-8');
 
     console.log(
-      `[Session Cache] ✅ Restored session ${sessionId} from KV (${sessionData.length} bytes)`
+      `[Session Cache] ✅ Restored session ${sessionId} from database (${generation.sessionData.length} bytes)`
     );
     return true;
   } catch (error) {
     console.error(
-      `[Session Cache] ❌ Failed to restore session ${sessionId} from KV:`,
+      `[Session Cache] ❌ Failed to restore session ${sessionId} from database:`,
       error
     );
     // Don't throw - if we can't restore, Claude will start a new session
@@ -122,19 +138,27 @@ export async function restoreSessionFromKV(
 }
 
 /**
- * Clear a session from the cache
+ * Clear session data from the database
  *
  * Useful for cleanup or when a session becomes invalid.
  *
+ * @param db - Prisma database client
  * @param sessionId - The Claude session ID to clear
  * @returns true if cleared successfully
  */
-export async function clearSessionFromKV(sessionId: string): Promise<boolean> {
+export async function clearSessionFromDB(
+  db: PrismaClient,
+  sessionId: string
+): Promise<boolean> {
   try {
-    const cacheKey = getSessionCacheKey(sessionId);
-    await kv.del(cacheKey);
+    await db.aIGeneration.updateMany({
+      where: { sessionId },
+      data: { sessionData: null },
+    });
 
-    console.log(`[Session Cache] 🗑️ Cleared session ${sessionId} from KV`);
+    console.log(
+      `[Session Cache] 🗑️ Cleared session ${sessionId} from database`
+    );
     return true;
   } catch (error) {
     console.error(
@@ -146,16 +170,24 @@ export async function clearSessionFromKV(sessionId: string): Promise<boolean> {
 }
 
 /**
- * Check if a session exists in the cache
+ * Check if a session exists in the database
  *
+ * @param db - Prisma database client
  * @param sessionId - The Claude session ID to check
- * @returns true if session exists in cache
+ * @returns true if session exists with data
  */
-export async function hasSessionInKV(sessionId: string): Promise<boolean> {
+export async function hasSessionInDB(
+  db: PrismaClient,
+  sessionId: string
+): Promise<boolean> {
   try {
-    const cacheKey = getSessionCacheKey(sessionId);
-    const exists = await kv.exists(cacheKey);
-    return exists === 1;
+    const count = await db.aIGeneration.count({
+      where: {
+        sessionId,
+        sessionData: { not: null },
+      },
+    });
+    return count > 0;
   } catch (error) {
     console.error(
       `[Session Cache] ❌ Failed to check session ${sessionId}:`,

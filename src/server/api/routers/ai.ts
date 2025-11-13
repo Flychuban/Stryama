@@ -27,8 +27,8 @@ import { ModelSelectionService } from '~/lib/services/modelSelection';
 import { getUserPlanFromClerk } from '~/lib/clerk/authorization';
 import { saveGeneratedFilesToDatabase } from '~/lib/integrations/e2b/utils/file-saver';
 import {
-  saveSessionToKV,
-  restoreSessionFromKV,
+  saveSessionToDB,
+  restoreSessionFromDB,
 } from '~/lib/integrations/claude/session-cache';
 
 export const aiRouter = createTRPCRouter({
@@ -572,12 +572,13 @@ export const aiRouter = createTRPCRouter({
 
               sessionId = lastGeneration?.sessionId ?? undefined;
 
-              // Restore session from KV cache if resuming
+              // Restore session from database if resuming
               if (sessionId && projectId) {
                 console.log(
-                  `[AI Router] Attempting to restore session ${sessionId} from KV...`
+                  `[AI Router] Attempting to restore session ${sessionId} from database...`
                 );
-                const restored = await restoreSessionFromKV(
+                const restored = await restoreSessionFromDB(
+                  ctx.db,
                   sessionId,
                   projectId
                 );
@@ -763,20 +764,21 @@ export const aiRouter = createTRPCRouter({
 
                 console.log('[AI Stream] ✅ AI generation saved to database');
 
-                // Save session to KV cache for future resumption
+                // Save session to database for future resumption
                 if (completionResult.sessionId && projectId) {
                   console.log(
-                    `[AI Stream] Saving session ${completionResult.sessionId} to KV...`
+                    `[AI Stream] Saving session ${completionResult.sessionId} to database...`
                   );
-                  const saved = await saveSessionToKV(
+                  const saved = await saveSessionToDB(
+                    ctx.db,
                     completionResult.sessionId,
                     projectId
                   );
                   if (saved) {
-                    console.log('[AI Stream] ✅ Session saved to KV cache');
+                    console.log('[AI Stream] ✅ Session saved to database');
                   } else {
                     console.log(
-                      '[AI Stream] ⚠️ Failed to save session to KV (non-critical)'
+                      '[AI Stream] ⚠️ Failed to save session to database (non-critical)'
                     );
                   }
                 }
