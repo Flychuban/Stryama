@@ -652,10 +652,8 @@ export async function startPreviewServer(
       );
     }
 
-    const host = sandbox.getHost(port);
-    const previewUrl = `https://${host}`;
-
-    console.log(`[Preview] Preview URL generated: ${previewUrl}`);
+    // Note: host and previewUrl already declared at the top for HTTP checks
+    console.log(`[Preview] Preview URL confirmed: ${previewUrl}`);
 
     // Validate that essential application files exist before running health check
     // This prevents waiting 30s for health check when files are clearly missing
