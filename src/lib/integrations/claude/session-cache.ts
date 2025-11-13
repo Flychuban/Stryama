@@ -11,137 +11,121 @@
  * Solution: Store session files in Postgres database between invocations.
  */
 
-import { readFile, writeFile, mkdir, readdir } from 'fs/promises';
+import { readFile, writeFile, mkdir, readdir, stat } from 'fs/promises';
 import { dirname, join } from 'path';
 import type { PrismaClient } from '@prisma/client';
 
+const CLAUDE_PROJECTS_DIR = '/tmp/.claude/projects';
+const MAX_SESSION_FILE_SIZE = 10 * 1024 * 1024; // 10MB limit
+
 /**
  * Find the session file by searching the Claude projects directory
- * Claude stores sessions at: ~/.claude/projects/{cwd-based-slug}/{session-id}.jsonl
- * The slug is derived from the working directory, not our projectId
  */
 async function findSessionFilePath(sessionId: string): Promise<string | null> {
-  const claudeProjectsDir = '/tmp/.claude/projects';
-
   try {
-    // List all subdirectories in /tmp/.claude/projects/
-    const dirs = await readdir(claudeProjectsDir);
+    // Check if directory exists first
+    try {
+      await readdir(CLAUDE_PROJECTS_DIR);
+    } catch {
+      return null; // Directory doesn't exist yet
+    }
 
-    // Search each directory for the session file
+    // Search each subdirectory for the session file
+    const dirs = await readdir(CLAUDE_PROJECTS_DIR);
     for (const dir of dirs) {
-      const sessionPath = join(claudeProjectsDir, dir, `${sessionId}.jsonl`);
+      const sessionPath = join(CLAUDE_PROJECTS_DIR, dir, `${sessionId}.jsonl`);
       try {
-        await readFile(sessionPath);
-        return sessionPath; // Found it!
+        const stats = await stat(sessionPath);
+        if (stats.size > MAX_SESSION_FILE_SIZE) {
+          console.warn(
+            `[Session Cache] Session file too large: ${stats.size} bytes`
+          );
+          continue;
+        }
+        return sessionPath;
       } catch {
-        continue; // File doesn't exist in this directory
+        continue;
       }
     }
 
-    return null; // Session file not found
+    return null;
   } catch (error) {
-    console.error('[Session Cache] Error searching for session file:', error);
+    console.error('[Session Cache] Error searching for session:', error);
     return null;
   }
 }
 
 /**
  * Get the expected session file path for restoration
- * We need to determine the correct subdirectory where Claude expects the file
  */
 async function getOrCreateSessionPath(sessionId: string): Promise<string> {
-  // Try to find existing session file first
   const existingPath = await findSessionFilePath(sessionId);
   if (existingPath) {
     return existingPath;
   }
-
-  // If not found, Claude will create it in a new directory based on CWD
-  // We need to use a consistent directory for restoration
-  // Use a generic 'default' slug
-  const defaultPath = `/tmp/.claude/projects/-default-/${sessionId}.jsonl`;
-  return defaultPath;
+  return join(CLAUDE_PROJECTS_DIR, '-default-', `${sessionId}.jsonl`);
 }
 
 /**
  * Save a Claude session file to the database
- *
- * Call this AFTER a Claude generation completes to persist the session state.
- *
- * @param db - Prisma database client
- * @param sessionId - The Claude session ID returned from the SDK
- * @param projectId - The project ID (used to find the AIGeneration record)
- * @returns true if saved successfully, false otherwise
  */
 export async function saveSessionToDB(
   db: PrismaClient,
-  sessionId: string,
-  projectId: string
+  sessionId: string
 ): Promise<boolean> {
   try {
-    // Find the session file by searching for it
     const sessionPath = await findSessionFilePath(sessionId);
-
     if (!sessionPath) {
-      console.warn(
-        `[Session Cache] ⚠️ Session file not found for ${sessionId}`
+      return false; // Session file not found (normal for some cases)
+    }
+
+    // Check file size before reading
+    const stats = await stat(sessionPath);
+    if (stats.size > MAX_SESSION_FILE_SIZE) {
+      console.error(
+        `[Session Cache] Session file too large: ${stats.size} bytes`
       );
       return false;
     }
 
-    // Read the session file created by Claude SDK
     const sessionData = await readFile(sessionPath, 'utf-8');
 
-    // Find the AIGeneration record with this sessionId
+    // Find and update the AIGeneration record
     const generation = await db.aIGeneration.findFirst({
       where: { sessionId },
       orderBy: { createdAt: 'desc' },
     });
 
     if (!generation) {
-      console.warn(
-        `[Session Cache] ⚠️ No AIGeneration record found for session ${sessionId}`
-      );
-      return false;
+      return false; // No record to update
     }
 
-    // Update the AIGeneration record with session data
     await db.aIGeneration.update({
       where: { id: generation.id },
       data: { sessionData },
     });
 
     console.log(
-      `[Session Cache] ✅ Saved session ${sessionId} to database (${sessionData.length} bytes)`
+      `[Session Cache] ✅ Saved session ${sessionId} (${sessionData.length} bytes)`
     );
     return true;
   } catch (error) {
     console.error(
-      `[Session Cache] ❌ Failed to save session ${sessionId} to database:`,
+      `[Session Cache] Failed to save session ${sessionId}:`,
       error
     );
-    // Don't throw - session save failure shouldn't break the response
     return false;
   }
 }
 
 /**
  * Restore a Claude session file from the database
- *
- * Call this BEFORE a Claude generation to restore previous session state.
- *
- * @param db - Prisma database client
- * @param sessionId - The Claude session ID to restore
- * @param projectId - The project ID (used to construct session file path)
- * @returns true if restored successfully, false if session not found or error
  */
 export async function restoreSessionFromDB(
   db: PrismaClient,
-  sessionId: string,
-  projectId: string
+  sessionId: string
 ): Promise<boolean> {
   try {
-    // Retrieve session data from database
     const generation = await db.aIGeneration.findFirst({
       where: {
         sessionId,
@@ -152,43 +136,36 @@ export async function restoreSessionFromDB(
     });
 
     if (!generation?.sessionData) {
-      console.log(
-        `[Session Cache] ⚠️ Session ${sessionId} not found in database`
+      return false; // No session to restore
+    }
+
+    // Verify size
+    if (generation.sessionData.length > MAX_SESSION_FILE_SIZE) {
+      console.error(
+        `[Session Cache] Session data too large: ${generation.sessionData.length} bytes`
       );
       return false;
     }
 
-    // Get the path where Claude expects the session file
     const sessionPath = await getOrCreateSessionPath(sessionId);
-
-    // Ensure directory exists
     await mkdir(dirname(sessionPath), { recursive: true });
-
-    // Write the session file
     await writeFile(sessionPath, generation.sessionData, 'utf-8');
 
     console.log(
-      `[Session Cache] ✅ Restored session ${sessionId} from database (${generation.sessionData.length} bytes)`
+      `[Session Cache] ✅ Restored session ${sessionId} (${generation.sessionData.length} bytes)`
     );
     return true;
   } catch (error) {
     console.error(
-      `[Session Cache] ❌ Failed to restore session ${sessionId} from database:`,
+      `[Session Cache] Failed to restore session ${sessionId}:`,
       error
     );
-    // Don't throw - if we can't restore, Claude will start a new session
     return false;
   }
 }
 
 /**
  * Clear session data from the database
- *
- * Useful for cleanup or when a session becomes invalid.
- *
- * @param db - Prisma database client
- * @param sessionId - The Claude session ID to clear
- * @returns true if cleared successfully
  */
 export async function clearSessionFromDB(
   db: PrismaClient,
@@ -199,14 +176,10 @@ export async function clearSessionFromDB(
       where: { sessionId },
       data: { sessionData: null },
     });
-
-    console.log(
-      `[Session Cache] 🗑️ Cleared session ${sessionId} from database`
-    );
     return true;
   } catch (error) {
     console.error(
-      `[Session Cache] ❌ Failed to clear session ${sessionId}:`,
+      `[Session Cache] Failed to clear session ${sessionId}:`,
       error
     );
     return false;
@@ -215,10 +188,6 @@ export async function clearSessionFromDB(
 
 /**
  * Check if a session exists in the database
- *
- * @param db - Prisma database client
- * @param sessionId - The Claude session ID to check
- * @returns true if session exists with data
  */
 export async function hasSessionInDB(
   db: PrismaClient,
@@ -234,7 +203,7 @@ export async function hasSessionInDB(
     return count > 0;
   } catch (error) {
     console.error(
-      `[Session Cache] ❌ Failed to check session ${sessionId}:`,
+      `[Session Cache] Failed to check session ${sessionId}:`,
       error
     );
     return false;

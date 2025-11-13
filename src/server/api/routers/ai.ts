@@ -573,15 +573,11 @@ export const aiRouter = createTRPCRouter({
               sessionId = lastGeneration?.sessionId ?? undefined;
 
               // Restore session from database if resuming
-              if (sessionId && projectId) {
+              if (sessionId) {
                 console.log(
                   `[AI Router] Attempting to restore session ${sessionId} from database...`
                 );
-                const restored = await restoreSessionFromDB(
-                  ctx.db,
-                  sessionId,
-                  projectId
-                );
+                const restored = await restoreSessionFromDB(ctx.db, sessionId);
                 if (restored) {
                   console.log(`[AI Router] ✅ Session restored successfully`);
                 } else {
@@ -765,14 +761,13 @@ export const aiRouter = createTRPCRouter({
                 console.log('[AI Stream] ✅ AI generation saved to database');
 
                 // Save session to database for future resumption
-                if (completionResult.sessionId && projectId) {
+                if (completionResult.sessionId) {
                   console.log(
                     `[AI Stream] Saving session ${completionResult.sessionId} to database...`
                   );
                   const saved = await saveSessionToDB(
                     ctx.db,
-                    completionResult.sessionId,
-                    projectId
+                    completionResult.sessionId
                   );
                   if (saved) {
                     console.log('[AI Stream] ✅ Session saved to database');
