@@ -31,6 +31,7 @@ import {
 } from './stream-manager';
 import type { StreamEvent } from './types/stream-events';
 import { resolveClaudeCLIPath } from './utils/resolve-cli-path';
+import { getCleanEnvironment } from './utils/env-cleaner';
 
 export class ClaudeClient {
   private static instance: ClaudeClient;
@@ -117,6 +118,13 @@ export class ClaudeClient {
           // Explicitly set CLI path for Vercel serverless deployment
           // Required because SDK auto-detection fails in pnpm's complex directory structure
           pathToClaudeCodeExecutable: cliPath,
+          // Clean environment variables to prevent child process exit code 1
+          // Vercel/Next.js runtime sets debugging variables that cause CLI to crash
+          env: getCleanEnvironment(),
+          // Capture stderr for debugging CLI failures
+          stderr: (data: string) => {
+            console.error(`[Claude CLI stderr] ${data}`);
+          },
           // Serverless-friendly options for production deployment
           // SECURITY NOTE: bypassPermissions is safe in this architecture because:
           // 1. All file operations are restricted to E2B sandboxes (isolated VM environments)
@@ -207,6 +215,12 @@ export class ClaudeClient {
           resume: request.sessionId,
           // Explicitly set CLI path for Vercel serverless deployment
           pathToClaudeCodeExecutable: cliPath,
+          // Clean environment variables to prevent child process exit code 1
+          env: getCleanEnvironment(),
+          // Capture stderr for debugging CLI failures
+          stderr: (data: string) => {
+            console.error(`[Claude CLI stderr] ${data}`);
+          },
           // Serverless-friendly options
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,
