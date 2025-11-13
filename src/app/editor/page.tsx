@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useUser } from '@clerk/nextjs';
 import { AppHeader } from '@/components/shared/AppHeader';
 import AILoadingAnimation from '@/components/editor/AILoadingAnimation';
 import { useAIGenerationStream } from '@/hooks/useAIGenerationStream';
@@ -35,14 +36,17 @@ function EditorContent() {
   const projectId = searchParams?.get('id') ?? null;
   const autoStart = searchParams?.get('autoStart') === 'true';
 
-  // Fetch project data if ID is provided
+  // Get Clerk auth state to prevent race conditions
+  const { isLoaded: isAuthLoaded } = useUser();
+
+  // Fetch project data if ID is provided - GUARD with auth state to prevent 401 race conditions
   const {
     data: project,
     isLoading: isLoadingProject,
     refetch: refetchProject,
   } = api.project.getById.useQuery(
     { id: projectId! },
-    { enabled: !!projectId }
+    { enabled: !!projectId && isAuthLoaded }
   );
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -396,6 +400,11 @@ function EditorContent() {
 
   // Use layout hook to determine mobile/desktop
   const { isMobile } = useEditorLayout();
+
+  // Show loading state while Clerk auth is initializing to prevent race conditions
+  if (!isAuthLoaded) {
+    return <AILoadingAnimation />;
+  }
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background pt-16">
