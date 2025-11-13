@@ -93,15 +93,11 @@ export class ClaudeClient {
         console.log(`[Claude] Resuming session ${sessionId}`);
       }
 
-      // Set up MCP servers (E2B tools if sandbox provided)
       const mcpServers =
         sandboxId && db ? { 'e2b-sandbox': createE2BTools(db) } : undefined;
 
-      // Resolve CLI path for Vercel serverless environment
-      // This is required because the SDK cannot auto-detect the CLI path in pnpm's directory structure
       const cliPath = resolveClaudeCLIPath();
 
-      // Start the query with streaming
       const sdkStream = query({
         prompt: enhancedPrompt,
         options: {
@@ -115,23 +111,11 @@ export class ClaudeClient {
             ? [...GENERATION_CONFIG.e2bMode.allowedTools]
             : [...GENERATION_CONFIG.localMode.allowedTools],
           resume: request.sessionId,
-          // Explicitly set CLI path for Vercel serverless deployment
-          // Required because SDK auto-detection fails in pnpm's complex directory structure
           pathToClaudeCodeExecutable: cliPath,
-          // Clean environment variables to prevent child process exit code 1
-          // Vercel/Next.js runtime sets debugging variables that cause CLI to crash
           env: getCleanEnvironment(),
-          // Capture stderr for debugging CLI failures
           stderr: (data: string) => {
             console.error(`[Claude CLI stderr] ${data}`);
           },
-          // Serverless-friendly options for production deployment
-          // SECURITY NOTE: bypassPermissions is safe in this architecture because:
-          // 1. All file operations are restricted to E2B sandboxes (isolated VM environments)
-          // 2. Local filesystem tools (Write, Edit, Bash) are explicitly disallowed via disallowedTools
-          // 3. Only E2B proxy tools are allowed, which operate in sandboxed containers
-          // 4. Serverless environments cannot support interactive permission prompts
-          // 5. The Vercel serverless function itself runs in an isolated, read-only environment
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,
         },
@@ -186,7 +170,6 @@ export class ClaudeClient {
       let tokensUsed = 0;
       let totalCost = 0;
 
-      // Create MCP server for E2B tools if sandbox mode is enabled
       const mcpServers =
         sandboxId && db ? { 'e2b-sandbox': createE2BTools(db) } : undefined;
 
@@ -196,7 +179,6 @@ export class ClaudeClient {
         console.log(`[Claude] Local mode enabled`);
       }
 
-      // Resolve CLI path for Vercel serverless environment
       const cliPath = resolveClaudeCLIPath();
 
       for await (const message of query({
@@ -211,17 +193,12 @@ export class ClaudeClient {
           allowedTools: sandboxId
             ? [...GENERATION_CONFIG.e2bMode.allowedTools]
             : [...GENERATION_CONFIG.localMode.allowedTools],
-          // Resume existing session if provided
           resume: request.sessionId,
-          // Explicitly set CLI path for Vercel serverless deployment
           pathToClaudeCodeExecutable: cliPath,
-          // Clean environment variables to prevent child process exit code 1
           env: getCleanEnvironment(),
-          // Capture stderr for debugging CLI failures
           stderr: (data: string) => {
             console.error(`[Claude CLI stderr] ${data}`);
           },
-          // Serverless-friendly options
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,
         },
