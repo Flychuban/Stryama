@@ -130,30 +130,30 @@ function EditorContent() {
           // when messages.length > 0
           await refetchProject();
 
-          // Fetch latest preview URL from DB
-          // Backend automatically restarts preview after file changes, so URL should be fresh
-          console.log('[Editor] Fetching latest preview URL...');
+          // Fetch preview URL from DB
+          console.log('[Editor] Fetching preview URL...');
           const previewData = await utils.sandbox.getPreviewUrl.fetch({
             projectId,
           });
 
           if (previewData.url) {
-            // Preview exists and was automatically restarted by backend
+            // Preview exists - Vite HMR will handle the file updates automatically
             console.log(
-              '[Editor] Preview ready (auto-restarted by backend), loading...'
+              '[Editor] Preview running, waiting for Vite HMR to rebuild...'
             );
             setPreviewUrl(previewData.url);
             setPreviewError(null);
 
-            // Force iframe reload to show latest changes
-            // No need to wait for HMR - backend already restarted with fresh build
+            // Wait 3 seconds for Vite HMR to detect changes and rebuild
+            // (HMR is already working - we just need to give it time to rebuild)
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+
+            // Reload iframe to show the updated content
+            console.log('[Editor] Reloading iframe with updated content...');
             setIframeKey((prev) => prev + 1);
           } else {
-            // Fallback: Preview doesn't exist (backend restart may have failed)
-            // Start preview manually
-            console.log(
-              '[Editor] No preview URL found, starting preview manually...'
-            );
+            // No preview exists yet - start one
+            console.log('[Editor] No preview found, starting new preview...');
             setIsGeneratingPreview(true);
             const previewResult = await startPreviewMutation.mutateAsync({
               projectId,

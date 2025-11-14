@@ -19,10 +19,7 @@ import type { ProjectContext } from '~/lib/integrations/claude';
 import type { StreamEvent } from '~/lib/integrations/claude/types/stream-events';
 import { createSandboxEvent } from '~/lib/integrations/claude/stream-manager';
 import { sandboxManager } from '~/lib/integrations/e2b/services/sandbox-manager';
-import {
-  setupInfrastructure,
-  restartPreviewServer,
-} from '~/lib/integrations/e2b/services/preview-manager';
+import { setupInfrastructure } from '~/lib/integrations/e2b/services/preview-manager';
 import { E2B_CONFIG } from '~/lib/integrations/e2b/config';
 import type { Sandbox } from '@e2b/code-interpreter';
 import { UsageTrackingService } from '~/lib/services/usageTracking';
@@ -983,107 +980,12 @@ export const aiRouter = createTRPCRouter({
                   `[AI Stream] ✅ Files saved to database (${filesDuration}ms)`
                 );
 
-                // Automatically restart preview server with updated files
-                if (sandboxInstance && sandboxId) {
-                  try {
-                    console.log(
-                      `[AI Stream] 🔄 Restarting preview server with updated files...`
-                    );
-                    const previewRestartStartTime = Date.now();
-
-                    // Fetch updated project files from database
-                    // Note: Infrastructure files (package.json, vite.config, etc.) are not
-                    // in the database as they're filtered out during save. We fetch all
-                    // files and pass them to restartPreviewServer.
-                    const updatedFiles = await ctx.db.file.findMany({
-                      where: { projectId },
-                      orderBy: { path: 'asc' },
-                    });
-
-                    const previewResult = await restartPreviewServer(
-                      sandboxInstance,
-                      projectId,
-                      updatedFiles,
-                      sandboxId
-                    );
-
-                    const previewRestartDuration =
-                      Date.now() - previewRestartStartTime;
-
-                    if (previewResult.success && previewResult.data) {
-                      // Update preview URL in database
-                      // Note: We only update previewUrl, not metadata, to preserve
-                      // critical fields like projectId and userId in metadata
-                      await ctx.db.sandbox.update({
-                        where: { id: sandboxId },
-                        data: {
-                          previewUrl: previewResult.data.url,
-                          lastActivity: new Date(),
-                        },
-                      });
-
-                      console.log(
-                        `[AI Stream] ✅ Preview restarted successfully in ${(previewRestartDuration / 1000).toFixed(1)}s`
-                      );
-                      console.log(
-                        `[AI Stream] Preview URL: ${previewResult.data.url}`
-                      );
-                    } else {
-                      console.error(
-                        `[AI Stream] ⚠️ Preview restart failed after ${(previewRestartDuration / 1000).toFixed(1)}s: ${previewResult.error}`
-                      );
-
-                      // Clear preview URL so frontend knows to start manually
-                      await ctx.db.sandbox.update({
-                        where: { id: sandboxId },
-                        data: {
-                          previewUrl: null,
-                          lastActivity: new Date(),
-                        },
-                      });
-
-                      console.log(
-                        `[AI Stream] ℹ️ Cleared preview URL - user can start preview manually`
-                      );
-                      // Don't fail the generation - user can manually restart
-                    }
-                  } catch (previewError) {
-                    console.error(
-                      `[AI Stream] ⚠️ Preview restart error (non-critical):`,
-                      previewError
-                    );
-                    console.error(
-                      `[AI Stream] Error details:`,
-                      previewError instanceof Error
-                        ? previewError.message
-                        : 'Unknown error'
-                    );
-
-                    // Clear preview URL so frontend knows preview is unavailable
-                    try {
-                      await ctx.db.sandbox.update({
-                        where: { id: sandboxId },
-                        data: {
-                          previewUrl: null,
-                          lastActivity: new Date(),
-                        },
-                      });
-                      console.log(
-                        `[AI Stream] ℹ️ Cleared preview URL after error - user can start manually`
-                      );
-                    } catch (dbError) {
-                      console.error(
-                        `[AI Stream] ⚠️ Failed to clear preview URL:`,
-                        dbError
-                      );
-                    }
-                    // Don't fail the generation - user can manually restart
-                  }
-                } else {
-                  console.log(
-                    `[AI Stream] ℹ️ Skipping preview restart - sandbox not available`
-                  );
-                }
+                // NOTE: No server restart needed! Vite HMR automatically detects file changes
+                // and sends updates to the browser. The frontend will wait for Vite to rebuild
+                // (2-3 seconds) then reload the iframe.
+                console.log(
+                  `[AI Stream] ✅ Files updated in sandbox - Vite HMR will handle live reload`
+                );
 
                 // Increment usage counters
                 console.log(`[AI Stream] 📊 Updating usage counters...`);
