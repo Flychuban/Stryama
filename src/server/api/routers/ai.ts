@@ -992,19 +992,11 @@ export const aiRouter = createTRPCRouter({
                     const previewRestartStartTime = Date.now();
 
                     // Fetch updated project files from database
+                    // Note: Infrastructure files (package.json, vite.config, etc.) are not
+                    // in the database as they're filtered out during save. We fetch all
+                    // files and pass them to restartPreviewServer.
                     const updatedFiles = await ctx.db.file.findMany({
-                      where: {
-                        projectId,
-                        NOT: [
-                          { path: { startsWith: 'package.json' } },
-                          { path: { startsWith: 'vite.config' } },
-                          { path: { startsWith: 'tsconfig' } },
-                          { path: { startsWith: '.next/' } },
-                          { path: { startsWith: 'node_modules/' } },
-                          { path: { startsWith: 'dist/' } },
-                          { path: { startsWith: 'build/' } },
-                        ],
-                      },
+                      where: { projectId },
                       orderBy: { path: 'asc' },
                     });
 
@@ -1020,16 +1012,13 @@ export const aiRouter = createTRPCRouter({
 
                     if (previewResult.success && previewResult.data) {
                       // Update preview URL in database
+                      // Note: We only update previewUrl, not metadata, to preserve
+                      // critical fields like projectId and userId in metadata
                       await ctx.db.sandbox.update({
                         where: { id: sandboxId },
                         data: {
                           previewUrl: previewResult.data.url,
-                          metadata: {
-                            previewPort: previewResult.data.port,
-                            previewStartedAt:
-                              previewResult.data.startTime.toISOString(),
-                            lastPreviewRestart: new Date().toISOString(),
-                          },
+                          lastActivity: new Date(),
                         },
                       });
 
@@ -1042,6 +1031,19 @@ export const aiRouter = createTRPCRouter({
                     } else {
                       console.error(
                         `[AI Stream] ⚠️ Preview restart failed after ${(previewRestartDuration / 1000).toFixed(1)}s: ${previewResult.error}`
+                      );
+
+                      // Clear preview URL so frontend knows to start manually
+                      await ctx.db.sandbox.update({
+                        where: { id: sandboxId },
+                        data: {
+                          previewUrl: null,
+                          lastActivity: new Date(),
+                        },
+                      });
+
+                      console.log(
+                        `[AI Stream] ℹ️ Cleared preview URL - user can start preview manually`
                       );
                       // Don't fail the generation - user can manually restart
                     }
@@ -1056,6 +1058,25 @@ export const aiRouter = createTRPCRouter({
                         ? previewError.message
                         : 'Unknown error'
                     );
+
+                    // Clear preview URL so frontend knows preview is unavailable
+                    try {
+                      await ctx.db.sandbox.update({
+                        where: { id: sandboxId },
+                        data: {
+                          previewUrl: null,
+                          lastActivity: new Date(),
+                        },
+                      });
+                      console.log(
+                        `[AI Stream] ℹ️ Cleared preview URL after error - user can start manually`
+                      );
+                    } catch (dbError) {
+                      console.error(
+                        `[AI Stream] ⚠️ Failed to clear preview URL:`,
+                        dbError
+                      );
+                    }
                     // Don't fail the generation - user can manually restart
                   }
                 } else {
