@@ -743,7 +743,6 @@ export async function startPreviewServer(
       );
       console.log(`[Preview] E2B ID: ${sandboxInfo.sandboxId}`);
       console.log(`[Preview] Status: running`);
-      console.log(`[Preview] Client ID: ${sandboxInfo.clientId ?? 'N/A'}`);
     } catch (error) {
       const sandboxCheckDuration = Date.now() - sandboxCheckStartTime;
       console.error(

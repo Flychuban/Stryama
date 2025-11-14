@@ -105,7 +105,6 @@ class SandboxManager {
       console.log(`[Sandbox Manager]   - E2B ID: ${info.sandboxId}`);
       console.log(`[Sandbox Manager]   - Template ID: ${info.templateId}`);
       console.log(`[Sandbox Manager]   - Expires: ${expiresAt.toISOString()}`);
-      console.log(`[Sandbox Manager]   - Client ID: ${info.clientId ?? 'N/A'}`);
 
       // Store in database
       console.log(`[Sandbox Manager] 💾 Storing sandbox in database...`);
