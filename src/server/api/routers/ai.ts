@@ -479,7 +479,15 @@ export const aiRouter = createTRPCRouter({
       })
     )
     .subscription(async ({ ctx, input }) => {
+      console.log(
+        `[AI Stream] 🚀 ========== STREAM GENERATION START ==========`
+      );
+      console.log(`[AI Stream] Generation ID: ${input.generationId}`);
+      console.log(`[AI Stream] User ID: ${ctx.auth.userId}`);
+      console.log(`[AI Stream] Timestamp: ${new Date().toISOString()}`);
+
       // Fetch the generation record to get the prompt
+      console.log(`[AI Stream] 🔍 Fetching generation record from database...`);
       const generation = await ctx.db.aIGeneration.findFirst({
         where: {
           id: input.generationId,
@@ -488,19 +496,20 @@ export const aiRouter = createTRPCRouter({
       });
 
       if (!generation) {
+        console.error(
+          `[AI Stream] ❌ Generation not found: ${input.generationId}`
+        );
         throw new TRPCError({
           code: 'NOT_FOUND',
           message: 'Generation not found or you do not have access to it',
         });
       }
 
+      console.log(`[AI Stream] ✅ Generation record found`);
       const prompt = generation.prompt;
       const projectId = generation.projectId ?? undefined;
       const useSandbox = true; // Default to true
 
-      console.log(
-        `[AI Stream] Starting generation ${input.generationId} for user ${ctx.auth.userId}`
-      );
       console.log(
         `[AI Stream] 📝 User prompt (${prompt.length} chars):`,
         prompt.substring(0, 200) + (prompt.length > 200 ? '...' : '')
@@ -542,6 +551,7 @@ export const aiRouter = createTRPCRouter({
 
             // Gather project context if project ID provided
             if (projectId) {
+              console.log(`[AI Stream] 🔍 Looking up project: ${projectId}...`);
               project = await ctx.db.project.findFirst({
                 where: {
                   id: projectId,
@@ -550,6 +560,7 @@ export const aiRouter = createTRPCRouter({
               });
 
               if (!project) {
+                console.error(`[AI Stream] ❌ Project not found: ${projectId}`);
                 emit.error(
                   new TRPCError({
                     code: 'NOT_FOUND',
@@ -560,7 +571,14 @@ export const aiRouter = createTRPCRouter({
                 return;
               }
 
+              console.log(
+                `[AI Stream] ✅ Project found: "${project.name}" (${projectId})`
+              );
+
               // Get existing session ID for continuity
+              console.log(
+                `[AI Stream] 🔍 Checking for previous session to restore...`
+              );
               const lastGeneration = await ctx.db.aIGeneration.findFirst({
                 where: {
                   projectId: projectId,
@@ -575,29 +593,44 @@ export const aiRouter = createTRPCRouter({
               // Restore session from database if resuming
               if (sessionId) {
                 console.log(
-                  `[AI Router] Attempting to restore session ${sessionId} from database...`
+                  `[AI Stream] 🔄 Found previous session ${sessionId}, attempting to restore...`
                 );
                 const restored = await restoreSessionFromDB(ctx.db, sessionId);
                 if (restored) {
-                  console.log(`[AI Router] ✅ Session restored successfully`);
+                  console.log(
+                    `[AI Stream] ✅ Session ${sessionId} restored successfully - conversation will continue`
+                  );
                 } else {
                   console.log(
-                    `[AI Router] ⚠️ Could not restore session - Claude will start fresh`
+                    `[AI Stream] ⚠️ Could not restore session ${sessionId} - Claude will start fresh conversation`
                   );
                   // Don't fail the request, just log and continue
                   // Claude will start a new session if the old one isn't found
                 }
+              } else {
+                console.log(
+                  `[AI Stream] 📝 No previous session found - starting fresh conversation`
+                );
               }
 
               // Gather project context
+              console.log(
+                `[AI Stream] 🔍 Gathering project context (existing files, dependencies)...`
+              );
               const gatherer = new ProjectContextGatherer(ctx.db);
               context = await gatherer.gatherContext(projectId, {
                 maxFiles: 5,
                 maxFileSize: 3000,
               });
+              console.log(
+                `[AI Stream] ✅ Context gathered: ${context.existingFiles?.length ?? 0} existing files, ${context.dependencies?.length ?? 0} dependencies`
+              );
 
               // Set up E2B sandbox if enabled
               if (useSandbox) {
+                console.log(
+                  `[AI Stream] 🏗️  Starting sandbox setup for project...`
+                );
                 emit.next(
                   createSandboxEvent(
                     'creating',
@@ -606,14 +639,25 @@ export const aiRouter = createTRPCRouter({
                   )
                 );
 
+                const sandboxStartTime = Date.now();
+                console.log(
+                  `[AI Stream] 🔍 Calling sandboxManager.getOrCreateSandbox...`
+                );
                 const sandboxResult = await sandboxManager.getOrCreateSandbox(
                   ctx.db,
                   projectId,
                   ctx.auth.userId,
                   E2B_CONFIG.maxTimeoutMs
                 );
+                const sandboxDuration = Date.now() - sandboxStartTime;
+                console.log(
+                  `[AI Stream] ⏱️  Sandbox operation took ${sandboxDuration}ms`
+                );
 
                 if (!sandboxResult.success || !sandboxResult.data) {
+                  console.error(
+                    `[AI Stream] ❌ Sandbox creation failed: ${sandboxResult.error}`
+                  );
                   emit.error(
                     new TRPCError({
                       code: 'INTERNAL_SERVER_ERROR',
@@ -627,11 +671,17 @@ export const aiRouter = createTRPCRouter({
                 sandboxId = sandboxResult.data.id;
                 sandboxInstance = sandboxResult.data.instance;
 
+                console.log(
+                  `[AI Stream] ✅ Sandbox ready - DB ID: ${sandboxId}, E2B ID: ${sandboxResult.data.e2bId}`
+                );
                 emit.next(
                   createSandboxEvent('created', sandboxId, 'Environment ready')
                 );
 
                 // Set up infrastructure
+                console.log(
+                  `[AI Stream] 🏗️  Setting up infrastructure (package.json, configs)...`
+                );
                 emit.next(
                   createSandboxEvent(
                     'installing_deps',
@@ -640,17 +690,31 @@ export const aiRouter = createTRPCRouter({
                   )
                 );
 
+                const infraStartTime = Date.now();
                 const infraResult = await setupInfrastructure(
                   sandboxInstance,
                   project.name
                 );
+                const infraDuration = Date.now() - infraStartTime;
+                console.log(
+                  `[AI Stream] ⏱️  Infrastructure setup took ${infraDuration}ms`
+                );
 
                 if (infraResult.success) {
+                  console.log(`[AI Stream] ✅ Infrastructure setup complete`);
                   // Run npm install
                   try {
+                    console.log(
+                      `[AI Stream] 📦 Installing dependencies (timeout: 10 minutes)...`
+                    );
+                    const npmStartTime = Date.now();
                     await sandboxInstance.commands.run(
                       'cd /project && npm install',
                       { timeoutMs: 600000 } // 10 minutes
+                    );
+                    const npmDuration = Date.now() - npmStartTime;
+                    console.log(
+                      `[AI Stream] ✅ npm install completed in ${(npmDuration / 1000).toFixed(1)}s`
                     );
                     emit.next(
                       createSandboxEvent(
@@ -660,9 +724,15 @@ export const aiRouter = createTRPCRouter({
                       )
                     );
                   } catch (installError) {
-                    console.warn(
-                      '[AI Stream] npm install failed:',
+                    console.error(
+                      '[AI Stream] ❌ npm install failed:',
                       installError
+                    );
+                    console.error(
+                      '[AI Stream] Error details:',
+                      installError instanceof Error
+                        ? installError.message
+                        : 'Unknown error'
                     );
                     emit.next(
                       createSandboxEvent(
@@ -672,8 +742,15 @@ export const aiRouter = createTRPCRouter({
                       )
                     );
                   }
+                } else {
+                  console.error(
+                    `[AI Stream] ❌ Infrastructure setup failed: ${infraResult.error}`
+                  );
                 }
 
+                console.log(
+                  `[AI Stream] ✅ Sandbox fully configured and ready`
+                );
                 emit.next(
                   createSandboxEvent(
                     'setup_complete',
@@ -683,69 +760,164 @@ export const aiRouter = createTRPCRouter({
                 );
               }
             } else {
+              console.log(
+                `[AI Stream] ℹ️  No project ID - using empty context`
+              );
               context = { existingFiles: [], dependencies: [] };
             }
 
             // Start streaming generation
             console.log(
-              '[AI Stream] 🚀 Calling Claude generateCodeStreaming...'
+              '[AI Stream] 🚀 ========== STARTING CLAUDE STREAM =========='
             );
             console.log(
-              `[AI Stream] Context: ${context?.existingFiles?.length ?? 0} existing files, Session: ${sessionId ?? 'new'}`
+              `[AI Stream] Context: ${context?.existingFiles?.length ?? 0} existing files`
             );
+            console.log(`[AI Stream] Session: ${sessionId ?? 'NEW SESSION'}`);
+            console.log(`[AI Stream] Sandbox ID: ${sandboxId ?? 'none'}`);
+            console.log(`[AI Stream] Model: ${selectedModel}`);
+            console.log(`[AI Stream] Timestamp: ${new Date().toISOString()}`);
 
-            const streamIterator = claudeClient.generateCodeStreaming(
-              {
-                prompt: prompt,
-                context,
-                sessionId,
-              },
-              ctx.db,
-              sandboxId
-            );
-
-            let eventCount = 0;
-            // Yield all events from the stream and capture completion data
-            for await (const event of streamIterator) {
-              eventCount++;
-              if (
-                eventCount <= 3 ||
-                event.type === 'complete' ||
-                event.type.startsWith('error')
-              ) {
-                console.log(
-                  `[AI Stream] 📨 Event #${eventCount}: ${event.type}`
-                );
-              }
-
-              emit.next(event);
-
-              // Capture completion data for database persistence
-              if (event.type === 'complete' && event.result) {
-                completionResult = event.result;
-              }
+            const streamStartTime = Date.now();
+            let streamIterator;
+            try {
+              console.log(
+                `[AI Stream] 🔄 Calling claudeClient.generateCodeStreaming...`
+              );
+              streamIterator = claudeClient.generateCodeStreaming(
+                {
+                  prompt: prompt,
+                  context,
+                  sessionId,
+                },
+                ctx.db,
+                sandboxId
+              );
+              console.log(
+                `[AI Stream] ✅ Stream iterator created successfully`
+              );
+            } catch (error) {
+              console.error(
+                `[AI Stream] ❌ CRITICAL: Failed to create stream iterator:`,
+                error
+              );
+              console.error(
+                `[AI Stream] Error details:`,
+                error instanceof Error ? error.message : 'Unknown error'
+              );
+              console.error(`[AI Stream] Error stack:`, error);
+              throw error;
             }
 
-            console.log(
-              `[AI Stream] ✅ Stream completed. Total events: ${eventCount}`
-            );
-            console.log(
-              `[AI Stream] Completion result:`,
-              completionResult
-                ? {
-                    tokensUsed: completionResult.tokensUsed,
-                    duration: completionResult.duration,
-                    contentLength: completionResult.content?.length ?? 0,
-                  }
-                : 'none'
-            );
+            let eventCount = 0;
+            let lastEventTime = Date.now();
+            // Yield all events from the stream and capture completion data
+            try {
+              console.log(
+                `[AI Stream] 🔄 Starting to iterate over stream events...`
+              );
+              for await (const event of streamIterator) {
+                eventCount++;
+                const now = Date.now();
+                const timeSinceLastEvent = now - lastEventTime;
+                lastEventTime = now;
+
+                // Log all events with timing info
+                const shouldLogDetails =
+                  eventCount <= 5 || // First 5 events
+                  event.type === 'complete' ||
+                  event.type.startsWith('error') ||
+                  event.type === 'tool_use' ||
+                  event.type === 'tool_result' ||
+                  timeSinceLastEvent > 5000; // Log if >5s since last event
+
+                if (shouldLogDetails) {
+                  console.log(
+                    `[AI Stream] 📨 Event #${eventCount} (+${timeSinceLastEvent}ms): ${event.type}`,
+                    event.type === 'tool_use'
+                      ? `| Tool: ${event.toolName}`
+                      : event.type === 'tool_result'
+                        ? `| Tool: ${event.toolName} | Error: ${event.isError}`
+                        : event.type === 'usage'
+                          ? `| Tokens: ${event.inputTokens + event.outputTokens}`
+                          : ''
+                  );
+                } else if (eventCount % 10 === 0) {
+                  // Log every 10th event to show progress
+                  console.log(
+                    `[AI Stream] 📊 Progress: ${eventCount} events received (${event.type})`
+                  );
+                }
+
+                emit.next(event);
+
+                // Capture completion data for database persistence
+                if (event.type === 'complete' && event.result) {
+                  console.log(
+                    `[AI Stream] 🎯 Completion event received - capturing result data`
+                  );
+                  completionResult = event.result;
+                }
+              }
+
+              const streamDuration = Date.now() - streamStartTime;
+              console.log(
+                `[AI Stream] ✅ ========== STREAM COMPLETED ========== `
+              );
+              console.log(`[AI Stream] Total events: ${eventCount}`);
+              console.log(
+                `[AI Stream] Total duration: ${(streamDuration / 1000).toFixed(1)}s`
+              );
+              console.log(
+                `[AI Stream] Completion result:`,
+                completionResult
+                  ? {
+                      tokensUsed: completionResult.tokensUsed,
+                      duration: completionResult.duration,
+                      contentLength: completionResult.content?.length ?? 0,
+                      sessionId: completionResult.sessionId,
+                    }
+                  : 'NONE - NO COMPLETION RESULT!'
+              );
+            } catch (streamError) {
+              const streamDuration = Date.now() - streamStartTime;
+              console.error(
+                `[AI Stream] ❌ ========== STREAM ERROR ========== `
+              );
+              console.error(
+                `[AI Stream] Error occurred after ${eventCount} events in ${(streamDuration / 1000).toFixed(1)}s`
+              );
+              console.error(`[AI Stream] Error:`, streamError);
+              console.error(
+                `[AI Stream] Error message:`,
+                streamError instanceof Error
+                  ? streamError.message
+                  : 'Unknown error'
+              );
+              console.error(
+                `[AI Stream] Error stack:`,
+                streamError instanceof Error ? streamError.stack : 'No stack'
+              );
+              throw streamError;
+            }
 
             // CRITICAL: Update the existing generation record after stream completes
             if (completionResult && projectId && project) {
-              console.log('[AI Stream] Updating generation in database...');
+              console.log(
+                `[AI Stream] 💾 ========== SAVING TO DATABASE ==========`
+              );
+              console.log(`[AI Stream] Generation ID: ${input.generationId}`);
+              console.log(
+                `[AI Stream] Session ID: ${completionResult.sessionId ?? 'none'}`
+              );
+              console.log(
+                `[AI Stream] Tokens used: ${completionResult.tokensUsed}`
+              );
 
               try {
                 // Update the existing generation record with results
+                console.log(`[AI Stream] 🔄 Updating AIGeneration record...`);
+                const updateStartTime = Date.now();
                 await ctx.db.aIGeneration.update({
                   where: { id: input.generationId },
                   data: {
@@ -757,28 +929,45 @@ export const aiRouter = createTRPCRouter({
                     totalCost: completionResult.totalCost ?? null,
                   },
                 });
-
-                console.log('[AI Stream] ✅ AI generation saved to database');
+                const updateDuration = Date.now() - updateStartTime;
+                console.log(
+                  `[AI Stream] ✅ AI generation saved to database (${updateDuration}ms)`
+                );
 
                 // Save session to database for future resumption
                 if (completionResult.sessionId) {
                   console.log(
-                    `[AI Stream] Saving session ${completionResult.sessionId} to database...`
+                    `[AI Stream] 💾 Saving session ${completionResult.sessionId} to database...`
                   );
+                  const sessionStartTime = Date.now();
                   const saved = await saveSessionToDB(
                     ctx.db,
                     completionResult.sessionId
                   );
+                  const sessionDuration = Date.now() - sessionStartTime;
                   if (saved) {
-                    console.log('[AI Stream] ✅ Session saved to database');
-                  } else {
                     console.log(
-                      '[AI Stream] ⚠️ Failed to save session to database (non-critical)'
+                      `[AI Stream] ✅ Session saved to database (${sessionDuration}ms)`
+                    );
+                  } else {
+                    console.warn(
+                      `[AI Stream] ⚠️ Failed to save session to database after ${sessionDuration}ms (non-critical)`
                     );
                   }
+                } else {
+                  console.warn(
+                    `[AI Stream] ⚠️ No session ID in completion result - cannot save session`
+                  );
                 }
 
                 // Save files to database (supports both E2B sandbox and direct response)
+                console.log(
+                  `[AI Stream] 💾 Saving generated files to database...`
+                );
+                console.log(
+                  `[AI Stream] Sandbox instance available: ${!!sandboxInstance}`
+                );
+                const filesStartTime = Date.now();
                 await saveGeneratedFilesToDatabase(
                   ctx.db,
                   projectId,
@@ -786,27 +975,80 @@ export const aiRouter = createTRPCRouter({
                   [], // Empty array - will read from sandbox if needed
                   '[AI Stream]'
                 );
+                const filesDuration = Date.now() - filesStartTime;
+                console.log(
+                  `[AI Stream] ✅ Files saved to database (${filesDuration}ms)`
+                );
 
                 // Increment usage counters
+                console.log(`[AI Stream] 📊 Updating usage counters...`);
+                const usageStartTime = Date.now();
                 await Promise.all([
                   rateLimiter.incrementCount(ctx.auth.userId),
                   UsageTrackingService.incrementGenerationCount(
                     ctx.auth.userId
                   ),
                 ]);
+                const usageDuration = Date.now() - usageStartTime;
+                console.log(
+                  `[AI Stream] ✅ Usage counters updated (${usageDuration}ms)`
+                );
+
+                console.log(
+                  `[AI Stream] ✅ ========== DATABASE SAVE COMPLETE ==========`
+                );
               } catch (dbError) {
                 console.error(
-                  '[AI Stream] ❌ Failed to persist to database:',
+                  `[AI Stream] ❌ ========== DATABASE ERROR ==========`
+                );
+                console.error(
+                  '[AI Stream] Failed to persist to database:',
                   dbError
+                );
+                console.error(
+                  '[AI Stream] Error details:',
+                  dbError instanceof Error ? dbError.message : 'Unknown error'
+                );
+                console.error(
+                  '[AI Stream] Error stack:',
+                  dbError instanceof Error ? dbError.stack : 'No stack'
                 );
                 // Don't throw - stream already completed successfully
               }
+            } else {
+              console.warn(
+                `[AI Stream] ⚠️ Skipping database save - missing required data:`
+              );
+              console.warn(
+                `[AI Stream]   - completionResult: ${!!completionResult}`
+              );
+              console.warn(`[AI Stream]   - projectId: ${!!projectId}`);
+              console.warn(`[AI Stream]   - project: ${!!project}`);
             }
 
             // Mark as complete
+            console.log(
+              `[AI Stream] 🏁 Emitting completion event to client...`
+            );
             emit.complete();
+            console.log(
+              `[AI Stream] 🏁 ========== STREAM GENERATION END ==========`
+            );
           } catch (error) {
-            console.error('[AI Stream] Error:', error);
+            console.error(`[AI Stream] ❌ ========== FATAL ERROR ==========`);
+            console.error('[AI Stream] Unhandled error:', error);
+            console.error(
+              '[AI Stream] Error type:',
+              error?.constructor?.name ?? 'Unknown'
+            );
+            console.error(
+              '[AI Stream] Error message:',
+              error instanceof Error ? error.message : 'Unknown error'
+            );
+            console.error(
+              '[AI Stream] Error stack:',
+              error instanceof Error ? error.stack : 'No stack'
+            );
             emit.error(
               new TRPCError({
                 code: 'INTERNAL_SERVER_ERROR',
@@ -818,11 +1060,16 @@ export const aiRouter = createTRPCRouter({
         };
 
         // Start streaming
+        console.log(
+          `[AI Stream] 🔄 Launching async streamGeneration function...`
+        );
         void streamGeneration();
 
         // Cleanup function
         return () => {
-          console.log('[AI Stream] Client disconnected');
+          console.log(
+            `[AI Stream] 🔌 Client disconnected - cleaning up subscription`
+          );
         };
       });
     }),

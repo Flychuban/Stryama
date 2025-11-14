@@ -24,12 +24,28 @@ class SandboxManager {
     userId: string,
     timeoutMs: number = E2B_CONFIG.defaultTimeoutMs
   ): Promise<ServiceResult<SandboxInstance>> {
+    console.log(
+      `[Sandbox Manager] 🆕 ========== CREATE NEW SANDBOX ==========`
+    );
+    console.log(`[Sandbox Manager] Project ID: ${projectId}`);
+    console.log(`[Sandbox Manager] User ID: ${userId}`);
+    console.log(`[Sandbox Manager] Timeout: ${timeoutMs}ms`);
+    console.log(`[Sandbox Manager] Timestamp: ${new Date().toISOString()}`);
+
     try {
       // Check concurrent sandbox limit for user's plan (from Clerk session)
+      console.log(`[Sandbox Manager] 🔍 Checking user plan and limits...`);
+      const planStartTime = Date.now();
       const userPlan = await getUserPlanFromClerk();
+      const planDuration = Date.now() - planStartTime;
       const concurrentLimit = getConcurrentLimitForPlan(userPlan);
+      console.log(
+        `[Sandbox Manager] ✅ User plan: ${userPlan}, Concurrent limit: ${concurrentLimit} (${planDuration}ms)`
+      );
 
       // Count active sandboxes for this user
+      console.log(`[Sandbox Manager] 🔍 Counting active sandboxes for user...`);
+      const countStartTime = Date.now();
       const activeSandboxCount = await db.sandbox.count({
         where: {
           metadata: {
@@ -42,8 +58,15 @@ class SandboxManager {
           },
         },
       });
+      const countDuration = Date.now() - countStartTime;
+      console.log(
+        `[Sandbox Manager] Active sandboxes: ${activeSandboxCount}/${concurrentLimit} (${countDuration}ms)`
+      );
 
       if (activeSandboxCount >= concurrentLimit) {
+        console.error(
+          `[Sandbox Manager] ❌ Concurrent limit reached: ${activeSandboxCount}/${concurrentLimit}`
+        );
         return {
           success: false,
           data: null,
@@ -52,6 +75,12 @@ class SandboxManager {
       }
 
       // Create E2B sandbox with retry
+      console.log(`[Sandbox Manager] 🚀 Creating E2B sandbox...`);
+      console.log(`[Sandbox Manager] Timeout: ${timeoutMs}ms`);
+      console.log(
+        `[Sandbox Manager] Metadata: projectId=${projectId}, userId=${userId}`
+      );
+      const createStartTime = Date.now();
       const e2bSandbox = await withRetry(
         () =>
           e2bClient.createSandbox({
@@ -60,11 +89,27 @@ class SandboxManager {
           }),
         'Create E2B Sandbox'
       );
+      const createDuration = Date.now() - createStartTime;
+      console.log(
+        `[Sandbox Manager] ✅ E2B sandbox created in ${(createDuration / 1000).toFixed(1)}s`
+      );
 
+      console.log(`[Sandbox Manager] 🔍 Getting sandbox info from E2B...`);
+      const infoStartTime = Date.now();
       const info = await e2bSandbox.getInfo();
+      const infoDuration = Date.now() - infoStartTime;
       const expiresAt = new Date(info.endAt);
+      console.log(
+        `[Sandbox Manager] ✅ Sandbox info retrieved (${infoDuration}ms)`
+      );
+      console.log(`[Sandbox Manager]   - E2B ID: ${info.sandboxId}`);
+      console.log(`[Sandbox Manager]   - Template ID: ${info.templateId}`);
+      console.log(`[Sandbox Manager]   - Expires: ${expiresAt.toISOString()}`);
+      console.log(`[Sandbox Manager]   - Client ID: ${info.clientId ?? 'N/A'}`);
 
       // Store in database
+      console.log(`[Sandbox Manager] 💾 Storing sandbox in database...`);
+      const dbStartTime = Date.now();
       const dbSandbox = await db.sandbox.create({
         data: {
           e2bId: info.sandboxId,
@@ -79,9 +124,25 @@ class SandboxManager {
           },
         },
       });
+      const dbDuration = Date.now() - dbStartTime;
+      console.log(
+        `[Sandbox Manager] ✅ Sandbox saved to database (${dbDuration}ms)`
+      );
+      console.log(`[Sandbox Manager] DB ID: ${dbSandbox.id}`);
 
       // Cache the E2B instance
       this.activeSandboxes.set(dbSandbox.id, e2bSandbox);
+      console.log(
+        `[Sandbox Manager] 💾 Cached sandbox instance (cache size: ${this.activeSandboxes.size})`
+      );
+
+      const totalDuration = Date.now() - createStartTime;
+      console.log(`[Sandbox Manager] ✅ ========== SANDBOX CREATED ==========`);
+      console.log(`[Sandbox Manager] DB ID: ${dbSandbox.id}`);
+      console.log(`[Sandbox Manager] E2B ID: ${dbSandbox.e2bId}`);
+      console.log(
+        `[Sandbox Manager] Total time: ${(totalDuration / 1000).toFixed(1)}s`
+      );
 
       return {
         success: true,
@@ -95,7 +156,20 @@ class SandboxManager {
         error: null,
       };
     } catch (error) {
-      console.error('[Sandbox Manager] Creation failed:', error);
+      console.error(`[Sandbox Manager] ❌ ========== CREATE FAILED ==========`);
+      console.error('[Sandbox Manager] Error:', error);
+      console.error(
+        '[Sandbox Manager] Error type:',
+        error?.constructor?.name ?? 'Unknown'
+      );
+      console.error(
+        '[Sandbox Manager] Error message:',
+        error instanceof Error ? error.message : 'Failed to create sandbox'
+      );
+      console.error(
+        '[Sandbox Manager] Error stack:',
+        error instanceof Error ? error.stack : 'No stack'
+      );
       return {
         success: false,
         data: null,
@@ -115,7 +189,21 @@ class SandboxManager {
     userId: string,
     timeoutMs?: number
   ): Promise<ServiceResult<SandboxInstance>> {
+    console.log(
+      `[Sandbox Manager] 🔍 ========== GET OR CREATE SANDBOX ==========`
+    );
+    console.log(`[Sandbox Manager] Project ID: ${projectId}`);
+    console.log(`[Sandbox Manager] User ID: ${userId}`);
+    console.log(
+      `[Sandbox Manager] Timeout: ${timeoutMs ? `${timeoutMs}ms` : 'default'}`
+    );
+    console.log(`[Sandbox Manager] Timestamp: ${new Date().toISOString()}`);
+
     try {
+      console.log(
+        `[Sandbox Manager] 🔍 Searching for existing active sandbox in database...`
+      );
+      const queryStartTime = Date.now();
       const existingSandbox = await db.sandbox.findFirst({
         where: {
           projectId,
@@ -128,29 +216,65 @@ class SandboxManager {
           createdAt: 'desc',
         },
       });
+      const queryDuration = Date.now() - queryStartTime;
+      console.log(
+        `[Sandbox Manager] Database query completed in ${queryDuration}ms`
+      );
 
       if (existingSandbox) {
+        console.log(`[Sandbox Manager] ✅ Found existing sandbox in database:`);
+        console.log(`[Sandbox Manager]   - DB ID: ${existingSandbox.id}`);
+        console.log(`[Sandbox Manager]   - E2B ID: ${existingSandbox.e2bId}`);
         console.log(
-          `[Sandbox Manager] Found existing sandbox: DB ID=${existingSandbox.id}, E2B ID=${existingSandbox.e2bId}`
+          `[Sandbox Manager]   - Created: ${existingSandbox.createdAt.toISOString()}`
+        );
+        console.log(
+          `[Sandbox Manager]   - Expires: ${existingSandbox.expiresAt.toISOString()}`
+        );
+        console.log(
+          `[Sandbox Manager]   - Last activity: ${existingSandbox.lastActivity.toISOString()}`
         );
 
         // Try to get cached instance
+        console.log(
+          `[Sandbox Manager] 🔍 Checking if sandbox is in memory cache...`
+        );
         let instance = this.activeSandboxes.get(existingSandbox.id);
+        const inCache = !!instance;
+        console.log(
+          `[Sandbox Manager] Cache lookup: ${inCache ? '✅ FOUND' : '❌ NOT FOUND'}`
+        );
+        console.log(
+          `[Sandbox Manager] Total cached sandboxes: ${this.activeSandboxes.size}`
+        );
 
         // Validate cached instance is still alive
         if (instance) {
           console.log(
-            `[Sandbox Manager] Validating cached sandbox instance: ${existingSandbox.e2bId}`
+            `[Sandbox Manager] 🔍 Validating cached sandbox instance...`
           );
+          const validateStartTime = Date.now();
           try {
-            await instance.getInfo();
+            const info = await instance.getInfo();
+            const validateDuration = Date.now() - validateStartTime;
             console.log(
-              `[Sandbox Manager] ✅ Cached sandbox is valid and accessible`
+              `[Sandbox Manager] ✅ Cached sandbox is valid and accessible (${validateDuration}ms)`
+            );
+            console.log(
+              `[Sandbox Manager] Sandbox status: ${info.endAt ? `expires ${new Date(info.endAt).toISOString()}` : 'no expiration'}`
             );
           } catch (error) {
+            const validateDuration = Date.now() - validateStartTime;
             console.error(
-              `[Sandbox Manager] ❌ Cached sandbox is dead, removing from cache:`,
-              error
+              `[Sandbox Manager] ❌ Cached sandbox validation failed after ${validateDuration}ms`
+            );
+            console.error(`[Sandbox Manager] Error:`, error);
+            console.error(
+              `[Sandbox Manager] Error message:`,
+              error instanceof Error ? error.message : 'Unknown'
+            );
+            console.log(
+              `[Sandbox Manager] Removing dead sandbox from cache...`
             );
             this.activeSandboxes.delete(existingSandbox.id);
             instance = undefined;
@@ -159,49 +283,107 @@ class SandboxManager {
 
         if (!instance && FEATURE_FLAGS.usePersistence) {
           console.log(
-            `[Sandbox Manager] Active sandbox ${existingSandbox.e2bId} not in cache, attempting resume...`
+            `[Sandbox Manager] 🔄 Sandbox not in cache, attempting E2B resume...`
           );
+          console.log(`[Sandbox Manager] E2B ID: ${existingSandbox.e2bId}`);
 
           try {
+            console.log(`[Sandbox Manager] 🔌 Connecting to E2B sandbox...`);
             const startTime = Date.now();
             instance = await Sandbox.connect(existingSandbox.e2bId, {
               apiKey: E2B_CONFIG.apiKey,
               timeoutMs: E2B_CONFIG.maxTimeoutMs,
             });
-            const resumeTime = Date.now() - startTime;
+            const connectDuration = Date.now() - startTime;
+            console.log(
+              `[Sandbox Manager] ✅ Connected to E2B in ${connectDuration}ms`
+            );
 
             // Validate the resumed instance
-            await instance.getInfo();
+            console.log(`[Sandbox Manager] 🔍 Validating resumed instance...`);
+            const validateStartTime = Date.now();
+            const info = await instance.getInfo();
+            const validateDuration = Date.now() - validateStartTime;
+            console.log(
+              `[Sandbox Manager] ✅ Resumed sandbox validated (${validateDuration}ms)`
+            );
 
             // Cache the resumed instance
             this.activeSandboxes.set(existingSandbox.id, instance);
-
             console.log(
-              `[Sandbox Manager] ✅ Successfully resumed sandbox ${existingSandbox.e2bId} in ${resumeTime}ms`
+              `[Sandbox Manager] 💾 Cached resumed instance (cache size: ${this.activeSandboxes.size})`
+            );
+
+            const totalResumeTime = Date.now() - startTime;
+            console.log(
+              `[Sandbox Manager] ✅ Successfully resumed sandbox ${existingSandbox.e2bId} in ${totalResumeTime}ms`
             );
           } catch (resumeError) {
+            const resumeDuration = Date.now() - startTime;
             console.error(
-              `[Sandbox Manager] ❌ Failed to resume sandbox ${existingSandbox.e2bId}:`,
-              resumeError
+              `[Sandbox Manager] ❌ Failed to resume sandbox after ${resumeDuration}ms`
+            );
+            console.error(`[Sandbox Manager] E2B ID: ${existingSandbox.e2bId}`);
+            console.error(`[Sandbox Manager] Error:`, resumeError);
+            console.error(
+              `[Sandbox Manager] Error type:`,
+              resumeError?.constructor?.name ?? 'Unknown'
+            );
+            console.error(
+              `[Sandbox Manager] Error message:`,
+              resumeError instanceof Error ? resumeError.message : 'Unknown'
             );
 
             // Mark as stopped in database
+            console.log(
+              `[Sandbox Manager] 📝 Marking sandbox as STOPPED in database...`
+            );
+            const updateStartTime = Date.now();
             await db.sandbox.update({
               where: { id: existingSandbox.id },
               data: { status: 'STOPPED' },
             });
+            const updateDuration = Date.now() - updateStartTime;
+            console.log(
+              `[Sandbox Manager] ✅ Database updated (${updateDuration}ms)`
+            );
 
             // Fall through to create new sandbox
+            console.log(
+              `[Sandbox Manager] Will create new sandbox as fallback...`
+            );
             instance = undefined;
           }
+        } else if (!instance && !FEATURE_FLAGS.usePersistence) {
+          console.warn(
+            `[Sandbox Manager] ⚠️ Persistence is disabled, cannot resume sandbox`
+          );
+          console.log(`[Sandbox Manager] Will create new sandbox...`);
         }
 
         if (instance) {
           // Update last activity
+          console.log(
+            `[Sandbox Manager] 📝 Updating last activity timestamp...`
+          );
+          const updateStartTime = Date.now();
           await db.sandbox.update({
             where: { id: existingSandbox.id },
             data: { lastActivity: new Date() },
           });
+          const updateDuration = Date.now() - updateStartTime;
+          console.log(
+            `[Sandbox Manager] ✅ Last activity updated (${updateDuration}ms)`
+          );
+
+          console.log(
+            `[Sandbox Manager] ✅ ========== RETURNING EXISTING SANDBOX ==========`
+          );
+          console.log(`[Sandbox Manager] DB ID: ${existingSandbox.id}`);
+          console.log(`[Sandbox Manager] E2B ID: ${existingSandbox.e2bId}`);
+          console.log(
+            `[Sandbox Manager] Source: ${inCache ? 'cache' : 'resumed from E2B'}`
+          );
 
           return {
             success: true,
@@ -215,13 +397,30 @@ class SandboxManager {
             error: null,
           };
         }
+      } else {
+        console.log(
+          `[Sandbox Manager] ❌ No existing active sandbox found in database`
+        );
       }
 
       // Create new sandbox (fallback)
-      console.log('[Sandbox Manager] Creating new sandbox...');
+      console.log(
+        `[Sandbox Manager] 🆕 No usable existing sandbox - creating new one...`
+      );
       return this.createSandbox(db, projectId, userId, timeoutMs);
     } catch (error) {
-      console.error('[Sandbox Manager] getOrCreate failed:', error);
+      console.error(
+        `[Sandbox Manager] ❌ ========== GET OR CREATE FAILED ==========`
+      );
+      console.error('[Sandbox Manager] Error:', error);
+      console.error(
+        '[Sandbox Manager] Error type:',
+        error?.constructor?.name ?? 'Unknown'
+      );
+      console.error(
+        '[Sandbox Manager] Error message:',
+        error instanceof Error ? error.message : 'Unknown error'
+      );
       return {
         success: false,
         data: null,
