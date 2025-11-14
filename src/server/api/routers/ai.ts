@@ -19,7 +19,10 @@ import type { ProjectContext } from '~/lib/integrations/claude';
 import type { StreamEvent } from '~/lib/integrations/claude/types/stream-events';
 import { createSandboxEvent } from '~/lib/integrations/claude/stream-manager';
 import { sandboxManager } from '~/lib/integrations/e2b/services/sandbox-manager';
-import { setupInfrastructure } from '~/lib/integrations/e2b/services/preview-manager';
+import {
+  setupInfrastructure,
+  restartPreviewServer,
+} from '~/lib/integrations/e2b/services/preview-manager';
 import { E2B_CONFIG } from '~/lib/integrations/e2b/config';
 import type { Sandbox } from '@e2b/code-interpreter';
 import { UsageTrackingService } from '~/lib/services/usageTracking';
@@ -979,6 +982,87 @@ export const aiRouter = createTRPCRouter({
                 console.log(
                   `[AI Stream] ✅ Files saved to database (${filesDuration}ms)`
                 );
+
+                // Automatically restart preview server with updated files
+                if (sandboxInstance && sandboxId) {
+                  try {
+                    console.log(
+                      `[AI Stream] 🔄 Restarting preview server with updated files...`
+                    );
+                    const previewRestartStartTime = Date.now();
+
+                    // Fetch updated project files from database
+                    const updatedFiles = await ctx.db.file.findMany({
+                      where: {
+                        projectId,
+                        NOT: [
+                          { path: { startsWith: 'package.json' } },
+                          { path: { startsWith: 'vite.config' } },
+                          { path: { startsWith: 'tsconfig' } },
+                          { path: { startsWith: '.next/' } },
+                          { path: { startsWith: 'node_modules/' } },
+                          { path: { startsWith: 'dist/' } },
+                          { path: { startsWith: 'build/' } },
+                        ],
+                      },
+                      orderBy: { path: 'asc' },
+                    });
+
+                    const previewResult = await restartPreviewServer(
+                      sandboxInstance,
+                      projectId,
+                      updatedFiles,
+                      sandboxId
+                    );
+
+                    const previewRestartDuration =
+                      Date.now() - previewRestartStartTime;
+
+                    if (previewResult.success && previewResult.data) {
+                      // Update preview URL in database
+                      await ctx.db.sandbox.update({
+                        where: { id: sandboxId },
+                        data: {
+                          previewUrl: previewResult.data.url,
+                          metadata: {
+                            previewPort: previewResult.data.port,
+                            previewStartedAt:
+                              previewResult.data.startTime.toISOString(),
+                            lastPreviewRestart: new Date().toISOString(),
+                          },
+                        },
+                      });
+
+                      console.log(
+                        `[AI Stream] ✅ Preview restarted successfully in ${(previewRestartDuration / 1000).toFixed(1)}s`
+                      );
+                      console.log(
+                        `[AI Stream] Preview URL: ${previewResult.data.url}`
+                      );
+                    } else {
+                      console.error(
+                        `[AI Stream] ⚠️ Preview restart failed after ${(previewRestartDuration / 1000).toFixed(1)}s: ${previewResult.error}`
+                      );
+                      // Don't fail the generation - user can manually restart
+                    }
+                  } catch (previewError) {
+                    console.error(
+                      `[AI Stream] ⚠️ Preview restart error (non-critical):`,
+                      previewError
+                    );
+                    console.error(
+                      `[AI Stream] Error details:`,
+                      previewError instanceof Error
+                        ? previewError.message
+                        : 'Unknown error'
+                    );
+                    // Don't fail the generation - user can manually restart
+                  }
+                } else {
+                  console.log(
+                    `[AI Stream] ℹ️ Skipping preview restart - sandbox not available`
+                  );
+                }
 
                 // Increment usage counters
                 console.log(`[AI Stream] 📊 Updating usage counters...`);

@@ -130,25 +130,30 @@ function EditorContent() {
           // when messages.length > 0
           await refetchProject();
 
-          // CRITICAL FIX: Always fetch preview URL from DB instead of relying on client state
-          // This prevents race conditions where client state is null but preview exists in DB
+          // Fetch latest preview URL from DB
+          // Backend automatically restarts preview after file changes, so URL should be fresh
+          console.log('[Editor] Fetching latest preview URL...');
           const previewData = await utils.sandbox.getPreviewUrl.fetch({
             projectId,
           });
 
           if (previewData.url) {
-            // Preview exists in DB - reload iframe with latest changes
-            console.log('[Editor] Preview exists, reloading iframe...');
+            // Preview exists and was automatically restarted by backend
+            console.log(
+              '[Editor] Preview ready (auto-restarted by backend), loading...'
+            );
             setPreviewUrl(previewData.url);
+            setPreviewError(null);
 
-            // Give Vite HMR a moment to detect and process file changes
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-
-            // Increment key to force iframe reload (ensures fresh content)
+            // Force iframe reload to show latest changes
+            // No need to wait for HMR - backend already restarted with fresh build
             setIframeKey((prev) => prev + 1);
           } else {
-            // No preview in DB - start new preview server
-            console.log('[Editor] No preview found, starting server...');
+            // Fallback: Preview doesn't exist (backend restart may have failed)
+            // Start preview manually
+            console.log(
+              '[Editor] No preview URL found, starting preview manually...'
+            );
             setIsGeneratingPreview(true);
             const previewResult = await startPreviewMutation.mutateAsync({
               projectId,
