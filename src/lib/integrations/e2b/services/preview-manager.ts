@@ -11,11 +11,7 @@
 import type { Sandbox } from '@e2b/code-interpreter';
 import type { File } from '@prisma/client';
 import type { ServiceResult, PreviewResult } from '../types';
-import { db } from '~/server/db';
-import {
-  getFrameworkPort,
-  getFrameworkCommand,
-} from '../utils/framework-detector';
+import { getFrameworkPort } from '../utils/framework-detector';
 import {
   PreviewTimeoutError,
   PreviewHealthCheckError,

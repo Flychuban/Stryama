@@ -228,10 +228,10 @@ class SandboxManager {
           `[Sandbox Manager]   - Created: ${existingSandbox.createdAt.toISOString()}`
         );
         console.log(
-          `[Sandbox Manager]   - Expires: ${existingSandbox.expiresAt.toISOString()}`
+          `[Sandbox Manager]   - Expires: ${existingSandbox.expiresAt?.toISOString() ?? 'never'}`
         );
         console.log(
-          `[Sandbox Manager]   - Last activity: ${existingSandbox.lastActivity.toISOString()}`
+          `[Sandbox Manager]   - Last activity: ${existingSandbox.lastActivity?.toISOString() ?? 'unknown'}`
         );
 
         // Try to get cached instance
@@ -286,9 +286,9 @@ class SandboxManager {
           );
           console.log(`[Sandbox Manager] E2B ID: ${existingSandbox.e2bId}`);
 
+          const startTime = Date.now();
           try {
             console.log(`[Sandbox Manager] 🔌 Connecting to E2B sandbox...`);
-            const startTime = Date.now();
             instance = await Sandbox.connect(existingSandbox.e2bId, {
               apiKey: E2B_CONFIG.apiKey,
               timeoutMs: E2B_CONFIG.maxTimeoutMs,
@@ -301,7 +301,7 @@ class SandboxManager {
             // Validate the resumed instance
             console.log(`[Sandbox Manager] 🔍 Validating resumed instance...`);
             const validateStartTime = Date.now();
-            const info = await instance.getInfo();
+            await instance.getInfo();
             const validateDuration = Date.now() - validateStartTime;
             console.log(
               `[Sandbox Manager] ✅ Resumed sandbox validated (${validateDuration}ms)`
