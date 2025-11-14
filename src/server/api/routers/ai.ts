@@ -980,12 +980,79 @@ export const aiRouter = createTRPCRouter({
                   `[AI Stream] ✅ Files saved to database (${filesDuration}ms)`
                 );
 
-                // NOTE: No server restart needed! Vite HMR automatically detects file changes
-                // and sends updates to the browser. The frontend will wait for Vite to rebuild
-                // (2-3 seconds) then reload the iframe.
-                console.log(
-                  `[AI Stream] ✅ Files updated in sandbox - Vite HMR will handle live reload`
-                );
+                // Check if preview server needs to be started
+                // If preview is already running → Vite HMR will handle file updates automatically
+                // If no preview exists → we need to start one for the first time
+                if (sandboxInstance && sandboxId) {
+                  console.log(
+                    `[AI Stream] 🔍 Checking if preview server needs to be started...`
+                  );
+
+                  // Check current preview URL in database
+                  const currentSandbox = await ctx.db.sandbox.findUnique({
+                    where: { id: sandboxId },
+                    select: { previewUrl: true },
+                  });
+
+                  if (!currentSandbox?.previewUrl) {
+                    // No preview exists - start one (first generation)
+                    console.log(
+                      `[AI Stream] 🚀 No preview found - starting preview server for first time...`
+                    );
+                    const previewStartTime = Date.now();
+
+                    const updatedFiles = await ctx.db.file.findMany({
+                      where: { projectId },
+                      orderBy: { path: 'asc' },
+                    });
+
+                    const { startPreviewServer } = await import(
+                      '~/lib/integrations/e2b/services/preview-manager'
+                    );
+
+                    const previewResult = await startPreviewServer(
+                      sandboxInstance,
+                      projectId,
+                      updatedFiles,
+                      sandboxId
+                    );
+
+                    const previewDuration = Date.now() - previewStartTime;
+
+                    if (previewResult.success && previewResult.data) {
+                      await ctx.db.sandbox.update({
+                        where: { id: sandboxId },
+                        data: {
+                          previewUrl: previewResult.data.url,
+                          lastActivity: new Date(),
+                        },
+                      });
+
+                      console.log(
+                        `[AI Stream] ✅ Preview server started successfully in ${(previewDuration / 1000).toFixed(1)}s`
+                      );
+                      console.log(
+                        `[AI Stream] Preview URL: ${previewResult.data.url}`
+                      );
+                    } else {
+                      console.error(
+                        `[AI Stream] ⚠️ Preview start failed: ${previewResult.error}`
+                      );
+                    }
+                  } else {
+                    // Preview already exists - Vite HMR will detect file changes and rebuild
+                    console.log(
+                      `[AI Stream] ✅ Preview server already running at: ${currentSandbox.previewUrl}`
+                    );
+                    console.log(
+                      `[AI Stream] ✅ Files updated - Vite HMR will handle live reload automatically`
+                    );
+                  }
+                } else {
+                  console.log(
+                    `[AI Stream] ℹ️ Skipping preview check - sandbox not available`
+                  );
+                }
 
                 // Increment usage counters
                 console.log(`[AI Stream] 📊 Updating usage counters...`);
