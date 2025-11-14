@@ -395,7 +395,8 @@ export async function startPreviewServer(
   sandbox: Sandbox,
   projectId: string,
   files: readonly File[],
-  sandboxId?: string
+  sandboxId?: string,
+  forceRestart = false
 ): Promise<ServiceResult<PreviewResult>> {
   const startTime = Date.now();
   console.log(`[Preview] 🚀 ========== START PREVIEW SERVER ==========`);
@@ -428,66 +429,75 @@ export async function startPreviewServer(
     // CRITICAL FIX: Check if preview URL is responding FIRST (HTTP-first approach)
     // This is more reliable than port checks because Claude's server might be starting
     // but not yet bound to the port when lsof runs
-    console.log(`[Preview] 🌐 ========== CHECKING EXISTING SERVER ==========`);
+    // SKIP this check if forceRestart=true (called from restartPreviewServer)
     const host = sandbox.getHost(port);
     const previewUrl = `https://${host}`;
     let serverAlreadyRunning = false;
 
-    console.log(`[Preview] 🔍 Testing HTTP endpoint for existing server...`);
-    console.log(`[Preview] Preview URL: ${previewUrl}`);
-    console.log(`[Preview] Host: ${host}`);
-    console.log(`[Preview] Port: ${port}`);
-
-    // Try HTTP health check with multiple retries (Claude might have just started the server)
-    // Wait up to 15 seconds for server to become responsive
-    const maxRetries = 5;
-    const delays = [2000, 3000, 3000, 4000, 3000]; // Total: 15 seconds
-    console.log(
-      `[Preview] Will perform ${maxRetries} health checks over ${delays.reduce((a, b) => a + b, 0) / 1000}s`
-    );
-
-    const healthCheckStartTime = Date.now();
-    for (let i = 0; i < maxRetries; i++) {
+    if (!forceRestart) {
       console.log(
-        `[Preview] 🔍 Health check attempt ${i + 1}/${maxRetries}...`
+        `[Preview] 🌐 ========== CHECKING EXISTING SERVER ==========`
       );
-      const checkStartTime = Date.now();
-      const isHealthy = await isPreviewHealthy(previewUrl);
-      const checkDuration = Date.now() - checkStartTime;
+      console.log(`[Preview] 🔍 Testing HTTP endpoint for existing server...`);
+      console.log(`[Preview] Preview URL: ${previewUrl}`);
+      console.log(`[Preview] Host: ${host}`);
+      console.log(`[Preview] Port: ${port}`);
 
+      // Try HTTP health check with multiple retries (Claude might have just started the server)
+      // Wait up to 15 seconds for server to become responsive
+      const maxRetries = 5;
+      const delays = [2000, 3000, 3000, 4000, 3000]; // Total: 15 seconds
       console.log(
-        `[Preview] Health check ${i + 1} result: ${isHealthy ? '✅ HEALTHY' : '❌ NOT HEALTHY'} (${checkDuration}ms)`
+        `[Preview] Will perform ${maxRetries} health checks over ${delays.reduce((a, b) => a + b, 0) / 1000}s`
       );
 
-      if (isHealthy) {
-        const totalCheckTime = Date.now() - healthCheckStartTime;
+      const healthCheckStartTime = Date.now();
+      for (let i = 0; i < maxRetries; i++) {
         console.log(
-          `[Preview] ✅ Dev server is already running and responding!`
+          `[Preview] 🔍 Health check attempt ${i + 1}/${maxRetries}...`
         );
+        const checkStartTime = Date.now();
+        const isHealthy = await isPreviewHealthy(previewUrl);
+        const checkDuration = Date.now() - checkStartTime;
+
         console.log(
-          `[Preview] Found existing server after ${i + 1} attempts in ${totalCheckTime}ms`
+          `[Preview] Health check ${i + 1} result: ${isHealthy ? '✅ HEALTHY' : '❌ NOT HEALTHY'} (${checkDuration}ms)`
         );
-        serverAlreadyRunning = true;
-        break;
+
+        if (isHealthy) {
+          const totalCheckTime = Date.now() - healthCheckStartTime;
+          console.log(
+            `[Preview] ✅ Dev server is already running and responding!`
+          );
+          console.log(
+            `[Preview] Found existing server after ${i + 1} attempts in ${totalCheckTime}ms`
+          );
+          serverAlreadyRunning = true;
+          break;
+        }
+
+        if (i < maxRetries - 1) {
+          const delay = delays[i];
+          console.log(
+            `[Preview] ⏳ Server not responding, waiting ${delay}ms before retry ${i + 2}/${maxRetries}...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        } else {
+          console.log(
+            `[Preview] ❌ Server not responding after ${maxRetries} attempts`
+          );
+        }
       }
 
-      if (i < maxRetries - 1) {
-        const delay = delays[i];
-        console.log(
-          `[Preview] ⏳ Server not responding, waiting ${delay}ms before retry ${i + 2}/${maxRetries}...`
-        );
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      } else {
-        console.log(
-          `[Preview] ❌ Server not responding after ${maxRetries} attempts`
-        );
-      }
+      const totalHealthCheckTime = Date.now() - healthCheckStartTime;
+      console.log(
+        `[Preview] 🏁 HTTP check completed in ${totalHealthCheckTime}ms: ${serverAlreadyRunning ? '✅ SERVER RUNNING' : '❌ NO SERVER'}`
+      );
+    } else {
+      console.log(
+        `[Preview] ⚡ FORCE RESTART mode - skipping health check, will start fresh server`
+      );
     }
-
-    const totalHealthCheckTime = Date.now() - healthCheckStartTime;
-    console.log(
-      `[Preview] 🏁 HTTP check completed in ${totalHealthCheckTime}ms: ${serverAlreadyRunning ? '✅ SERVER RUNNING' : '❌ NO SERVER'}`
-    );
 
     if (serverAlreadyRunning) {
       const totalDuration = Date.now() - startTime;
@@ -1069,21 +1079,44 @@ export async function stopPreviewServer(
   sandbox: Sandbox
 ): Promise<ServiceResult<boolean>> {
   try {
-    const processInfo = previewProcesses.get(sandbox.sandboxId);
+    const port = getFrameworkPort(); // Get the port (5173 for Vite)
 
-    if (!processInfo) {
-      return {
-        success: true,
-        data: true,
-        error: null,
-      };
+    console.log(`[Preview] 🛑 Stopping any processes on port ${port}...`);
+
+    // Find and kill any process using the port
+    // Try multiple methods to ensure compatibility across different environments
+    // 1. fuser (most common in containers)
+    // 2. lsof (if available)
+    // 3. pkill by name pattern
+    const killCommand = `
+      (fuser -k -9 ${port}/tcp 2>/dev/null || true) && \
+      (lsof -ti:${port} 2>/dev/null | xargs -r kill -9 2>/dev/null || true) && \
+      (pkill -9 -f 'vite.*${port}' 2>/dev/null || true)
+    `.trim();
+
+    const result = await sandbox.commands.run(killCommand, {
+      timeoutMs: 5000,
+    });
+
+    console.log(`[Preview] Kill command output:`, {
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.exitCode,
+    });
+
+    // Clean up from in-memory map (if it exists)
+    const processInfo = previewProcesses.get(sandbox.sandboxId);
+    if (processInfo) {
+      previewProcesses.delete(sandbox.sandboxId);
+      console.log(
+        `[Preview] Cleaned up process from cache (PID: ${processInfo.pid})`
+      );
     }
 
-    await sandbox.commands.run(`kill ${processInfo.pid}`);
+    // Give the OS a moment to release the port
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
-    previewProcesses.delete(sandbox.sandboxId);
-
-    console.log(`[Preview] Preview server stopped (PID: ${processInfo.pid})`);
+    console.log(`[Preview] ✅ Port ${port} cleared`);
 
     return {
       success: true,
@@ -1121,9 +1154,15 @@ export async function restartPreviewServer(
   const stopDuration = Date.now() - stopStartTime;
   console.log(`[Preview] ✅ Server stopped successfully (${stopDuration}ms)`);
 
-  console.log(`[Preview] Step 2: Starting new server...`);
+  console.log(`[Preview] Step 2: Starting new server with force restart...`);
   const startStartTime = Date.now();
-  const result = await startPreviewServer(sandbox, projectId, files, sandboxId);
+  const result = await startPreviewServer(
+    sandbox,
+    projectId,
+    files,
+    sandboxId,
+    true // forceRestart=true to skip health check and start fresh
+  );
   const startDuration = Date.now() - startStartTime;
 
   if (result.success) {
