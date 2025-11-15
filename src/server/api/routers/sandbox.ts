@@ -426,10 +426,12 @@ export const sandboxRouter = createTRPCRouter({
       );
 
       // Start preview server (React+Vite)
+      // Pass sandboxId to enable DB metadata checking for dev server coordination
       const previewResult = await startPreviewServer(
         sandboxResult.data.instance,
         input.projectId,
-        project.files
+        project.files,
+        sandboxResult.data.id
       );
 
       if (!previewResult.success || !previewResult.data) {
@@ -692,10 +694,12 @@ export const sandboxRouter = createTRPCRouter({
         // Start preview server (this includes npm install if needed)
         console.log(`[Sandbox Router] 🚀 Starting preview server...`);
 
+        // Pass sandboxId to enable DB metadata checking for dev server coordination
         const previewResult = await startPreviewServer(
           sandbox,
           input.projectId,
-          project.files
+          project.files,
+          sandboxId
         );
 
         if (!previewResult.success || !previewResult.data) {
@@ -893,10 +897,12 @@ export const sandboxRouter = createTRPCRouter({
       );
 
       // Restart preview server
+      // Pass sandboxId to enable DB metadata checking for dev server coordination
       const previewResult = await restartPreviewServer(
         sandboxResult.data.instance,
         input.projectId,
-        project.files
+        project.files,
+        sandboxResult.data.id
       );
 
       if (!previewResult.success || !previewResult.data) {

@@ -32,6 +32,7 @@ import {
 import type { StreamEvent } from './types/stream-events';
 import { resolveClaudeCLIPath } from './utils/resolve-cli-path';
 import { getCleanEnvironment } from './utils/env-cleaner';
+import { restoreSessionFromDB, verifySessionFileExists } from './session-cache';
 
 export class ClaudeClient {
   private static instance: ClaudeClient;
@@ -86,17 +87,60 @@ export class ClaudeClient {
       // Emit initializing status
       yield createStatusEvent('initializing', 'Preparing AI agent');
 
-      // Get existing session ID from request
+      // Handle session restoration just-in-time (critical for serverless environments)
       const sessionId = request.sessionId;
+      let canResumeSession = false;
 
-      if (sessionId) {
-        console.log(`[Claude] Resuming session ${sessionId}`);
+      if (sessionId && db) {
+        console.log(
+          `[Claude] 🔄 Attempting to restore session ${sessionId} (process ${process.pid})...`
+        );
+
+        // Restore session from database to filesystem
+        const restored = await restoreSessionFromDB(db, sessionId);
+
+        if (restored) {
+          // Small delay to ensure filesystem sync completes (prevents race conditions)
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+
+          // Verify the session file actually exists in THIS process
+          const verification = await verifySessionFileExists(sessionId);
+
+          if (verification.exists) {
+            console.log(
+              `[Claude] ✅ Session ${sessionId} verified and ready (path: ${verification.path})`
+            );
+            canResumeSession = true;
+          } else {
+            console.warn(
+              `[Claude] ⚠️ Session ${sessionId} restored but file not found in process ${verification.processId}`
+            );
+            console.warn(
+              `[Claude] This indicates a serverless container mismatch - starting fresh session`
+            );
+            canResumeSession = false;
+          }
+        } else {
+          console.log(
+            `[Claude] ℹ️ No session data found in database for ${sessionId} - starting fresh`
+          );
+          canResumeSession = false;
+        }
+      } else if (sessionId && !db) {
+        console.warn(
+          `[Claude] ⚠️ Session ID provided but no database client - cannot restore session`
+        );
+        canResumeSession = false;
       }
 
       const mcpServers =
         sandboxId && db ? { 'e2b-sandbox': createE2BTools(db) } : undefined;
 
       const cliPath = resolveClaudeCLIPath();
+
+      console.log(
+        `[Claude] Starting query with resume=${canResumeSession ? sessionId : 'none'}`
+      );
 
       const sdkStream = query({
         prompt: enhancedPrompt,
@@ -110,7 +154,7 @@ export class ClaudeClient {
           allowedTools: sandboxId
             ? [...GENERATION_CONFIG.e2bMode.allowedTools]
             : [...GENERATION_CONFIG.localMode.allowedTools],
-          resume: request.sessionId,
+          resume: canResumeSession ? sessionId : undefined,
           pathToClaudeCodeExecutable: cliPath,
           env: getCleanEnvironment(),
           stderr: (data: string) => {
@@ -154,19 +198,60 @@ export class ClaudeClient {
 
     try {
       console.log(`[Claude] Starting generation ${generationId}`);
-      if (request.sessionId) {
-        console.log(`[Claude] Resuming session: ${request.sessionId}`);
-      } else {
-        console.log(`[Claude] Starting new conversation session`);
-      }
       if (sandboxId) {
         console.log(`[Claude] Using E2B sandbox mode with ID: ${sandboxId}`);
       }
 
       const enhancedPrompt = this.buildEnhancedPrompt(request, sandboxId);
 
+      // Handle session restoration just-in-time (critical for serverless environments)
+      const sessionId = request.sessionId;
+      let canResumeSession = false;
+
+      if (sessionId && db) {
+        console.log(
+          `[Claude] 🔄 Attempting to restore session ${sessionId} (process ${process.pid})...`
+        );
+
+        // Restore session from database to filesystem
+        const restored = await restoreSessionFromDB(db, sessionId);
+
+        if (restored) {
+          // Small delay to ensure filesystem sync completes (prevents race conditions)
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+
+          // Verify the session file actually exists in THIS process
+          const verification = await verifySessionFileExists(sessionId);
+
+          if (verification.exists) {
+            console.log(
+              `[Claude] ✅ Session ${sessionId} verified and ready (path: ${verification.path})`
+            );
+            canResumeSession = true;
+          } else {
+            console.warn(
+              `[Claude] ⚠️ Session ${sessionId} restored but file not found in process ${verification.processId}`
+            );
+            console.warn(
+              `[Claude] This indicates a serverless container mismatch - starting fresh session`
+            );
+            canResumeSession = false;
+          }
+        } else {
+          console.log(
+            `[Claude] ℹ️ No session data found in database for ${sessionId} - starting fresh`
+          );
+          canResumeSession = false;
+        }
+      } else if (sessionId && !db) {
+        console.warn(
+          `[Claude] ⚠️ Session ID provided but no database client - cannot restore session`
+        );
+        canResumeSession = false;
+      }
+
       let resultText = '';
-      let sessionId: string | undefined;
+      let resultSessionId: string | undefined;
       let tokensUsed = 0;
       let totalCost = 0;
 
@@ -181,6 +266,10 @@ export class ClaudeClient {
 
       const cliPath = resolveClaudeCLIPath();
 
+      console.log(
+        `[Claude] Starting query with resume=${canResumeSession ? sessionId : 'none'}`
+      );
+
       for await (const message of query({
         prompt: enhancedPrompt,
         options: {
@@ -193,7 +282,7 @@ export class ClaudeClient {
           allowedTools: sandboxId
             ? [...GENERATION_CONFIG.e2bMode.allowedTools]
             : [...GENERATION_CONFIG.localMode.allowedTools],
-          resume: request.sessionId,
+          resume: canResumeSession ? sessionId : undefined,
           pathToClaudeCodeExecutable: cliPath,
           env: getCleanEnvironment(),
           stderr: (data: string) => {
@@ -204,11 +293,11 @@ export class ClaudeClient {
         },
       })) {
         if (message.type === 'system' && message.subtype === 'init') {
-          sessionId = message.session_id;
-          if (request.sessionId && sessionId === request.sessionId) {
-            console.log(`[Claude] ✅ Resumed session ${sessionId}`);
+          resultSessionId = message.session_id;
+          if (request.sessionId && resultSessionId === request.sessionId) {
+            console.log(`[Claude] ✅ Resumed session ${resultSessionId}`);
           } else {
-            console.log(`[Claude] Session ${sessionId} initialized`);
+            console.log(`[Claude] Session ${resultSessionId} initialized`);
           }
         }
 
@@ -258,7 +347,7 @@ export class ClaudeClient {
         generationId,
         tokensUsed,
         totalCost,
-        sessionId,
+        resultSessionId,
         sandboxId // Pass sandbox ID to skip markdown parsing in E2B mode
       );
 

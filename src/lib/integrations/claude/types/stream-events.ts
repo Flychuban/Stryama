@@ -136,6 +136,18 @@ export type StreamSandboxEvent = {
 };
 
 /**
+ * Preview event - Preview server URL updates
+ * Emitted when the preview server is ready or URL changes
+ */
+export type StreamPreviewEvent = {
+  type: 'preview_url_updated';
+  url: string;
+  sandboxId?: string;
+  message?: string;
+  timestamp: number;
+};
+
+/**
  * Union type of all stream events
  */
 export type StreamEvent =
@@ -148,7 +160,8 @@ export type StreamEvent =
   | StreamCompleteEvent
   | StreamErrorEvent
   | StreamSessionInitEvent
-  | StreamSandboxEvent;
+  | StreamSandboxEvent
+  | StreamPreviewEvent;
 
 /**
  * Stream event callback type

@@ -32,6 +32,9 @@ export interface StreamState {
     | 'deps_installed'
     | 'setup_complete';
 
+  // Preview info
+  previewUrl?: string;
+
   // Session info
   sessionId?: string;
   model?: string;
@@ -125,16 +128,74 @@ export function useAIGenerationStream(
     },
     onError: (error) => {
       console.error('[Stream] Failed to initialize generation:', error);
+
+      // Extract error type from backend's cause field (if available)
+      // Backend sends error.data.cause but TypeScript doesn't know about it
+      interface ErrorData {
+        cause?: {
+          type?: string;
+          [key: string]: unknown;
+        };
+        [key: string]: unknown;
+      }
+      const errorData = error.data as ErrorData | undefined;
+      const errorType = errorData?.cause?.type ?? 'UNKNOWN';
+
+      // Determine user-friendly error message and code
+      let userMessage = error.message;
+      let errorCode = 'INITIALIZATION_ERROR';
+
+      switch (errorType) {
+        case 'VALIDATION_ERROR':
+          errorCode = 'VALIDATION_ERROR';
+          userMessage = error.message; // Already user-friendly from backend
+          break;
+        case 'LIMIT_EXCEEDED':
+          errorCode = 'LIMIT_EXCEEDED';
+          userMessage = error.message; // Already user-friendly from backend
+          break;
+        case 'RATE_LIMIT_EXCEEDED':
+          errorCode = 'RATE_LIMIT_EXCEEDED';
+          userMessage = error.message; // Already user-friendly from backend
+          break;
+        case 'DATABASE_ERROR':
+          errorCode = 'DATABASE_ERROR';
+          userMessage =
+            'Database connection issue. Please try again in a few moments.';
+          break;
+        case 'UNKNOWN_ERROR':
+          errorCode = 'UNKNOWN_ERROR';
+          userMessage =
+            'An unexpected error occurred. Please try again or contact support if the issue persists.';
+          break;
+        default:
+          // Fallback to generic message
+          errorCode = 'INITIALIZATION_ERROR';
+          userMessage = error.message;
+      }
+
+      console.error(
+        `[Stream] Initialization error - Type: ${errorType}, Code: ${errorCode}`
+      );
+
       setState((prev) => ({
         ...prev,
         status: 'error',
         hasError: true,
         isStreaming: false,
         error: {
-          message: error.message,
-          code: 'INITIALIZATION_ERROR',
+          message: userMessage,
+          code: errorCode,
         },
       }));
+
+      // Call error callback if provided
+      if (onError) {
+        onError({
+          message: userMessage,
+          code: errorCode,
+        });
+      }
     },
   });
 
@@ -167,6 +228,17 @@ export function useAIGenerationStream(
 
         case 'sandbox':
           newState.sandboxStatus = event.action;
+          if (event.sandboxId) {
+            newState.sandboxId = event.sandboxId;
+          }
+          if (event.message) {
+            newState.statusMessage = event.message;
+          }
+          break;
+
+        case 'preview_url_updated':
+          console.log('[Stream] Preview URL updated:', event.url);
+          newState.previewUrl = event.url;
           if (event.sandboxId) {
             newState.sandboxId = event.sandboxId;
           }

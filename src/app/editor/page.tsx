@@ -130,18 +130,30 @@ function EditorContent() {
           // when messages.length > 0
           await refetchProject();
 
-          // Check if preview is already running (subsequent prompt)
-          const isSubsequentPrompt = !!previewUrl;
+          // Fetch preview URL from DB
+          console.log('[Editor] Fetching preview URL...');
+          const previewData = await utils.sandbox.getPreviewUrl.fetch({
+            projectId,
+          });
 
-          if (isSubsequentPrompt) {
-            // Preview already exists - force iframe reload by updating key
-            // Give Vite a moment to detect and process file changes
-            await new Promise((resolve) => setTimeout(resolve, 1500));
+          if (previewData.url) {
+            // Preview exists - Vite HMR will handle the file updates automatically
+            console.log(
+              '[Editor] Preview running, waiting for Vite HMR to rebuild...'
+            );
+            setPreviewUrl(previewData.url);
+            setPreviewError(null);
 
-            // Increment key to force iframe reload (avoids CORS issues)
+            // Wait 3 seconds for Vite HMR to detect changes and rebuild
+            // (HMR is already working - we just need to give it time to rebuild)
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+
+            // Reload iframe to show the updated content
+            console.log('[Editor] Reloading iframe with updated content...');
             setIframeKey((prev) => prev + 1);
           } else {
-            // First prompt - start preview server
+            // No preview exists yet - start one
+            console.log('[Editor] No preview found, starting new preview...');
             setIsGeneratingPreview(true);
             const previewResult = await startPreviewMutation.mutateAsync({
               projectId,
@@ -168,6 +180,27 @@ function EditorContent() {
     // Intentionally omit startPreviewMutation from deps - mutation objects are unstable
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamState.isComplete, streamState.result?.sessionId, projectId, utils]);
+
+  // Watch for preview URL updates from stream and auto-reload iframe
+  useEffect(() => {
+    if (!streamState.previewUrl) return;
+
+    console.log(
+      '[Editor] Preview URL updated from stream:',
+      streamState.previewUrl
+    );
+    setPreviewUrl(streamState.previewUrl);
+    setPreviewError(null);
+
+    // Wait 2 seconds for server to be fully ready and stable
+    // This is especially important after server restart
+    const timer = setTimeout(() => {
+      console.log('[Editor] Auto-reloading iframe with new preview URL');
+      setIframeKey((prev) => prev + 1);
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [streamState.previewUrl]);
 
   // Handle streaming errors - watch state directly
   useEffect(() => {
@@ -243,6 +276,21 @@ function EditorContent() {
           setMessages(conversationMessages);
         }
 
+        // ALWAYS try to fetch preview URL first (even if sandbox expired)
+        // This ensures old projects show their preview URL
+        const previewData = await utils.sandbox.getPreviewUrl.fetch({
+          projectId,
+        });
+
+        if (previewData.url) {
+          console.log(
+            '[Editor] Found preview URL for project:',
+            previewData.url
+          );
+          setPreviewUrl(previewData.url);
+          setPreviewError(null);
+        }
+
         // Check if project has an active sandbox and if it's expired
         const sandboxStatus = await utils.sandbox.getProjectStatus.fetch({
           projectId,
@@ -253,26 +301,29 @@ function EditorContent() {
 
         if (sandboxStatus.isExpired || !sandboxStatus.hasActiveSandbox) {
           // No active sandbox or expired - need to regenerate
+          console.log(
+            '[Editor] Sandbox expired or not active, may need regeneration'
+          );
           shouldRegenerate = true;
         } else {
           // Sandbox is active, check if preview URL is healthy
-          const previewData = await utils.sandbox.getPreviewUrl.fetch({
-            projectId,
-          });
-
           if (previewData.url) {
             const isHealthy = await checkPreviewHealth(previewData.url);
 
             if (isHealthy) {
-              // Preview server is running, use the cached URL
-              setPreviewUrl(previewData.url);
+              // Preview server is running and healthy
+              console.log('[Editor] Preview server is healthy');
               shouldRegenerate = false;
             } else {
               // Preview server is dead, need to regenerate
+              console.log(
+                '[Editor] Preview server not responding, need regeneration'
+              );
               shouldRegenerate = true;
             }
           } else {
             // No preview URL found, need to regenerate
+            console.log('[Editor] No preview URL found, need regeneration');
             shouldRegenerate = true;
           }
         }

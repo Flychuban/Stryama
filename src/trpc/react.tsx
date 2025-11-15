@@ -11,6 +11,7 @@ import { createTRPCReact } from '@trpc/react-query';
 import { type inferRouterInputs, type inferRouterOutputs } from '@trpc/server';
 import { useState } from 'react';
 import SuperJSON from 'superjson';
+import { useAuth } from '@clerk/nextjs';
 
 import { type AppRouter } from '~/server/api/root';
 import { createQueryClient } from './query-client';
@@ -45,6 +46,7 @@ export type RouterOutputs = inferRouterOutputs<AppRouter>;
 
 export function TRPCReactProvider(props: { children: React.ReactNode }) {
   const queryClient = getQueryClient();
+  const { getToken } = useAuth();
 
   const [trpcClient] = useState(() =>
     api.createClient({
@@ -65,9 +67,21 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
           false: httpBatchStreamLink({
             transformer: SuperJSON,
             url: getBaseUrl() + '/api/trpc',
-            headers: () => {
+            headers: async () => {
               const headers = new Headers();
               headers.set('x-trpc-source', 'nextjs-react');
+
+              // Get fresh Clerk auth token for each request
+              // This prevents 401 errors from stale/expired tokens
+              try {
+                const token = await getToken();
+                if (token) {
+                  headers.set('Authorization', `Bearer ${token}`);
+                }
+              } catch (error) {
+                console.error('[TRPC] Failed to get Clerk auth token:', error);
+              }
+
               return headers;
             },
           }),

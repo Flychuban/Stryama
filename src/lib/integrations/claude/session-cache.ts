@@ -19,6 +19,18 @@ const CLAUDE_PROJECTS_DIR = '/tmp/.claude/projects';
 const MAX_SESSION_FILE_SIZE = 10 * 1024 * 1024; // 10MB limit
 
 /**
+ * Get the project directory name based on current working directory.
+ * This matches the Claude SDK's internal algorithm for project isolation.
+ *
+ * Examples:
+ * - /var/task → -var-task (Vercel)
+ * - /Users/name/Desktop/Project → -Users-name-Desktop-Project (local)
+ */
+function getProjectDirName(): string {
+  return process.cwd().replace(/\//g, '-');
+}
+
+/**
  * Find the session file by searching the Claude projects directory
  */
 async function findSessionFilePath(sessionId: string): Promise<string | null> {
@@ -63,7 +75,9 @@ async function getOrCreateSessionPath(sessionId: string): Promise<string> {
   if (existingPath) {
     return existingPath;
   }
-  return join(CLAUDE_PROJECTS_DIR, '-default-', `${sessionId}.jsonl`);
+  // Use project-specific directory (matches Claude SDK behavior)
+  const projectDir = getProjectDirName();
+  return join(CLAUDE_PROJECTS_DIR, projectDir, `${sessionId}.jsonl`);
 }
 
 /**
@@ -207,5 +221,47 @@ export async function hasSessionInDB(
       error
     );
     return false;
+  }
+}
+
+/**
+ * Verify that a session file exists on the filesystem
+ * This is critical in serverless environments where files may not persist
+ */
+export async function verifySessionFileExists(
+  sessionId: string
+): Promise<{ exists: boolean; path: string | null; processId: number }> {
+  const processId = process.pid;
+
+  try {
+    const sessionPath = await findSessionFilePath(sessionId);
+
+    if (!sessionPath) {
+      console.log(
+        `[Session Cache] ❌ Session file NOT found for ${sessionId} (process ${processId})`
+      );
+      return { exists: false, path: null, processId };
+    }
+
+    // Verify the file is actually readable
+    try {
+      const stats = await stat(sessionPath);
+      console.log(
+        `[Session Cache] ✅ Session file verified: ${sessionPath} (${stats.size} bytes, process ${processId})`
+      );
+      return { exists: true, path: sessionPath, processId };
+    } catch (error) {
+      console.error(
+        `[Session Cache] ❌ Session file found but not readable: ${sessionPath} (process ${processId})`,
+        error
+      );
+      return { exists: false, path: sessionPath, processId };
+    }
+  } catch (error) {
+    console.error(
+      `[Session Cache] Error verifying session ${sessionId} (process ${processId}):`,
+      error
+    );
+    return { exists: false, path: null, processId };
   }
 }
