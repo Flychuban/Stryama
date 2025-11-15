@@ -181,6 +181,27 @@ function EditorContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamState.isComplete, streamState.result?.sessionId, projectId, utils]);
 
+  // Watch for preview URL updates from stream and auto-reload iframe
+  useEffect(() => {
+    if (!streamState.previewUrl) return;
+
+    console.log(
+      '[Editor] Preview URL updated from stream:',
+      streamState.previewUrl
+    );
+    setPreviewUrl(streamState.previewUrl);
+    setPreviewError(null);
+
+    // Wait 2 seconds for server to be fully ready and stable
+    // This is especially important after server restart
+    const timer = setTimeout(() => {
+      console.log('[Editor] Auto-reloading iframe with new preview URL');
+      setIframeKey((prev) => prev + 1);
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [streamState.previewUrl]);
+
   // Handle streaming errors - watch state directly
   useEffect(() => {
     if (!streamState.hasError || !streamState.error) return;

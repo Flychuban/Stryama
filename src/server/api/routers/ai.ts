@@ -1019,6 +1019,18 @@ export const aiRouter = createTRPCRouter({
                         lastActivity: new Date(),
                       },
                     });
+
+                    // Emit preview URL update event to frontend
+                    console.log(
+                      `[AI Stream] 📡 Emitting preview_url_updated event to client`
+                    );
+                    emit.next({
+                      type: 'preview_url_updated',
+                      url: previewUrl,
+                      sandboxId: sandboxId,
+                      message: 'Preview server is healthy and ready',
+                      timestamp: Date.now(),
+                    });
                   } else {
                     // Server not responding - need to start/restart it
                     console.log(
@@ -1059,6 +1071,18 @@ export const aiRouter = createTRPCRouter({
                       console.log(
                         `[AI Stream] Preview URL: ${previewResult.data.url}`
                       );
+
+                      // Emit preview URL update event to frontend
+                      console.log(
+                        `[AI Stream] 📡 Emitting preview_url_updated event to client`
+                      );
+                      emit.next({
+                        type: 'preview_url_updated',
+                        url: previewResult.data.url,
+                        sandboxId: sandboxId,
+                        message: 'Preview server restarted and ready',
+                        timestamp: Date.now(),
+                      });
                     } else {
                       console.error(
                         `[AI Stream] ❌ Preview start failed: ${previewResult.error}`

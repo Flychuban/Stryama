@@ -32,6 +32,9 @@ export interface StreamState {
     | 'deps_installed'
     | 'setup_complete';
 
+  // Preview info
+  previewUrl?: string;
+
   // Session info
   sessionId?: string;
   model?: string;
@@ -167,6 +170,17 @@ export function useAIGenerationStream(
 
         case 'sandbox':
           newState.sandboxStatus = event.action;
+          if (event.sandboxId) {
+            newState.sandboxId = event.sandboxId;
+          }
+          if (event.message) {
+            newState.statusMessage = event.message;
+          }
+          break;
+
+        case 'preview_url_updated':
+          console.log('[Stream] Preview URL updated:', event.url);
+          newState.previewUrl = event.url;
           if (event.sandboxId) {
             newState.sandboxId = event.sandboxId;
           }
