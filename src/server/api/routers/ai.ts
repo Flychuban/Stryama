@@ -19,7 +19,10 @@ import type { ProjectContext } from '~/lib/integrations/claude';
 import type { StreamEvent } from '~/lib/integrations/claude/types/stream-events';
 import { createSandboxEvent } from '~/lib/integrations/claude/stream-manager';
 import { sandboxManager } from '~/lib/integrations/e2b/services/sandbox-manager';
-import { setupInfrastructure } from '~/lib/integrations/e2b/services/preview-manager';
+import {
+  setupInfrastructure,
+  isPreviewHealthy,
+} from '~/lib/integrations/e2b/services/preview-manager';
 import { E2B_CONFIG } from '~/lib/integrations/e2b/config';
 import type { Sandbox } from '@e2b/code-interpreter';
 import { UsageTrackingService } from '~/lib/services/usageTracking';
@@ -980,24 +983,46 @@ export const aiRouter = createTRPCRouter({
                   `[AI Stream] ✅ Files saved to database (${filesDuration}ms)`
                 );
 
-                // Check if preview server needs to be started
-                // If preview is already running → Vite HMR will handle file updates automatically
-                // If no preview exists → we need to start one for the first time
+                // Check if preview server is actually running and responsive
+                // IMPORTANT: We must verify the server is ACTUALLY responding, not just check database
+                // The server may have crashed or never started even if previewUrl exists in DB
                 if (sandboxInstance && sandboxId) {
                   console.log(
-                    `[AI Stream] 🔍 Checking if preview server needs to be started...`
+                    `[AI Stream] 🔍 Checking preview server status...`
                   );
 
-                  // Check current preview URL in database
-                  const currentSandbox = await ctx.db.sandbox.findUnique({
-                    where: { id: sandboxId },
-                    select: { previewUrl: true },
-                  });
+                  // Get the preview URL (either from database or generate it)
+                  const host = sandboxInstance.getHost(5173);
+                  const previewUrl = `https://${host}`;
 
-                  if (!currentSandbox?.previewUrl) {
-                    // No preview exists - start one (first generation)
+                  // ALWAYS verify server is actually responding with HTTP health check
+                  console.log(
+                    `[AI Stream] 🏥 Performing health check on: ${previewUrl}`
+                  );
+                  const isHealthy = await isPreviewHealthy(previewUrl);
+
+                  if (isHealthy) {
+                    // Server is responding - HMR will handle file updates automatically
                     console.log(
-                      `[AI Stream] 🚀 No preview found - starting preview server for first time...`
+                      `[AI Stream] ✅ Preview server is responsive and healthy`
+                    );
+                    console.log(
+                      `[AI Stream] ✅ Files updated - Vite HMR will handle live reload automatically`
+                    );
+                    console.log(`[AI Stream] Preview URL: ${previewUrl}`);
+
+                    // Update database to ensure previewUrl is saved
+                    await ctx.db.sandbox.update({
+                      where: { id: sandboxId },
+                      data: {
+                        previewUrl,
+                        lastActivity: new Date(),
+                      },
+                    });
+                  } else {
+                    // Server not responding - need to start/restart it
+                    console.log(
+                      `[AI Stream] ⚠️ Preview server not responding - starting server...`
                     );
                     const previewStartTime = Date.now();
 
@@ -1036,17 +1061,9 @@ export const aiRouter = createTRPCRouter({
                       );
                     } else {
                       console.error(
-                        `[AI Stream] ⚠️ Preview start failed: ${previewResult.error}`
+                        `[AI Stream] ❌ Preview start failed: ${previewResult.error}`
                       );
                     }
-                  } else {
-                    // Preview already exists - Vite HMR will detect file changes and rebuild
-                    console.log(
-                      `[AI Stream] ✅ Preview server already running at: ${currentSandbox.previewUrl}`
-                    );
-                    console.log(
-                      `[AI Stream] ✅ Files updated - Vite HMR will handle live reload automatically`
-                    );
                   }
                 } else {
                   console.log(

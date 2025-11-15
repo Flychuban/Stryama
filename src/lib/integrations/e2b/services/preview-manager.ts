@@ -107,7 +107,7 @@ if (typeof setInterval !== 'undefined' && typeof process !== 'undefined') {
   }
 }
 
-async function isPreviewHealthy(url: string): Promise<boolean> {
+export async function isPreviewHealthy(url: string): Promise<boolean> {
   try {
     const response = await fetch(url, {
       method: 'HEAD',
@@ -117,6 +117,65 @@ async function isPreviewHealthy(url: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Check if a process is still running in the sandbox
+ */
+async function isProcessAlive(sandbox: Sandbox, pid: number): Promise<boolean> {
+  if (!pid || pid === 0) return false;
+
+  try {
+    // Check if process exists using kill -0 (doesn't actually kill, just checks)
+    const result = await sandbox.commands.run(`kill -0 ${pid} 2>/dev/null`, {
+      timeoutMs: 3000,
+    });
+
+    // Exit code 0 means process exists, non-zero means it doesn't
+    return result.exitCode === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get detailed diagnostics about why a preview server might not be working
+ */
+async function getServerDiagnostics(
+  sandbox: Sandbox,
+  sandboxId: string,
+  port: number
+): Promise<{
+  processAlive: boolean;
+  portInUse: boolean;
+  pid: number | null;
+  logs: LogEntry[];
+}> {
+  const processInfo = previewProcesses.get(sandboxId);
+
+  let processAlive = false;
+  if (processInfo?.pid) {
+    processAlive = await isProcessAlive(sandbox, processInfo.pid);
+  }
+
+  // Check if port is in use
+  let portInUse = false;
+  try {
+    const portCheck = await sandbox.commands.run(
+      `lsof -ti:${port} 2>/dev/null || echo "no process"`,
+      { timeoutMs: 3000 }
+    );
+    portInUse = !portCheck.stdout.includes('no process');
+  } catch {
+    portInUse = false;
+  }
+
+  return {
+    processAlive,
+    portInUse,
+    pid: processInfo?.pid ?? null,
+    logs: processInfo?.logs ?? [],
+  };
 }
 
 async function checkPreviewHealth(
@@ -957,6 +1016,57 @@ export async function startPreviewServer(
       console.error(
         `[Preview] The preview server is not responding to HTTP requests`
       );
+
+      // Get detailed diagnostics to understand why server isn't responding
+      console.log(`[Preview] 🔍 Running diagnostics to identify the issue...`);
+      const diagnostics = await getServerDiagnostics(
+        sandbox,
+        sandbox.sandboxId,
+        port
+      );
+
+      console.error(`[Preview] 📊 Server Diagnostics:`);
+      console.error(
+        `[Preview]   - Process PID: ${diagnostics.pid ?? 'unknown'}`
+      );
+      console.error(
+        `[Preview]   - Process Alive: ${diagnostics.processAlive ? '✅ YES' : '❌ NO (crashed or killed)'}`
+      );
+      console.error(
+        `[Preview]   - Port ${port} In Use: ${diagnostics.portInUse ? '✅ YES' : '❌ NO'}`
+      );
+      console.error(
+        `[Preview]   - Recent Logs: ${diagnostics.logs.length} lines`
+      );
+
+      if (!diagnostics.processAlive && diagnostics.pid) {
+        console.error(
+          `[Preview] ⚠️ CRITICAL: Dev server process (PID ${diagnostics.pid}) has CRASHED or was killed!`
+        );
+      }
+
+      if (!diagnostics.portInUse) {
+        console.error(
+          `[Preview] ⚠️ Port ${port} is not in use - server may have failed to start or crashed`
+        );
+      }
+
+      // Show last 10 log lines to help debug
+      if (diagnostics.logs.length > 0) {
+        console.error(
+          `[Preview] 📄 Last ${Math.min(10, diagnostics.logs.length)} log lines:`
+        );
+        const recentLogs = diagnostics.logs.slice(-10);
+        for (const log of recentLogs) {
+          const prefix = log.type === 'stderr' ? '❌' : 'ℹ️';
+          console.error(`[Preview]   ${prefix} [${log.type}] ${log.line}`);
+        }
+      } else {
+        console.error(
+          `[Preview] ⚠️ No logs captured - server may not have started at all`
+        );
+      }
+
       throw new PreviewHealthCheckError(
         healthCheckResult.error ?? 'Preview health check failed',
         { url: previewUrl }
