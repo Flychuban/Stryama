@@ -26,6 +26,10 @@ import { db } from '~/server/db';
  * @see https://trpc.io/docs/server/context
  */
 export const createTRPCContext = async (opts: { headers: Headers }) => {
+  // Clerk's auth() automatically validates tokens from both:
+  // 1. Cookies (standard Next.js requests)
+  // 2. Authorization: Bearer header (set by TRPC client for token refresh)
+  // This prevents 401 errors from stale/expired tokens
   const authResult = await auth();
 
   return {
