@@ -276,6 +276,21 @@ function EditorContent() {
           setMessages(conversationMessages);
         }
 
+        // ALWAYS try to fetch preview URL first (even if sandbox expired)
+        // This ensures old projects show their preview URL
+        const previewData = await utils.sandbox.getPreviewUrl.fetch({
+          projectId,
+        });
+
+        if (previewData.url) {
+          console.log(
+            '[Editor] Found preview URL for project:',
+            previewData.url
+          );
+          setPreviewUrl(previewData.url);
+          setPreviewError(null);
+        }
+
         // Check if project has an active sandbox and if it's expired
         const sandboxStatus = await utils.sandbox.getProjectStatus.fetch({
           projectId,
@@ -286,26 +301,29 @@ function EditorContent() {
 
         if (sandboxStatus.isExpired || !sandboxStatus.hasActiveSandbox) {
           // No active sandbox or expired - need to regenerate
+          console.log(
+            '[Editor] Sandbox expired or not active, may need regeneration'
+          );
           shouldRegenerate = true;
         } else {
           // Sandbox is active, check if preview URL is healthy
-          const previewData = await utils.sandbox.getPreviewUrl.fetch({
-            projectId,
-          });
-
           if (previewData.url) {
             const isHealthy = await checkPreviewHealth(previewData.url);
 
             if (isHealthy) {
-              // Preview server is running, use the cached URL
-              setPreviewUrl(previewData.url);
+              // Preview server is running and healthy
+              console.log('[Editor] Preview server is healthy');
               shouldRegenerate = false;
             } else {
               // Preview server is dead, need to regenerate
+              console.log(
+                '[Editor] Preview server not responding, need regeneration'
+              );
               shouldRegenerate = true;
             }
           } else {
             // No preview URL found, need to regenerate
+            console.log('[Editor] No preview URL found, need regeneration');
             shouldRegenerate = true;
           }
         }

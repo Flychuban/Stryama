@@ -1051,7 +1051,8 @@ export const aiRouter = createTRPCRouter({
                       sandboxInstance,
                       projectId,
                       updatedFiles,
-                      sandboxId
+                      sandboxId,
+                      true // forceRestart: true - skip redundant health checks since we already know server is dead
                     );
 
                     const previewDuration = Date.now() - previewStartTime;
