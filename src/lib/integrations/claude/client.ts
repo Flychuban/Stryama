@@ -100,6 +100,9 @@ export class ClaudeClient {
         const restored = await restoreSessionFromDB(db, sessionId);
 
         if (restored) {
+          // Small delay to ensure filesystem sync completes (prevents race conditions)
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+
           // Verify the session file actually exists in THIS process
           const verification = await verifySessionFileExists(sessionId);
 
@@ -214,6 +217,9 @@ export class ClaudeClient {
         const restored = await restoreSessionFromDB(db, sessionId);
 
         if (restored) {
+          // Small delay to ensure filesystem sync completes (prevents race conditions)
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+
           // Verify the session file actually exists in THIS process
           const verification = await verifySessionFileExists(sessionId);
 

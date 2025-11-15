@@ -19,6 +19,18 @@ const CLAUDE_PROJECTS_DIR = '/tmp/.claude/projects';
 const MAX_SESSION_FILE_SIZE = 10 * 1024 * 1024; // 10MB limit
 
 /**
+ * Get the project directory name based on current working directory.
+ * This matches the Claude SDK's internal algorithm for project isolation.
+ *
+ * Examples:
+ * - /var/task → -var-task (Vercel)
+ * - /Users/name/Desktop/Project → -Users-name-Desktop-Project (local)
+ */
+function getProjectDirName(): string {
+  return process.cwd().replace(/\//g, '-');
+}
+
+/**
  * Find the session file by searching the Claude projects directory
  */
 async function findSessionFilePath(sessionId: string): Promise<string | null> {
@@ -63,7 +75,9 @@ async function getOrCreateSessionPath(sessionId: string): Promise<string> {
   if (existingPath) {
     return existingPath;
   }
-  return join(CLAUDE_PROJECTS_DIR, '-default-', `${sessionId}.jsonl`);
+  // Use project-specific directory (matches Claude SDK behavior)
+  const projectDir = getProjectDirName();
+  return join(CLAUDE_PROJECTS_DIR, projectDir, `${sessionId}.jsonl`);
 }
 
 /**
