@@ -29,10 +29,7 @@ import { UsageTrackingService } from '~/lib/services/usageTracking';
 import { ModelSelectionService } from '~/lib/services/modelSelection';
 import { getUserPlanFromClerk } from '~/lib/clerk/authorization';
 import { saveGeneratedFilesToDatabase } from '~/lib/integrations/e2b/utils/file-saver';
-import {
-  saveSessionToDB,
-  restoreSessionFromDB,
-} from '~/lib/integrations/claude/session-cache';
+import { saveSessionToDB } from '~/lib/integrations/claude/session-cache';
 
 export const aiRouter = createTRPCRouter({
   /**
@@ -52,62 +49,119 @@ export const aiRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const validation = validatePrompt(input.prompt);
-      if (!validation.valid) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: validation.errors[0] ?? 'Invalid prompt',
-        });
-      }
-
-      // Check generation limit (monthly usage)
       try {
-        await UsageTrackingService.checkGenerationLimit(ctx.auth.userId);
+        console.log(
+          `[AI Router] 🚀 Initializing generation for user ${ctx.auth.userId}...`
+        );
+
+        // Validate prompt
+        const validation = validatePrompt(input.prompt);
+        if (!validation.valid) {
+          console.error(
+            `[AI Router] ❌ Prompt validation failed:`,
+            validation.errors
+          );
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: validation.errors[0] ?? 'Invalid prompt',
+            cause: { type: 'VALIDATION_ERROR', errors: validation.errors },
+          });
+        }
+
+        // Check generation limit (monthly usage)
+        try {
+          await UsageTrackingService.checkGenerationLimit(ctx.auth.userId);
+        } catch (error) {
+          console.error(`[AI Router] ❌ Generation limit check failed:`, error);
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message:
+              error instanceof Error
+                ? error.message
+                : 'Generation limit exceeded',
+            cause: { type: 'LIMIT_EXCEEDED' },
+          });
+        }
+
+        // Get user plan for rate limiting
+        const userPlan = await getUserPlanFromClerk();
+
+        // Check rate limits
+        const rateLimit = await rateLimiter.checkRateLimit(
+          ctx.auth.userId,
+          userPlan
+        );
+
+        if (!rateLimit.allowed) {
+          console.warn(
+            `[AI Router] ⚠️ Rate limit exceeded for user ${ctx.auth.userId}`
+          );
+          throw new TRPCError({
+            code: 'TOO_MANY_REQUESTS',
+            message: `Rate limit exceeded. You can make ${rateLimit.limit} requests per minute. Try again after ${rateLimit.resetAt.toISOString()}`,
+            cause: {
+              type: 'RATE_LIMIT_EXCEEDED',
+              limit: rateLimit.limit,
+              resetAt: rateLimit.resetAt.toISOString(),
+            },
+          });
+        }
+
+        // Create a pending generation record
+        let generation;
+        try {
+          generation = await ctx.db.aIGeneration.create({
+            data: {
+              prompt: input.prompt,
+              response: '', // Will be filled during streaming
+              clerkUserId: ctx.auth.userId,
+              projectId: input.projectId ?? null,
+            },
+          });
+        } catch (error) {
+          console.error(
+            `[AI Router] ❌ Database error creating generation:`,
+            error
+          );
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Failed to initialize generation. Please try again.',
+            cause: {
+              type: 'DATABASE_ERROR',
+              error: error instanceof Error ? error.message : String(error),
+            },
+          });
+        }
+
+        console.log(
+          `[AI Router] ✅ Initialized generation ${generation.id} for user ${ctx.auth.userId}`
+        );
+
+        return {
+          generationId: generation.id,
+          projectId: input.projectId,
+          useSandbox: input.useSandbox,
+        };
       } catch (error) {
+        // If it's already a TRPCError, re-throw it
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
+        // Unexpected errors
+        console.error(
+          `[AI Router] ❌ Unexpected error during initialization:`,
+          error
+        );
         throw new TRPCError({
-          code: 'FORBIDDEN',
-          message:
-            error instanceof Error
-              ? error.message
-              : 'Generation limit exceeded',
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'An unexpected error occurred. Please try again.',
+          cause: {
+            type: 'UNKNOWN_ERROR',
+            error: error instanceof Error ? error.message : String(error),
+          },
         });
       }
-
-      // Get user plan for rate limiting
-      const userPlan = await getUserPlanFromClerk();
-
-      // Check rate limits
-      const rateLimit = await rateLimiter.checkRateLimit(
-        ctx.auth.userId,
-        userPlan
-      );
-
-      if (!rateLimit.allowed) {
-        throw new TRPCError({
-          code: 'TOO_MANY_REQUESTS',
-          message: `Rate limit exceeded. You can make ${rateLimit.limit} requests per minute. Try again after ${rateLimit.resetAt.toISOString()}`,
-        });
-      }
-
-      // Create a pending generation record
-      const generation = await ctx.db.aIGeneration.create({
-        data: {
-          prompt: input.prompt,
-          response: '', // Will be filled during streaming
-          clerkUserId: ctx.auth.userId,
-          projectId: input.projectId ?? null,
-        },
-      });
-
-      console.log(
-        `[AI Router] Initialized generation ${generation.id} for user ${ctx.auth.userId}`
-      );
-
-      return {
-        generationId: generation.id,
-        projectId: input.projectId,
-        useSandbox: input.useSandbox,
-      };
     }),
 
   generateCode: protectedProcedure
@@ -593,23 +647,13 @@ export const aiRouter = createTRPCRouter({
 
               sessionId = lastGeneration?.sessionId ?? undefined;
 
-              // Restore session from database if resuming
+              // Session restoration now happens just-in-time in Claude client
+              // This ensures the session file is restored in the same execution context
+              // where the Claude CLI subprocess runs (critical for serverless environments)
               if (sessionId) {
                 console.log(
-                  `[AI Stream] 🔄 Found previous session ${sessionId}, attempting to restore...`
+                  `[AI Stream] 🔄 Found previous session ${sessionId} - will attempt to restore in Claude client`
                 );
-                const restored = await restoreSessionFromDB(ctx.db, sessionId);
-                if (restored) {
-                  console.log(
-                    `[AI Stream] ✅ Session ${sessionId} restored successfully - conversation will continue`
-                  );
-                } else {
-                  console.log(
-                    `[AI Stream] ⚠️ Could not restore session ${sessionId} - Claude will start fresh conversation`
-                  );
-                  // Don't fail the request, just log and continue
-                  // Claude will start a new session if the old one isn't found
-                }
               } else {
                 console.log(
                   `[AI Stream] 📝 No previous session found - starting fresh conversation`

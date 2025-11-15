@@ -209,3 +209,45 @@ export async function hasSessionInDB(
     return false;
   }
 }
+
+/**
+ * Verify that a session file exists on the filesystem
+ * This is critical in serverless environments where files may not persist
+ */
+export async function verifySessionFileExists(
+  sessionId: string
+): Promise<{ exists: boolean; path: string | null; processId: number }> {
+  const processId = process.pid;
+
+  try {
+    const sessionPath = await findSessionFilePath(sessionId);
+
+    if (!sessionPath) {
+      console.log(
+        `[Session Cache] ❌ Session file NOT found for ${sessionId} (process ${processId})`
+      );
+      return { exists: false, path: null, processId };
+    }
+
+    // Verify the file is actually readable
+    try {
+      const stats = await stat(sessionPath);
+      console.log(
+        `[Session Cache] ✅ Session file verified: ${sessionPath} (${stats.size} bytes, process ${processId})`
+      );
+      return { exists: true, path: sessionPath, processId };
+    } catch (error) {
+      console.error(
+        `[Session Cache] ❌ Session file found but not readable: ${sessionPath} (process ${processId})`,
+        error
+      );
+      return { exists: false, path: sessionPath, processId };
+    }
+  } catch (error) {
+    console.error(
+      `[Session Cache] Error verifying session ${sessionId} (process ${processId}):`,
+      error
+    );
+    return { exists: false, path: null, processId };
+  }
+}
