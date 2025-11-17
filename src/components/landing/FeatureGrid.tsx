@@ -42,7 +42,7 @@ const features: Feature[] = [
         </div>
         <div className="space-y-2">
           <div className="h-2 w-3/4 rounded bg-muted" />
-          <div className="h-8 rounded bg-gradient-to-r from-[#8B5CF6] to-[#A855F7]" />
+          <div className="h-8 rounded bg-gradient-to-r from-primary to-primary" />
         </div>
       </div>
     ),
@@ -93,7 +93,7 @@ const features: Feature[] = [
 
 export function FeatureGrid() {
   return (
-    <section className="px-4 py-24">
+    <section id="features" className="px-4 py-24">
       <div className="mx-auto max-w-7xl">
         <div className="grid gap-6 md:grid-cols-3">
           {features.map((feature, index) => (

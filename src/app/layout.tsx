@@ -12,7 +12,16 @@ export const metadata: Metadata = {
   title: 'Stryama - Shape your ideas into apps that work',
   description:
     'Transform your words into working applications. No code. No limits. Just pure creation.',
-  icons: [{ rel: 'icon', url: '/favicon.ico' }],
+  icons: {
+    icon: [
+      { url: '/favicon.ico' },
+      { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+    ],
+  },
 };
 
 export default function RootLayout({

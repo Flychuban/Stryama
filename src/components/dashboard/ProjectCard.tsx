@@ -2,7 +2,6 @@
 
 // 1. External libraries
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Code2, Copy, Trash2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
@@ -41,7 +40,6 @@ export function ProjectCard({
   onDuplicate,
   onDelete,
 }: ProjectCardProps) {
-  const router = useRouter();
   const [showActions, setShowActions] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
@@ -88,7 +86,7 @@ export function ProjectCard({
               className="shadow-lg transition-all hover:scale-105 hover:shadow-xl hover:shadow-primary/30"
               onClick={(e) => {
                 e.stopPropagation();
-                router.push('/editor');
+                onOpen(project.id);
               }}
             >
               Open

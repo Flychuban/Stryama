@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowUp, Zap, Code2, Palette, Database, Cloud } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { ArrowUp, Code2, Palette, Database, Cloud } from 'lucide-react';
 import { Logo } from '@/components/shared/Logo';
 import { api } from '@/trpc/react';
 import { usePromptHandoff } from '@/hooks/usePromptHandoff';
@@ -157,47 +156,24 @@ export function Hero() {
   };
 
   return (
-    <section className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-32">
+    <section className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-20 md:py-32">
       {/* Animated gradient background */}
       <div className="gradient-mesh absolute inset-0 -z-10" />
 
-      {/* Floating badges for visual interest */}
-      <div className="absolute left-12 top-32 hidden animate-float lg:block">
-        <Badge
-          variant="secondary"
-          className="border-accent/30 bg-accent/20 text-accent backdrop-blur-sm"
-        >
-          <Zap className="mr-1 h-3 w-3" />
-          Lightning Fast
-        </Badge>
-      </div>
-      <div
-        className="absolute right-16 top-48 hidden animate-float lg:block"
-        style={{ animationDelay: '1s' }}
-      >
-        <Badge
-          variant="secondary"
-          className="flex items-center gap-1 border-primary/30 bg-primary/20 text-primary backdrop-blur-sm"
-        >
-          <Logo size={12} showText={false} />
-          AI Powered
-        </Badge>
-      </div>
-
       <div className="mx-auto w-full max-w-5xl">
-        <div className="animate-fade-in space-y-12 text-center">
+        <div className="animate-fade-in space-y-8 text-center md:space-y-12">
           {/* Headline with better typography */}
-          <div className="space-y-6">
-            <h1 className="text-6xl font-bold leading-[1.1] tracking-tight text-foreground md:text-7xl lg:text-8xl">
+          <div className="space-y-4 md:space-y-6">
+            <h1 className="text-5xl font-bold leading-[1.1] tracking-tight text-foreground md:text-7xl lg:text-8xl">
               Shape your ideas into
               <br />
               <span className="animate-gradient-shift bg-gradient-to-r from-primary via-accent to-primary bg-[length:200%_auto] bg-clip-text text-transparent">
                 apps that work
               </span>
             </h1>
-            <p className="mx-auto max-w-3xl text-xl leading-relaxed text-muted-foreground md:text-2xl">
+            <p className="mx-auto max-w-3xl text-lg leading-relaxed text-muted-foreground md:text-xl lg:text-2xl">
               Stryama transforms your words into working applications.
-              <br />
+              <br className="hidden sm:inline" />
               No code. No limits. Just pure creation.
             </p>
           </div>
@@ -261,7 +237,12 @@ export function Hero() {
             </div>
 
             <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-              <Logo size={16} showText={false} />
+              <Logo
+                size={16}
+                showText={false}
+                withContainer
+                containerVariant="glass"
+              />
               {isSignedIn ? (
                 usageStats ? (
                   <div className="flex items-center gap-3">

@@ -10,7 +10,12 @@ export default function SignInPage() {
         <div className="w-full max-w-md">
           <div className="mb-8 text-center">
             <Link href="/" className="mb-6 inline-flex">
-              <Logo size={40} showText={true} />
+              <Logo
+                size={40}
+                showText={true}
+                withContainer
+                containerVariant="subtle"
+              />
             </Link>
           </div>
 

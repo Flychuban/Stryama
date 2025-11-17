@@ -4,13 +4,13 @@ import Link from 'next/link';
 
 export function CTA() {
   return (
-    <section className="relative overflow-hidden px-4 py-32">
+    <section className="relative overflow-hidden px-4 py-20 md:py-32">
       {/* Gradient background */}
       <div className="absolute inset-0 -z-10 bg-gradient-to-br from-primary/10 via-background to-accent/10" />
       <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_30%_50%,rgba(99,102,241,0.1),transparent_50%)]" />
       <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_70%_50%,rgba(16,185,129,0.1),transparent_50%)]" />
 
-      <div className="mx-auto max-w-5xl space-y-10 text-center">
+      <div className="mx-auto max-w-5xl space-y-8 text-center md:space-y-10">
         {/* Badge */}
         <div className="flex justify-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-2 text-primary">
@@ -20,7 +20,7 @@ export function CTA() {
         </div>
 
         {/* Headline */}
-        <h2 className="text-5xl font-bold tracking-tight md:text-6xl lg:text-7xl">
+        <h2 className="text-4xl font-bold tracking-tight md:text-6xl lg:text-7xl">
           Start creating
           <br />
           <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
@@ -28,7 +28,7 @@ export function CTA() {
           </span>
         </h2>
 
-        <p className="mx-auto max-w-2xl text-xl leading-relaxed text-muted-foreground md:text-2xl">
+        <p className="mx-auto max-w-2xl text-lg leading-relaxed text-muted-foreground md:text-xl lg:text-2xl">
           Join thousands of creators building faster with Stryama. Your first
           project is just a conversation away.
         </p>
@@ -37,21 +37,13 @@ export function CTA() {
         <div className="flex flex-col items-center justify-center gap-4 pt-6 sm:flex-row">
           <Button
             size="lg"
-            className="group px-10 py-7 text-lg shadow-xl transition-all hover:shadow-2xl"
+            className="group px-10 py-6 text-lg shadow-xl transition-all hover:shadow-2xl"
             asChild
           >
             <Link href="/dashboard">
               Get Started Free
               <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
             </Link>
-          </Button>
-          <Button
-            variant="outline"
-            size="lg"
-            className="border-2 px-10 py-7 text-lg"
-            asChild
-          >
-            <Link href="/dashboard">View Demo</Link>
           </Button>
         </div>
 

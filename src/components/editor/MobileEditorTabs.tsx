@@ -35,6 +35,7 @@ interface MobileEditorTabsProps {
   onFileSelect: (index: number) => void;
   onRestartPreview?: () => void;
   onRegeneratePreview?: () => void;
+  onDownload?: () => void;
   iframeRef?: RefObject<HTMLIFrameElement | null>;
   iframeKey?: number;
 }
@@ -61,6 +62,7 @@ export function MobileEditorTabs({
   onFileSelect,
   onRestartPreview,
   onRegeneratePreview,
+  onDownload,
   iframeRef,
   iframeKey,
 }: MobileEditorTabsProps) {
@@ -126,6 +128,7 @@ export function MobileEditorTabs({
           onDeviceModeChange={onDeviceModeChange}
           onRestartPreview={onRestartPreview}
           onRegeneratePreview={onRegeneratePreview}
+          onDownload={onDownload}
           isGeneratingPreview={isGeneratingPreview}
           isRegeneratingPreview={isRegeneratingPreview}
           previewError={previewError}

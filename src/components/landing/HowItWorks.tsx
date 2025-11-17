@@ -11,21 +11,21 @@ const steps: Step[] = [
     title: 'Describe',
     description:
       'Tell Stryama what you want to build using natural language. Be as detailed or as brief as you like.',
-    gradient: 'from-[#8B5CF6] to-[#8B5CF6]',
+    gradient: 'from-primary to-primary',
   },
   {
     number: '02',
     title: 'Generate',
     description:
       'Watch as AI generates your app in real-time with components, layouts, and functionality.',
-    gradient: 'from-[#8B5CF6] to-[#A855F7]',
+    gradient: 'from-primary to-primary',
   },
   {
     number: '03',
     title: 'Deploy',
     description:
       'Iterate, refine, export your code and deploy anywhere. You own everything.',
-    gradient: 'from-[#8B5CF6] to-[#10B981]',
+    gradient: 'from-primary to-accent',
   },
 ];
 
@@ -43,14 +43,17 @@ const stats: Stat[] = [
 
 export function HowItWorks() {
   return (
-    <section className="bg-gradient-to-b from-background via-muted/20 to-background px-4 py-24">
+    <section
+      id="how-it-works"
+      className="bg-gradient-to-b from-background via-muted/20 to-background px-4 py-16 md:py-24"
+    >
       <div className="mx-auto max-w-7xl">
         {/* Header */}
-        <div className="mb-20 text-center">
-          <h2 className="mb-4 text-4xl font-bold md:text-5xl">
+        <div className="mb-16 text-center md:mb-20">
+          <h2 className="mb-4 text-3xl font-bold md:text-4xl lg:text-5xl">
             Why Choose Stryama?
           </h2>
-          <p className="text-lg text-muted-foreground">
+          <p className="text-base text-muted-foreground md:text-lg">
             The fastest way to turn your ideas into reality
           </p>
         </div>
@@ -85,7 +88,7 @@ export function HowItWorks() {
         <div className="grid grid-cols-2 gap-8 border-t border-border/40 pt-12 md:grid-cols-4">
           {stats.map((stat, index) => (
             <div key={index} className="text-center">
-              <div className="mb-2 bg-gradient-to-r from-[#8B5CF6] to-[#10B981] bg-clip-text text-4xl font-bold text-transparent md:text-5xl">
+              <div className="mb-2 bg-gradient-to-r from-primary to-accent bg-clip-text text-4xl font-bold text-transparent md:text-5xl">
                 {stat.value}
               </div>
               <div className="text-sm text-muted-foreground">{stat.label}</div>
