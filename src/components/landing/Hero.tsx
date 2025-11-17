@@ -156,24 +156,24 @@ export function Hero() {
   };
 
   return (
-    <section className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-32">
+    <section className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-20 md:py-32">
       {/* Animated gradient background */}
       <div className="gradient-mesh absolute inset-0 -z-10" />
 
       <div className="mx-auto w-full max-w-5xl">
-        <div className="animate-fade-in space-y-12 text-center">
+        <div className="animate-fade-in space-y-8 text-center md:space-y-12">
           {/* Headline with better typography */}
-          <div className="space-y-6">
-            <h1 className="text-6xl font-bold leading-[1.1] tracking-tight text-foreground md:text-7xl lg:text-8xl">
+          <div className="space-y-4 md:space-y-6">
+            <h1 className="text-5xl font-bold leading-[1.1] tracking-tight text-foreground md:text-7xl lg:text-8xl">
               Shape your ideas into
               <br />
               <span className="animate-gradient-shift bg-gradient-to-r from-primary via-accent to-primary bg-[length:200%_auto] bg-clip-text text-transparent">
                 apps that work
               </span>
             </h1>
-            <p className="mx-auto max-w-3xl text-xl leading-relaxed text-muted-foreground md:text-2xl">
+            <p className="mx-auto max-w-3xl text-lg leading-relaxed text-muted-foreground md:text-xl lg:text-2xl">
               Stryama transforms your words into working applications.
-              <br />
+              <br className="hidden sm:inline" />
               No code. No limits. Just pure creation.
             </p>
           </div>

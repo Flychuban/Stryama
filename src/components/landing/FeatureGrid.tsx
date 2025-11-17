@@ -42,7 +42,7 @@ const features: Feature[] = [
         </div>
         <div className="space-y-2">
           <div className="h-2 w-3/4 rounded bg-muted" />
-          <div className="h-8 rounded bg-gradient-to-r from-[#8B5CF6] to-[#A855F7]" />
+          <div className="h-8 rounded bg-gradient-to-r from-primary to-primary" />
         </div>
       </div>
     ),

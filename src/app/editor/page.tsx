@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
+import { toast } from 'sonner';
 import { AppHeader } from '@/components/shared/AppHeader';
 import AILoadingAnimation from '@/components/editor/AILoadingAnimation';
 import { useAIGenerationStream } from '@/hooks/useAIGenerationStream';
@@ -18,6 +19,7 @@ import {
 } from '@/components/editor/ControlBar';
 import { PreviewCodePanel } from '@/components/editor/PreviewCodePanel';
 import { MobileEditorTabs } from '@/components/editor/MobileEditorTabs';
+import { downloadProjectAsZip } from '@/lib/utils/download-project';
 
 const checkPreviewHealth = async (url: string): Promise<boolean> => {
   try {
@@ -164,10 +166,12 @@ function EditorContent() {
           }
         } catch (error) {
           console.error('[Editor] Failed to start preview server', error);
-          setPreviewError(
+          const errorMessage =
             error instanceof Error
               ? error.message
-              : 'Failed to start preview server'
+              : 'Unable to start preview server';
+          setPreviewError(
+            `${errorMessage}. Try clicking "Regenerate" to restart the preview.`
           );
           setPreviewUrl(null);
         } finally {
@@ -224,9 +228,15 @@ function EditorContent() {
   }, [streamState.hasError, streamState.error]);
 
   // Reusable error handler for preview operations
-  const handlePreviewError = (error: unknown, fallbackMessage: string) => {
+  const handlePreviewError = (
+    error: unknown,
+    fallbackMessage: string,
+    actionHint = 'Try again or refresh the page.'
+  ) => {
     console.error(fallbackMessage, error);
-    setPreviewError(error instanceof Error ? error.message : fallbackMessage);
+    const errorMessage =
+      error instanceof Error ? error.message : fallbackMessage;
+    setPreviewError(`${errorMessage} ${actionHint}`);
   };
 
   // Update document title with project name
@@ -347,7 +357,11 @@ function EditorContent() {
               hasAttemptedRegeneration.current = true;
             } catch (error) {
               console.error('[Editor] Failed to regenerate preview:', error);
-              handlePreviewError(error, 'Failed to regenerate preview');
+              handlePreviewError(
+                error,
+                'Failed to regenerate preview',
+                'Click "Regenerate" to try again.'
+              );
               // Flag NOT set - allows user to retry manually or on refresh
             } finally {
               setIsRegeneratingPreview(false);
@@ -418,7 +432,11 @@ function EditorContent() {
       setPreviewUrl(previewResult.url);
       setPreviewError(null);
     } catch (error) {
-      handlePreviewError(error, 'Failed to restart preview server');
+      handlePreviewError(
+        error,
+        'Failed to restart preview server',
+        'Wait a moment and try again.'
+      );
     } finally {
       setIsGeneratingPreview(false);
     }
@@ -440,9 +458,32 @@ function EditorContent() {
       // Reset the flag so user can regenerate again if needed
       hasAttemptedRegeneration.current = false;
     } catch (error) {
-      handlePreviewError(error, 'Failed to regenerate preview');
+      handlePreviewError(
+        error,
+        'Failed to regenerate preview',
+        'Please try again in a moment.'
+      );
     } finally {
       setIsRegeneratingPreview(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (projectFiles.length === 0) {
+      toast.error('No files to download');
+      return;
+    }
+
+    try {
+      await downloadProjectAsZip(projectFiles, project?.name ?? 'project');
+      toast.success('Code downloaded successfully');
+    } catch (error) {
+      console.error('[Editor] Failed to download project:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to download code';
+      toast.error(
+        `${errorMessage}. Please check your browser settings and try again.`
+      );
     }
   };
 
@@ -483,6 +524,7 @@ function EditorContent() {
           onFileSelect={setSelectedFileIndex}
           onRestartPreview={handleRestartPreview}
           onRegeneratePreview={handleRegeneratePreview}
+          onDownload={handleDownload}
           iframeRef={previewIframeRef}
           iframeKey={iframeKey}
         />
@@ -528,6 +570,7 @@ function EditorContent() {
                 onDeviceModeChange={setDeviceMode}
                 onRestartPreview={handleRestartPreview}
                 onRegeneratePreview={handleRegeneratePreview}
+                onDownload={handleDownload}
                 isGeneratingPreview={isGeneratingPreview}
                 isRegeneratingPreview={isRegeneratingPreview}
                 previewError={previewError}

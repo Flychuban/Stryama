@@ -1,10 +1,19 @@
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Sparkles, Plus } from 'lucide-react';
+import { Sparkles, Plus, Lightbulb } from 'lucide-react';
 
 type EmptyStateProps = {
   onCreateProject: () => void;
 };
+
+const exampleProjects = [
+  {
+    title: 'Portfolio Website',
+    description: 'Professional showcase for your work',
+  },
+  { title: 'Todo App', description: 'Organize tasks with drag & drop' },
+  { title: 'Landing Page', description: 'Promote your product or service' },
+];
 
 export function EmptyState({ onCreateProject }: EmptyStateProps) {
   return (
@@ -60,6 +69,30 @@ export function EmptyState({ onCreateProject }: EmptyStateProps) {
             <span className="rounded-full border border-accent/20 bg-accent/10 px-2 py-1 text-accent">
               Start in seconds
             </span>
+          </div>
+
+          {/* Example Projects */}
+          <div className="mt-8 space-y-3 border-t border-border/50 pt-6">
+            <div className="flex items-center justify-center gap-2 text-sm font-medium text-muted-foreground">
+              <Lightbulb className="h-4 w-4" />
+              <span>Try building</span>
+            </div>
+            <div className="grid gap-2">
+              {exampleProjects.map((example, index) => (
+                <button
+                  key={index}
+                  onClick={onCreateProject}
+                  className="rounded-lg border border-border/30 bg-background/50 px-4 py-2.5 text-left transition-all hover:border-primary/30 hover:bg-primary/5"
+                >
+                  <div className="text-sm font-medium text-foreground">
+                    {example.title}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {example.description}
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </Card>

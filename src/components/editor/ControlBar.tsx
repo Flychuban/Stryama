@@ -5,7 +5,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Monitor, Smartphone, Code2, Eye, RefreshCw } from 'lucide-react';
+import {
+  Monitor,
+  Smartphone,
+  Code2,
+  Eye,
+  RefreshCw,
+  Download,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export type ViewMode = 'preview' | 'code';
@@ -18,6 +25,7 @@ interface ControlBarProps {
   onDeviceModeChange: (mode: DeviceMode) => void;
   onRestartPreview?: () => void;
   onRegeneratePreview?: () => void;
+  onDownload?: () => void;
   isGeneratingPreview?: boolean;
   isRegeneratingPreview?: boolean;
   previewError?: string | null;
@@ -32,6 +40,7 @@ export function ControlBar({
   onDeviceModeChange,
   onRestartPreview,
   onRegeneratePreview,
+  onDownload,
   isGeneratingPreview = false,
   isRegeneratingPreview = false,
   previewError,
@@ -82,6 +91,19 @@ export function ControlBar({
 
       {/* Secondary Actions */}
       <div className="flex items-center gap-1 sm:gap-2">
+        {hasFiles && onDownload && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onDownload}
+            className="h-8 rounded-lg border-border/50 px-2 text-xs transition-all duration-200 hover:border-primary/30 hover:bg-primary/5 sm:h-9 sm:px-3 sm:text-sm"
+            title="Download code"
+          >
+            <Download className="h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
+            <span className="hidden sm:inline">Download</span>
+          </Button>
+        )}
+
         {viewMode === 'preview' && hasFiles && (
           <>
             {showRegenerateButton && onRegeneratePreview ? (
