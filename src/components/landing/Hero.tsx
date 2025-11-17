@@ -179,7 +179,12 @@ export function Hero() {
           variant="secondary"
           className="flex items-center gap-1 border-primary/30 bg-primary/20 text-primary backdrop-blur-sm"
         >
-          <Logo size={12} showText={false} />
+          <Logo
+            size={12}
+            showText={false}
+            withContainer
+            containerVariant="glass"
+          />
           AI Powered
         </Badge>
       </div>
@@ -261,7 +266,12 @@ export function Hero() {
             </div>
 
             <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-              <Logo size={16} showText={false} />
+              <Logo
+                size={16}
+                showText={false}
+                withContainer
+                containerVariant="glass"
+              />
               {isSignedIn ? (
                 usageStats ? (
                   <div className="flex items-center gap-3">
