@@ -14,6 +14,7 @@ import {
   LimitReachedDialog,
   type LimitType,
 } from '@/components/shared/LimitReachedDialog';
+import { ClaudeBadge } from '@/components/landing/ClaudeBadge';
 
 type SuggestionPill = {
   icon: React.ReactNode;
@@ -164,17 +165,22 @@ export function Hero() {
         <div className="animate-fade-in space-y-8 text-center md:space-y-12">
           {/* Headline with better typography */}
           <div className="space-y-4 md:space-y-6">
+            {/* Claude Badge */}
+            <div className="flex justify-center">
+              <ClaudeBadge />
+            </div>
+
             <h1 className="text-5xl font-bold leading-[1.1] tracking-tight text-foreground md:text-7xl lg:text-8xl">
-              Shape your ideas into
+              AI-Powered App Builder
               <br />
               <span className="animate-gradient-shift bg-gradient-to-r from-primary via-accent to-primary bg-[length:200%_auto] bg-clip-text text-transparent">
-                apps that work
+                Describe It. Build It. Own It.
               </span>
             </h1>
             <p className="mx-auto max-w-3xl text-lg leading-relaxed text-muted-foreground md:text-xl lg:text-2xl">
-              Stryama transforms your words into working applications.
+              Turn your ideas into working React apps in under 2 minutes.
               <br className="hidden sm:inline" />
-              No code. No limits. Just pure creation.
+              No coding required. Production-ready code you own.
             </p>
           </div>
 

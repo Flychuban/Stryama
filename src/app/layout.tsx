@@ -4,14 +4,71 @@ import { ClerkProvider } from '@clerk/nextjs';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
 import { TRPCReactProvider } from '@/trpc/react';
+import {
+  StructuredData,
+  getOrganizationSchema,
+  getSoftwareApplicationSchema,
+  getWebSiteSchema,
+} from '@/lib/seo/structured-data';
 import '../styles/globals.css';
 
 export const dynamic = 'force-dynamic';
 
+const siteUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://stryama.app';
+
 export const metadata: Metadata = {
-  title: 'Stryama - Shape your ideas into apps that work',
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: 'Stryama - AI-Powered App Builder | Build Apps in Minutes',
+    template: '%s | Stryama',
+  },
   description:
-    'Transform your words into working applications. No code. No limits. Just pure creation.',
+    'Build working React apps in under 2 minutes with AI. No coding required. Just describe your idea and get production-ready code. Powered by Claude AI.',
+  keywords: [
+    'AI app builder',
+    'no-code app generator',
+    'Claude AI',
+    'React app builder',
+    'text to app',
+    'AI web development',
+    'prototype builder',
+    'AI code generator',
+    'build apps with AI',
+    'no-code development',
+  ],
+  authors: [{ name: 'Stryama' }],
+  creator: 'Stryama',
+  publisher: 'Stryama',
+  formatDetection: {
+    email: false,
+    address: false,
+    telephone: false,
+  },
+  openGraph: {
+    type: 'website',
+    locale: 'en_US',
+    url: siteUrl,
+    title: 'Stryama - AI-Powered App Builder | Build Apps in Minutes',
+    description:
+      'Build working React apps in under 2 minutes with AI. No coding required. Just describe your idea and get production-ready code. Powered by Claude AI.',
+    siteName: 'Stryama',
+    images: [
+      {
+        url: '/og-image.png',
+        width: 1200,
+        height: 630,
+        alt: 'Stryama - AI-Powered App Builder',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Stryama - AI-Powered App Builder | Build Apps in Minutes',
+    description:
+      'Build working React apps in under 2 minutes with AI. No coding required. Powered by Claude AI.',
+    images: ['/og-image.png'],
+    creator: '@stryama',
+  },
   icons: {
     icon: [
       { url: '/favicon.ico' },
@@ -21,6 +78,22 @@ export const metadata: Metadata = {
     apple: [
       { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
     ],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
+  verification: {
+    // Add verification codes when available
+    // google: 'your-google-verification-code',
+    // yandex: 'your-yandex-verification-code',
   },
 };
 
@@ -40,6 +113,12 @@ export default function RootLayout({
         className={`${GeistSans.variable}`}
         suppressHydrationWarning
       >
+        <head>
+          {/* Structured Data for SEO */}
+          <StructuredData data={getOrganizationSchema()} />
+          <StructuredData data={getSoftwareApplicationSchema()} />
+          <StructuredData data={getWebSiteSchema()} />
+        </head>
         <body>
           <ThemeProvider
             attribute="class"
