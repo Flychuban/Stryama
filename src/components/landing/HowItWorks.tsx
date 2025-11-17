@@ -43,7 +43,10 @@ const stats: Stat[] = [
 
 export function HowItWorks() {
   return (
-    <section className="bg-gradient-to-b from-background via-muted/20 to-background px-4 py-24">
+    <section
+      id="how-it-works"
+      className="bg-gradient-to-b from-background via-muted/20 to-background px-4 py-24"
+    >
       <div className="mx-auto max-w-7xl">
         {/* Header */}
         <div className="mb-20 text-center">

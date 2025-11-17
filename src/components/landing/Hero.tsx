@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowUp, Zap, Code2, Palette, Database, Cloud } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { ArrowUp, Code2, Palette, Database, Cloud } from 'lucide-react';
 import { Logo } from '@/components/shared/Logo';
 import { api } from '@/trpc/react';
 import { usePromptHandoff } from '@/hooks/usePromptHandoff';
@@ -160,34 +159,6 @@ export function Hero() {
     <section className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-32">
       {/* Animated gradient background */}
       <div className="gradient-mesh absolute inset-0 -z-10" />
-
-      {/* Floating badges for visual interest */}
-      <div className="absolute left-12 top-32 hidden animate-float lg:block">
-        <Badge
-          variant="secondary"
-          className="border-accent/30 bg-accent/20 text-accent backdrop-blur-sm"
-        >
-          <Zap className="mr-1 h-3 w-3" />
-          Lightning Fast
-        </Badge>
-      </div>
-      <div
-        className="absolute right-16 top-48 hidden animate-float lg:block"
-        style={{ animationDelay: '1s' }}
-      >
-        <Badge
-          variant="secondary"
-          className="flex items-center gap-1 border-primary/30 bg-primary/20 text-primary backdrop-blur-sm"
-        >
-          <Logo
-            size={12}
-            showText={false}
-            withContainer
-            containerVariant="glass"
-          />
-          AI Powered
-        </Badge>
-      </div>
 
       <div className="mx-auto w-full max-w-5xl">
         <div className="animate-fade-in space-y-12 text-center">

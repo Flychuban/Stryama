@@ -241,10 +241,10 @@ export default function DashboardPage() {
 
       {/* Page Header */}
       <header className="sticky top-16 z-30 border-b border-border/40 bg-background/60 backdrop-blur-xl">
-        <div className="mx-auto flex h-24 max-w-7xl items-center justify-between px-6">
+        <div className="mx-auto flex min-h-24 max-w-7xl flex-col items-start justify-between gap-4 px-6 py-4 sm:h-24 sm:flex-row sm:items-center sm:py-0">
           <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <h1 className="bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-4xl font-bold text-transparent">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
                 My Projects
               </h1>
               {transformedProjects.length > 0 && (

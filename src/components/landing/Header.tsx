@@ -51,12 +51,7 @@ export function Header() {
 
         {/* CTA Buttons */}
         <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="hidden sm:inline-flex"
-            asChild
-          >
+          <Button variant="ghost" size="sm" asChild>
             <Link href="/dashboard">Dashboard</Link>
           </Button>
           {isLoaded && user ? (
