@@ -113,12 +113,6 @@ export default function RootLayout({
         className={`${GeistSans.variable}`}
         suppressHydrationWarning
       >
-        <head>
-          {/* Structured Data for SEO */}
-          <StructuredData data={getOrganizationSchema()} />
-          <StructuredData data={getSoftwareApplicationSchema()} />
-          <StructuredData data={getWebSiteSchema()} />
-        </head>
         <body>
           <ThemeProvider
             attribute="class"
@@ -126,6 +120,11 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
+            {/* Structured Data for SEO - JSON-LD scripts */}
+            <StructuredData data={getOrganizationSchema()} />
+            <StructuredData data={getSoftwareApplicationSchema()} />
+            <StructuredData data={getWebSiteSchema()} />
+
             <TRPCReactProvider>
               {children}
               <Toaster />
