@@ -29,16 +29,33 @@ const steps: Step[] = [
   },
 ];
 
-type Stat = {
-  value: string;
-  label: string;
+type Feature = {
+  icon: string;
+  title: string;
+  description: string;
 };
 
-const stats: Stat[] = [
-  { value: '10,000+', label: 'Apps Built' },
-  { value: '< 2min', label: 'Avg Build Time' },
-  { value: '99.9%', label: 'Uptime' },
-  { value: '5,000+', label: 'Happy Creators' },
+const features: Feature[] = [
+  {
+    icon: '⚡',
+    title: 'Lightning Fast',
+    description: 'Apps in under 2 minutes',
+  },
+  {
+    icon: '🎯',
+    title: 'Zero Code Required',
+    description: 'Natural language prompts',
+  },
+  {
+    icon: '💎',
+    title: 'Production Ready',
+    description: 'Real React code you own',
+  },
+  {
+    icon: '🔒',
+    title: 'Privacy First',
+    description: 'Your code, your data',
+  },
 ];
 
 export function HowItWorks() {
@@ -84,14 +101,20 @@ export function HowItWorks() {
           ))}
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 gap-8 border-t border-border/40 pt-12 md:grid-cols-4">
-          {stats.map((stat, index) => (
-            <div key={index} className="text-center">
-              <div className="mb-2 bg-gradient-to-r from-primary to-accent bg-clip-text text-4xl font-bold text-transparent md:text-5xl">
-                {stat.value}
+        {/* Features */}
+        <div className="grid grid-cols-1 gap-8 border-t border-border/40 pt-12 sm:grid-cols-2 md:grid-cols-4">
+          {features.map((feature, index) => (
+            <div
+              key={index}
+              className="group rounded-2xl border border-border/50 bg-card/50 p-6 text-center transition-all hover:border-primary/50 hover:bg-card hover:shadow-lg"
+            >
+              <div className="mb-3 text-4xl transition-transform group-hover:scale-110">
+                {feature.icon}
               </div>
-              <div className="text-sm text-muted-foreground">{stat.label}</div>
+              <h4 className="mb-2 text-lg font-semibold">{feature.title}</h4>
+              <p className="text-sm text-muted-foreground">
+                {feature.description}
+              </p>
             </div>
           ))}
         </div>
