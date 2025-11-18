@@ -69,12 +69,12 @@ const config = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.clerk.accounts.dev https://challenges.cloudflare.com https://*.e2b.dev https://*.e2b.app https://js.stripe.com https://*.js.stripe.com https://maps.googleapis.com", // Clerk JS SDK, Turnstile, E2B sandboxes, and Stripe billing
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.clerk.accounts.dev https://*.stryama.app https://challenges.cloudflare.com https://*.e2b.dev https://*.e2b.app https://js.stripe.com https://*.js.stripe.com https://maps.googleapis.com", // Clerk JS SDK (dev + prod), Turnstile, E2B sandboxes, and Stripe billing
               "style-src 'self' 'unsafe-inline' https://*.e2b.dev https://*.e2b.app", // Tailwind, CSS-in-JS, and E2B sandboxes
-              "img-src 'self' data: blob: https: https://img.clerk.com https://*.stripe.com", // Clerk avatar images and Stripe payment icons
+              "img-src 'self' data: blob: https: https://img.clerk.com https://*.stryama.app https://*.stripe.com", // Clerk avatar images (dev + prod) and Stripe payment icons
               "font-src 'self' data:",
-              "connect-src 'self' https://api.anthropic.com https://api.e2b.dev https://*.e2b.app wss://*.e2b.app https://*.clerk.accounts.dev https://clerk.topical-mammoth-51.lcl.dev wss://*.clerk.accounts.dev https://api.stripe.com https://maps.googleapis.com",
-              "frame-src 'self' https://*.clerk.accounts.dev https://challenges.cloudflare.com https://*.e2b.dev https://*.e2b.app https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com",
+              "connect-src 'self' https://api.anthropic.com https://api.e2b.dev https://*.e2b.app wss://*.e2b.app https://*.clerk.accounts.dev https://*.stryama.app wss://*.stryama.app https://clerk.topical-mammoth-51.lcl.dev wss://*.clerk.accounts.dev https://api.stripe.com https://maps.googleapis.com",
+              "frame-src 'self' https://*.clerk.accounts.dev https://*.stryama.app https://challenges.cloudflare.com https://*.e2b.dev https://*.e2b.app https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com",
               "object-src 'none'",
               "base-uri 'self' https://*.e2b.dev https://*.e2b.app", // Allow E2B sandbox URLs in iframe embeds
               "form-action 'self'",
