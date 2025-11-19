@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Plus, Send, Code2 } from 'lucide-react';
+import { Send, Code2 } from 'lucide-react';
 import ChatMessage from './ChatMessage';
 import { StreamingIndicator } from './StreamingIndicator';
 import type { StreamState } from '@/hooks/useAIGenerationStream';
@@ -86,13 +86,6 @@ export function ChatPanel({
       <div className="relative border-t border-border/50 bg-background/80 p-4 backdrop-blur-xl">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-background via-background/95 to-transparent" />
         <div className="relative flex gap-3">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-12 w-12 flex-shrink-0 rounded-xl border-border/50 transition-all duration-200 hover:border-primary/30 hover:bg-primary/5"
-          >
-            <Plus className="h-5 w-5" />
-          </Button>
           <Textarea
             value={input}
             onChange={(e) => onInputChange(e.target.value)}
