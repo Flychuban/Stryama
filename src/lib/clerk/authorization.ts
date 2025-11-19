@@ -21,25 +21,24 @@ import { type UserPlan } from '@prisma/client';
 /**
  * BETA TESTERS - Temporary Allowlist for MVP Testing
  *
- * Add user emails or Clerk user IDs here to grant them free access
- * to paid plans without requiring a subscription.
+ * Add Clerk user IDs here to grant them free access to paid plans
+ * without requiring a subscription.
  *
  * IMPORTANT:
- * - Use LOWERCASE emails for case-insensitive matching
- * - Email matching is normalized (john@Example.COM matches john@example.com)
- * - User ID matching is case-sensitive (use exact Clerk user ID)
+ * - Use Clerk User ID (not email) - more reliable
+ * - User IDs are case-sensitive (use exact format from Clerk Dashboard)
+ * - To get userId: Clerk Dashboard → Users → Select user → Copy User ID
  *
  * TODO: Remove this after beta testing period ends
  */
 const BETA_TESTERS: Record<string, UserPlan> = {
-  // Map email (lowercase) or user ID to the plan they should have
-  // Example: 'user_abc123': 'BUILDER',
-  // Example: 'tester@example.com': 'PRO',
+  // Map Clerk user ID to the plan they should have
+  // Example: 'user_2NNEqL2nrIRdJ194ndJqAHtrx': 'BUILDER',
+  // Example: 'user_2XYZ789abc': 'PRO',
 
-  // Add your beta testers here:
-  // 'john@example.com': 'BUILDER',  // Note: lowercase email
-  // 'sarah@example.com': 'PRO',     // Note: lowercase email
-  'kaloyan.ch.anastasov.2021@elsys-bg.org': 'BUILDER',
+  // Add your beta testers here (get userId from Clerk Dashboard):
+  // 'user_YOUR_BETA_TESTER_ID_HERE': 'BUILDER',
+  user_35fdFZFhUmja838TWCP2gtT1wrp: 'BUILDER',
 };
 
 /**
@@ -56,61 +55,17 @@ const BETA_TESTERS: Record<string, UserPlan> = {
  * ```
  */
 export async function getUserPlanFromClerk(): Promise<UserPlan> {
-  const { userId, sessionClaims, has } = await auth();
-
-  // TEMPORARY DEBUG: Log for specific beta tester to diagnose issue
-  // TODO: Remove after debugging
-  if (
-    sessionClaims?.email &&
-    typeof sessionClaims.email === 'string' &&
-    sessionClaims.email.includes('kaloyan.ch.anastasov.2021@elsys-bg.org')
-  ) {
-    console.log('[DEBUG-BETA] Beta tester session detected');
-    console.log('[DEBUG-BETA] userId:', userId);
-    console.log('[DEBUG-BETA] email from sessionClaims:', sessionClaims.email);
-    console.log('[DEBUG-BETA] BETA_TESTERS keys:', Object.keys(BETA_TESTERS));
-    console.log(
-      '[DEBUG-BETA] userId in BETA_TESTERS:',
-      userId ? userId in BETA_TESTERS : false
-    );
-    const normalized = sessionClaims.email.toLowerCase().trim();
-    console.log('[DEBUG-BETA] normalized email:', normalized);
-    console.log(
-      '[DEBUG-BETA] normalized in BETA_TESTERS:',
-      normalized in BETA_TESTERS
-    );
-  }
+  const { userId, has } = await auth();
 
   // BETA TESTING: Check if user is in the beta tester allowlist
-  // Check by user ID first (most reliable)
+  // Using userId for reliable identification (sessionClaims.email is not always available)
   if (userId && userId in BETA_TESTERS) {
     // Only log in development to avoid PII in production logs
     if (process.env.NODE_ENV === 'development') {
-      console.log(`[Auth] Beta tester detected (by user ID): ${userId}`);
+      console.log(`[Auth] Beta tester detected: ${userId}`);
     }
     // Safe to use ! because we checked 'userId in BETA_TESTERS'
     return BETA_TESTERS[userId]!;
-  }
-
-  // Check by email (case-insensitive)
-  const userEmail = sessionClaims?.email;
-  if (
-    userEmail &&
-    typeof userEmail === 'string' &&
-    userEmail.trim().length > 0
-  ) {
-    // Normalize email to lowercase for case-insensitive comparison
-    const normalizedEmail = userEmail.toLowerCase().trim();
-
-    if (normalizedEmail in BETA_TESTERS) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log(
-          `[Auth] Beta tester detected (by email): ${normalizedEmail}`
-        );
-      }
-      // Safe to use ! because we checked 'normalizedEmail in BETA_TESTERS'
-      return BETA_TESTERS[normalizedEmail]!;
-    }
   }
 
   // B2C user plans use plan-based checks (not org permissions)
