@@ -19,6 +19,30 @@ import { type UserPlan } from '@prisma/client';
  */
 
 /**
+ * BETA TESTERS - Temporary Allowlist for MVP Testing
+ *
+ * Add user emails or Clerk user IDs here to grant them free access
+ * to paid plans without requiring a subscription.
+ *
+ * IMPORTANT:
+ * - Use LOWERCASE emails for case-insensitive matching
+ * - Email matching is normalized (john@Example.COM matches john@example.com)
+ * - User ID matching is case-sensitive (use exact Clerk user ID)
+ *
+ * TODO: Remove this after beta testing period ends
+ */
+const BETA_TESTERS: Record<string, UserPlan> = {
+  // Map email (lowercase) or user ID to the plan they should have
+  // Example: 'user_abc123': 'BUILDER',
+  // Example: 'tester@example.com': 'PRO',
+
+  // Add your beta testers here:
+  // 'john@example.com': 'BUILDER',  // Note: lowercase email
+  // 'sarah@example.com': 'PRO',     // Note: lowercase email
+  'kaloyan.ch.anastasov.2021@elsys-bg.org': 'BUILDER',
+};
+
+/**
  * Get the user's effective plan from Clerk's session entitlements
  *
  * @returns The highest plan the user has access to
@@ -32,7 +56,39 @@ import { type UserPlan } from '@prisma/client';
  * ```
  */
 export async function getUserPlanFromClerk(): Promise<UserPlan> {
-  const { has } = await auth();
+  const { userId, sessionClaims, has } = await auth();
+
+  // BETA TESTING: Check if user is in the beta tester allowlist
+  // Check by user ID first (most reliable)
+  if (userId && userId in BETA_TESTERS) {
+    // Only log in development to avoid PII in production logs
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[Auth] Beta tester detected (by user ID): ${userId}`);
+    }
+    // Safe to use ! because we checked 'userId in BETA_TESTERS'
+    return BETA_TESTERS[userId]!;
+  }
+
+  // Check by email (case-insensitive)
+  const userEmail = sessionClaims?.email;
+  if (
+    userEmail &&
+    typeof userEmail === 'string' &&
+    userEmail.trim().length > 0
+  ) {
+    // Normalize email to lowercase for case-insensitive comparison
+    const normalizedEmail = userEmail.toLowerCase().trim();
+
+    if (normalizedEmail in BETA_TESTERS) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log(
+          `[Auth] Beta tester detected (by email): ${normalizedEmail}`
+        );
+      }
+      // Safe to use ! because we checked 'normalizedEmail in BETA_TESTERS'
+      return BETA_TESTERS[normalizedEmail]!;
+    }
+  }
 
   // B2C user plans use plan-based checks (not org permissions)
   // Plan keys match the "Key" field in Clerk Dashboard → Billing → Plans for Users
