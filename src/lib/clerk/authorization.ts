@@ -58,6 +58,29 @@ const BETA_TESTERS: Record<string, UserPlan> = {
 export async function getUserPlanFromClerk(): Promise<UserPlan> {
   const { userId, sessionClaims, has } = await auth();
 
+  // TEMPORARY DEBUG: Log for specific beta tester to diagnose issue
+  // TODO: Remove after debugging
+  if (
+    sessionClaims?.email &&
+    typeof sessionClaims.email === 'string' &&
+    sessionClaims.email.includes('kaloyan.ch.anastasov.2021@elsys-bg.org')
+  ) {
+    console.log('[DEBUG-BETA] Beta tester session detected');
+    console.log('[DEBUG-BETA] userId:', userId);
+    console.log('[DEBUG-BETA] email from sessionClaims:', sessionClaims.email);
+    console.log('[DEBUG-BETA] BETA_TESTERS keys:', Object.keys(BETA_TESTERS));
+    console.log(
+      '[DEBUG-BETA] userId in BETA_TESTERS:',
+      userId ? userId in BETA_TESTERS : false
+    );
+    const normalized = sessionClaims.email.toLowerCase().trim();
+    console.log('[DEBUG-BETA] normalized email:', normalized);
+    console.log(
+      '[DEBUG-BETA] normalized in BETA_TESTERS:',
+      normalized in BETA_TESTERS
+    );
+  }
+
   // BETA TESTING: Check if user is in the beta tester allowlist
   // Check by user ID first (most reliable)
   if (userId && userId in BETA_TESTERS) {
