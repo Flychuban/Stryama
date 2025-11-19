@@ -130,3 +130,35 @@ model UserUsage {
     @@index([clerkUserId])
     @@index([currentPeriodEnd])
 }
+
+// Feedback type enum - categorizes user feedback
+enum FeedbackType {
+    BUG_REPORT
+    FEATURE_REQUEST
+    GENERAL_FEEDBACK
+    SUPPORT_REQUEST
+}
+
+// Feedback status enum - tracks feedback state
+enum FeedbackStatus {
+    OPEN
+    IN_PROGRESS
+    RESOLVED
+}
+
+// Feedback model - stores user feedback, bug reports, and support requests
+model Feedback {
+    id          String         @id @default(cuid())
+    clerkUserId String         // References Clerk's user ID directly
+    type        FeedbackType
+    message     String         @db.Text
+    metadata    Json?          // Auto-captured context (URL, project, browser, etc.)
+    status      FeedbackStatus @default(OPEN)
+    createdAt   DateTime       @default(now())
+    updatedAt   DateTime       @updatedAt
+
+    @@index([clerkUserId])
+    @@index([status])
+    @@index([type])
+    @@index([createdAt(sort: Desc)])
+}

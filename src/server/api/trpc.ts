@@ -12,6 +12,7 @@ import { ZodError } from 'zod';
 import { auth } from '@clerk/nextjs/server';
 
 import { db } from '~/server/db';
+import { isAdmin } from '~/lib/clerk/authorization';
 
 /**
  * 1. CONTEXT
@@ -121,3 +122,32 @@ const enforceUserIsAuthed = t.middleware(({ ctx, next }) => {
 export const protectedProcedure = t.procedure
   .use(timingMiddleware)
   .use(enforceUserIsAuthed);
+
+/**
+ * Admin-only procedure
+ *
+ * Ensures the user is authenticated AND is an admin (based on ADMIN_USER_IDS env variable)
+ */
+const enforceUserIsAdmin = t.middleware(async ({ ctx, next }) => {
+  if (!ctx.auth.userId) {
+    throw new TRPCError({ code: 'UNAUTHORIZED' });
+  }
+
+  const userIsAdmin = await isAdmin();
+  if (!userIsAdmin) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'Admin access required',
+    });
+  }
+
+  return next({
+    ctx: {
+      auth: ctx.auth,
+    },
+  });
+});
+
+export const adminProcedure = t.procedure
+  .use(timingMiddleware)
+  .use(enforceUserIsAdmin);

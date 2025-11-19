@@ -20,6 +20,7 @@ import {
 import { PreviewCodePanel } from '@/components/editor/PreviewCodePanel';
 import { MobileEditorTabs } from '@/components/editor/MobileEditorTabs';
 import { downloadProjectAsZip } from '@/lib/utils/download-project';
+import { FeedbackButton } from '@/components/feedback/FeedbackButton';
 
 const checkPreviewHealth = async (url: string): Promise<boolean> => {
   try {
@@ -598,6 +599,16 @@ function EditorContent() {
           </PanelGroup>
         </div>
       )}
+
+      {/* Floating Feedback Button - Hidden on mobile to avoid overlap with Preview button */}
+      <div className="fixed bottom-6 right-6 z-50 hidden lg:block">
+        <FeedbackButton
+          variant="default"
+          size="default"
+          className="shadow-lg transition-shadow hover:shadow-xl"
+          projectId={projectId ?? undefined}
+        />
+      </div>
     </div>
   );
 }
