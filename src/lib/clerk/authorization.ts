@@ -201,3 +201,30 @@ export async function hasPaidSubscription(): Promise<boolean> {
   const plan = await getUserPlanFromClerk();
   return plan !== 'FREE';
 }
+
+/**
+ * Check if the current user is an admin
+ *
+ * Admin user IDs are stored in the ADMIN_USER_IDS environment variable
+ * as a comma-separated list of Clerk user IDs.
+ *
+ * @returns True if the current user is an admin
+ *
+ * @example
+ * ```ts
+ * if (await isAdmin()) {
+ *   // Show admin features
+ * }
+ * ```
+ */
+export async function isAdmin(): Promise<boolean> {
+  const { userId } = await auth();
+
+  if (!userId) {
+    return false;
+  }
+
+  const adminUserIds =
+    process.env.ADMIN_USER_IDS?.split(',').map((id) => id.trim()) ?? [];
+  return adminUserIds.includes(userId);
+}

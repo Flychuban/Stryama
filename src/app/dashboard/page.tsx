@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { ProjectGrid } from '@/components/dashboard/ProjectGrid';
 import { EmptyState } from '@/components/dashboard/EmptyState';
 import { AppHeader } from '@/components/shared/AppHeader';
+import { AppFooter } from '@/components/shared/AppFooter';
 import { CreateProjectDialog } from '@/components/dashboard/CreateProjectDialog';
 import {
   LimitReachedDialog,
@@ -323,6 +324,9 @@ export default function DashboardPage() {
           plan={limitDialogData.plan}
         />
       )}
+
+      {/* Footer */}
+      <AppFooter />
     </div>
   );
 }

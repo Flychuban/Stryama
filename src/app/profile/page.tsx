@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useUser, useClerk } from '@clerk/nextjs';
 import { AppHeader } from '@/components/shared/AppHeader';
+import { AppFooter } from '@/components/shared/AppFooter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -238,6 +239,9 @@ export default function ProfilePage() {
           </Card>
         </div>
       </main>
+
+      {/* Footer */}
+      <AppFooter />
     </div>
   );
 }
