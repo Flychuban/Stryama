@@ -75,10 +75,15 @@ function EditorContent() {
   // Track if we've already triggered auto-start to prevent duplicate execution
   const hasTriggeredAutoStart = useRef(false);
 
-  // Track which sessions we've already handled to prevent duplicate processing
-  const handledCompletionsRef = useRef(new Set<string>());
+  // Track which generations we've already handled to prevent duplicate processing
+  // CRITICAL: Use server timestamps (numbers) for deduplication, not Date.now()
+  // Server timestamps are unique per event and work correctly with session resumption
+  const handledCompletionsRef = useRef(new Set<number>());
   const handledErrorsRef = useRef(new Set<string>());
-  const handledDatabasePersistRef = useRef(new Set<string>());
+  const handledDatabasePersistRef = useRef(new Set<number>());
+
+  // Track last preview update timestamp to detect server restarts
+  const lastPreviewUpdateRef = useRef(0);
 
   // Ref to iframe for reloading on subsequent prompts
   const previewIframeRef = useRef<HTMLIFrameElement>(null);
@@ -105,20 +110,21 @@ function EditorContent() {
   useEffect(() => {
     if (!streamState.isComplete || !streamState.result) return;
 
-    const sessionId = streamState.result.sessionId;
+    const timestamp = streamState.completionTimestamp;
 
-    // Prevent duplicate handling of the same completion
-    if (handledCompletionsRef.current.has(sessionId)) {
+    // CRITICAL: Use server timestamp to prevent duplicate handling
+    // This works correctly with session resumption (sessionId is reused but timestamp is unique)
+    if (handledCompletionsRef.current.has(timestamp)) {
       return;
     }
 
-    // Mark this session as handled
-    handledCompletionsRef.current.add(sessionId);
+    // Mark this completion as handled
+    handledCompletionsRef.current.add(timestamp);
 
     const result = streamState.result; // Store in const for type safety
 
     const handleCompletion = async () => {
-      console.log('[Editor] 🎯 Handling completion for session:', sessionId);
+      console.log('[Editor] 🎯 Handling completion at:', timestamp);
 
       // Add AI message to chat
       const aiMessage: Message = {
@@ -134,9 +140,12 @@ function EditorContent() {
     };
 
     void handleCompletion();
-    // Intentionally omit startPreviewMutation from deps - mutation objects are unstable
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamState.isComplete, streamState.result?.sessionId, projectId, utils]);
+    // Using server timestamp (completionTimestamp) prevents duplicate executions
+  }, [
+    streamState.isComplete,
+    streamState.completionTimestamp,
+    streamState.result,
+  ]);
 
   // Wait for database operations to complete before refetching
   // This prevents race condition where client refetches before files are saved to DB
@@ -144,16 +153,19 @@ function EditorContent() {
     if (!streamState.isDatabasePersisted || !streamState.result) return;
     if (!projectId || !streamState.result.sandboxId) return;
 
-    const sessionId = streamState.result.sessionId;
+    const timestamp = streamState.databasePersistedTimestamp;
 
-    // Prevent duplicate handling of the same database persist event
-    if (handledDatabasePersistRef.current.has(sessionId)) {
+    // CRITICAL: Use server timestamp to prevent duplicate handling
+    // This works correctly with session resumption and avoids unstable dependencies
+    if (handledDatabasePersistRef.current.has(timestamp)) {
       return;
     }
 
-    // Mark this session as handled
-    handledDatabasePersistRef.current.add(sessionId);
-    console.log('[Editor] 💾 Database persisted for session:', sessionId);
+    // Mark this persist event as handled
+    handledDatabasePersistRef.current.add(timestamp);
+    console.log('[Editor] 💾 Database persisted at:', timestamp);
+
+    const result = streamState.result; // Capture for type safety in async function
 
     const handleDatabasePersisted = async () => {
       try {
@@ -163,10 +175,13 @@ function EditorContent() {
         );
         await refetchProject();
 
-        // Invalidate queries to ensure all components get fresh data
-        await utils.project.getById.invalidate({ id: projectId });
+        // Invalidate AI history to refresh chat (project was already refetched above)
+        // NOTE: We DON'T invalidate project.getById here to avoid race condition
+        // where invalidation triggers project loading effect before messages state updates
         await utils.ai.getHistory.invalidate({ projectId });
-        console.log('[Editor] ✅ Queries refetched and invalidated');
+        console.log(
+          '[Editor] ✅ Project refetched and chat history invalidated'
+        );
 
         // Fetch preview URL from DB
         console.log('[Editor] Fetching preview URL...');
@@ -175,28 +190,30 @@ function EditorContent() {
         });
 
         if (previewData.url) {
-          // Preview exists - Vite HMR will handle the file updates automatically
-          console.log(
-            '[Editor] Preview running, waiting for Vite HMR to rebuild...'
-          );
-          setPreviewUrl(previewData.url);
+          // Preview exists - set URL and wait for server's preview_url_updated event
+          // The server will emit this event after it restarts the preview (if needed)
+          console.log('[Editor] Preview URL from DB:', previewData.url);
+
+          // CRITICAL: Only update previewUrl if it actually changed
+          // Changing previewUrl triggers iframe src change, causing immediate reload
+          if (previewUrl !== previewData.url) {
+            console.log('[Editor] Preview URL changed, updating...');
+            setPreviewUrl(previewData.url);
+          }
           setPreviewError(null);
 
-          // Wait 8 seconds for Vite HMR to detect changes and rebuild
-          // Increased from 3s to 8s to prevent "Closed Port Error" during hot reload
-          console.log('[Editor] ⏳ Waiting for HMR to rebuild (8s)...');
-          await new Promise((resolve) => setTimeout(resolve, 8000));
-
-          // Reload iframe to show the updated content
-          console.log('[Editor] ✨ Reloading iframe with updated content...');
-          setIframeKey((prev) => prev + 1);
+          // NOTE: Iframe reload now happens in separate effect that watches for
+          // preview_url_updated event from server (see below)
+          console.log(
+            '[Editor] ⏳ Waiting for server preview_url_updated event...'
+          );
         } else {
           // No preview exists yet - start one
           console.log('[Editor] No preview found, starting new preview...');
           setIsGeneratingPreview(true);
           const previewResult = await startPreviewMutation.mutateAsync({
             projectId,
-            sandboxId: streamState.result.sandboxId!,
+            sandboxId: result.sandboxId!,
           });
           setPreviewUrl(previewResult.url);
           setPreviewError(null);
@@ -217,19 +234,50 @@ function EditorContent() {
     };
 
     void handleDatabasePersisted();
+    // Intentionally omit startPreviewMutation from deps - mutation objects are unstable
+    // Using server timestamp (databasePersistedTimestamp) prevents duplicate executions
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     streamState.isDatabasePersisted,
+    streamState.databasePersistedTimestamp,
     streamState.result,
     projectId,
     utils,
     refetchProject,
-    startPreviewMutation,
+    previewUrl,
   ]);
 
-  // REMOVED: Conflicting preview URL watcher effect
-  // This effect was causing "Closed Port Error" by reloading iframe after only 2 seconds
-  // The completion handler above already waits 8 seconds for Vite HMR to complete
-  // Keeping only the 8-second wait ensures smooth preview reload without errors
+  // Watch for server's preview_url_updated event and reload iframe
+  // This event is emitted when the server starts/restarts the preview server
+  // Waiting for this event ensures the server is ready before we reload iframe
+  useEffect(() => {
+    const timestamp = streamState.previewUpdateTimestamp;
+
+    // Skip if no preview update event yet
+    if (timestamp === 0) return;
+
+    // Skip if we've already handled this event
+    if (lastPreviewUpdateRef.current === timestamp) return;
+
+    // Mark this event as handled
+    lastPreviewUpdateRef.current = timestamp;
+
+    const handlePreviewUpdate = async () => {
+      console.log('[Editor] 🔔 Server emitted preview_url_updated event');
+      console.log('[Editor] Preview URL:', streamState.previewUrl);
+
+      // Wait for Vite HMR to detect file changes and rebuild
+      // This prevents "Closed Port Error" from reloading before Vite finishes
+      console.log('[Editor] ⏳ Waiting 8s for Vite HMR to rebuild...');
+      await new Promise((resolve) => setTimeout(resolve, 8000));
+
+      // Now reload iframe to show updated content
+      console.log('[Editor] ✨ Reloading iframe with fresh preview...');
+      setIframeKey((prev) => prev + 1);
+    };
+
+    void handlePreviewUpdate();
+  }, [streamState.previewUpdateTimestamp, streamState.previewUrl]);
 
   // Handle streaming errors - watch state directly
   useEffect(() => {
