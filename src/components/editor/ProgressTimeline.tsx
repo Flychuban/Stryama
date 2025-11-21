@@ -27,33 +27,41 @@ export function ProgressTimeline({
 }: ProgressTimelineProps) {
   const getToolDisplayName = (
     toolName: string,
-    input?: Record<string, unknown>
+    input?: Record<string, unknown>,
+    isCompleted?: boolean
   ): string => {
     // Extract actual tool name from MCP format (mcp__e2b-sandbox__E2B_Write -> E2B_Write)
-    const actualToolName = toolName.includes('__')
-      ? (toolName.split('__').pop() ?? toolName)
-      : toolName;
+    const parts = toolName.split('__');
+    const lastPart = parts.pop() ?? '';
+    const actualToolName = lastPart || toolName;
 
     switch (actualToolName) {
       case 'E2B_Write':
         const filePath = input?.file_path as string | undefined;
-        return filePath ? `Writing ${filePath}` : 'Writing files';
+        if (filePath) {
+          return isCompleted ? `Wrote ${filePath}` : `Writing ${filePath}`;
+        }
+        return isCompleted ? 'Wrote files' : 'Writing files';
       case 'E2B_Bash':
         const command = input?.command as string | undefined;
         if (command) {
           // Show first 40 characters of command
+          const prefix = isCompleted ? 'Ran' : 'Running';
           return command.length > 40
-            ? `Running: ${command.slice(0, 40)}...`
-            : `Running: ${command}`;
+            ? `${prefix}: ${command.slice(0, 40)}...`
+            : `${prefix}: ${command}`;
         }
-        return 'Running commands';
+        return isCompleted ? 'Ran commands' : 'Running commands';
       case 'E2B_Read':
         const readPath = input?.file_path as string | undefined;
-        return readPath ? `Reading ${readPath}` : 'Reading files';
+        if (readPath) {
+          return isCompleted ? `Read ${readPath}` : `Reading ${readPath}`;
+        }
+        return isCompleted ? 'Read files' : 'Reading files';
       case 'E2B_List':
-        return 'Listing files';
+        return isCompleted ? 'Listed files' : 'Listing files';
       case 'E2B_GetPreviewURL':
-        return 'Getting preview';
+        return isCompleted ? 'Got preview' : 'Getting preview';
       default:
         return actualToolName.replace('E2B_', '').replace(/_/g, ' ');
     }
@@ -92,7 +100,7 @@ export function ProgressTimeline({
   toolHistory.forEach((tool, idx) => {
     steps.push({
       key: `${tool.id}-${idx}`,
-      label: getToolDisplayName(tool.name, tool.input),
+      label: getToolDisplayName(tool.name, tool.input, true),
       status: tool.isError ? 'error' : 'completed',
     });
   });
@@ -101,7 +109,7 @@ export function ProgressTimeline({
   if (currentTool && status === 'tool_use') {
     steps.push({
       key: currentTool.id,
-      label: getToolDisplayName(currentTool.name, currentTool.input),
+      label: getToolDisplayName(currentTool.name, currentTool.input, false),
       status: 'current',
     });
   }

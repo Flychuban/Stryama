@@ -258,13 +258,19 @@ export function useAIGenerationStream(
           break;
 
         case 'tool_result':
+          // Capture input before clearing currentTool
+          const toolInput =
+            newState.currentTool?.id === event.toolUseId
+              ? newState.currentTool.input
+              : {};
+
           if (newState.currentTool?.id === event.toolUseId) {
             newState.currentTool = undefined;
           }
           newState.toolHistory.push({
             name: event.toolName,
             id: event.toolUseId,
-            input: newState.currentTool?.input ?? {},
+            input: toolInput,
             result: event.content,
             isError: event.isError,
             timestamp: event.timestamp,

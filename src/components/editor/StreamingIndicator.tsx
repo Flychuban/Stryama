@@ -159,23 +159,6 @@ export function StreamingIndicator({
     }
   };
 
-  const getSandboxProgress = (): number => {
-    switch (state.sandboxStatus) {
-      case 'creating':
-        return 20;
-      case 'created':
-        return 40;
-      case 'installing_deps':
-        return 60;
-      case 'deps_installed':
-        return 80;
-      case 'setup_complete':
-        return 100;
-      default:
-        return 0;
-    }
-  };
-
   return (
     <div
       className={`rounded-lg border bg-white p-4 shadow-sm dark:bg-gray-900 ${className}`}
@@ -202,26 +185,6 @@ export function StreamingIndicator({
               </div>
             )}
           </div>
-
-          {/* Sandbox setup progress */}
-          {state.sandboxStatus && state.sandboxStatus !== 'setup_complete' && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-blue-600 dark:text-blue-400">
-                  {state.sandboxStatus === 'creating' && 'Creating sandbox...'}
-                  {state.sandboxStatus === 'created' && 'Sandbox created'}
-                  {state.sandboxStatus === 'installing_deps' &&
-                    'Installing dependencies...'}
-                  {state.sandboxStatus === 'deps_installed' &&
-                    'Dependencies installed'}
-                </span>
-                <span className="text-xs text-gray-500">
-                  {getSandboxProgress()}%
-                </span>
-              </div>
-              <Progress value={getSandboxProgress()} className="h-2" />
-            </div>
-          )}
 
           {/* Progress timeline */}
           {(state.toolHistory.length > 0 || state.currentTool) && (
