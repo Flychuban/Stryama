@@ -29,7 +29,12 @@ export function ProgressTimeline({
     toolName: string,
     input?: Record<string, unknown>
   ): string => {
-    switch (toolName) {
+    // Extract actual tool name from MCP format (mcp__e2b-sandbox__E2B_Write -> E2B_Write)
+    const actualToolName = toolName.includes('__')
+      ? (toolName.split('__').pop() ?? toolName)
+      : toolName;
+
+    switch (actualToolName) {
       case 'E2B_Write':
         const filePath = input?.file_path as string | undefined;
         return filePath ? `Writing ${filePath}` : 'Writing files';
@@ -50,7 +55,7 @@ export function ProgressTimeline({
       case 'E2B_GetPreviewURL':
         return 'Getting preview';
       default:
-        return toolName.replace('E2B_', '').replace(/_/g, ' ');
+        return actualToolName.replace('E2B_', '').replace(/_/g, ' ');
     }
   };
 

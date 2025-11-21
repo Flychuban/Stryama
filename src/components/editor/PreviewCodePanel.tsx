@@ -56,7 +56,7 @@ export function PreviewCodePanel({
     viewMode === 'preview' &&
     !isRegeneratingPreview
   ) {
-    return <AILoadingAnimation />;
+    return <AILoadingAnimation streamState={streamState} />;
   }
 
   // Show loading state for preview server starting

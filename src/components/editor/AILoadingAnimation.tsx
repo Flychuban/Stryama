@@ -3,25 +3,86 @@
 import { useState, useEffect } from 'react';
 import { Code2, Search, Sparkles, FileCode } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { StreamState } from '~/hooks/useAIGenerationStream';
 
 const loadingSteps = [
-  { icon: Search, text: 'Reading codebase', duration: 2000 },
-  { icon: Sparkles, text: 'Analyzing requirements', duration: 2000 },
-  { icon: Code2, text: 'Generating code', duration: 3000 },
-  { icon: FileCode, text: 'Implementing changes', duration: 2000 },
+  { icon: Search, text: 'Reading codebase' },
+  { icon: Sparkles, text: 'Analyzing requirements' },
+  { icon: Code2, text: 'Generating code' },
+  { icon: FileCode, text: 'Implementing changes' },
 ];
 
-const AILoadingAnimation = () => {
+interface AILoadingAnimationProps {
+  streamState?: StreamState;
+}
+
+const AILoadingAnimation = ({ streamState }: AILoadingAnimationProps) => {
   const [currentStep, setCurrentStep] = useState(0);
 
-  useEffect(() => {
-    if (currentStep < loadingSteps.length) {
-      const timer = setTimeout(() => {
-        setCurrentStep((prev) => prev + 1);
-      }, loadingSteps[currentStep]?.duration ?? 2000);
-      return () => clearTimeout(timer);
+  // Extract current file being edited
+  const getCurrentFile = (): string => {
+    if (!streamState?.currentTool) return 'component.tsx';
+
+    const toolName = streamState.currentTool.name;
+    // Check if it's a write tool
+    if (toolName.includes('Write')) {
+      const filePath = streamState.currentTool.input.file_path as
+        | string
+        | undefined;
+      if (filePath) {
+        // Extract just the filename from the path
+        const parts = filePath.split('/');
+        return parts[parts.length - 1] ?? 'component.tsx';
+      }
     }
-  }, [currentStep]);
+
+    return 'component.tsx';
+  };
+
+  // Determine current step based on stream state
+  const getStepFromStreamState = (): number => {
+    if (!streamState) return 0;
+
+    switch (streamState.status) {
+      case 'initializing':
+        return 0; // Reading codebase
+      case 'thinking':
+        return 1; // Analyzing requirements
+      case 'tool_use':
+        // Check what tool is being used
+        if (streamState.currentTool?.name?.includes('Write')) {
+          return 3; // Implementing changes
+        }
+        return 2; // Generating code
+      case 'writing':
+      case 'executing':
+        return 3; // Implementing changes
+      case 'completing':
+      case 'completed':
+        return 3; // Stay on implementing changes when completing
+      default:
+        return 0;
+    }
+  };
+
+  // Update step based on stream state with smooth transitions
+  useEffect(() => {
+    if (streamState) {
+      const targetStep = getStepFromStreamState();
+      setCurrentStep(targetStep);
+    } else {
+      // Fallback to automatic progression if no stream state
+      if (currentStep < loadingSteps.length - 1) {
+        const timer = setTimeout(
+          () => {
+            setCurrentStep((prev) => prev + 1);
+          },
+          currentStep < 2 ? 3000 : 5000
+        ); // Slower progression for first 3 steps
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [streamState?.status, streamState?.currentTool, currentStep]);
 
   return (
     <div className="flex h-full flex-col items-center justify-center space-y-10 p-8">
@@ -39,7 +100,7 @@ const AILoadingAnimation = () => {
               <div className="inline-flex items-center gap-2 rounded-lg border border-border/30 bg-background/60 px-3 py-1">
                 <div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
                 <span className="font-mono text-xs font-medium text-foreground">
-                  component.tsx
+                  {getCurrentFile()}
                 </span>
               </div>
             </div>
