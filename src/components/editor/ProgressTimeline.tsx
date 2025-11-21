@@ -25,14 +25,26 @@ export function ProgressTimeline({
   status,
   className = '',
 }: ProgressTimelineProps) {
-  const getToolDisplayName = (toolName: string): string => {
+  const getToolDisplayName = (
+    toolName: string,
+    input?: Record<string, unknown>
+  ): string => {
     switch (toolName) {
       case 'E2B_Write':
-        return 'Writing files';
+        const filePath = input?.file_path as string | undefined;
+        return filePath ? `Writing ${filePath}` : 'Writing files';
       case 'E2B_Bash':
+        const command = input?.command as string | undefined;
+        if (command) {
+          // Show first 40 characters of command
+          return command.length > 40
+            ? `Running: ${command.slice(0, 40)}...`
+            : `Running: ${command}`;
+        }
         return 'Running commands';
       case 'E2B_Read':
-        return 'Reading files';
+        const readPath = input?.file_path as string | undefined;
+        return readPath ? `Reading ${readPath}` : 'Reading files';
       case 'E2B_List':
         return 'Listing files';
       case 'E2B_GetPreviewURL':
@@ -75,7 +87,7 @@ export function ProgressTimeline({
   toolHistory.forEach((tool, idx) => {
     steps.push({
       key: `${tool.id}-${idx}`,
-      label: getToolDisplayName(tool.name),
+      label: getToolDisplayName(tool.name, tool.input),
       status: tool.isError ? 'error' : 'completed',
     });
   });
@@ -84,7 +96,7 @@ export function ProgressTimeline({
   if (currentTool && status === 'tool_use') {
     steps.push({
       key: currentTool.id,
-      label: getToolDisplayName(currentTool.name),
+      label: getToolDisplayName(currentTool.name, currentTool.input),
       status: 'current',
     });
   }

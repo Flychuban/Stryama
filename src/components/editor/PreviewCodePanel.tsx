@@ -5,7 +5,7 @@ import CodeView from './CodeView';
 import type { DeviceMode, ViewMode } from './ControlBar';
 import type { RefObject } from 'react';
 import type { StreamState } from '~/hooks/useAIGenerationStream';
-import { GenerationPreview } from './GenerationPreview';
+import AILoadingAnimation from './AILoadingAnimation';
 
 export type ProjectFile = {
   id: string;
@@ -50,20 +50,13 @@ export function PreviewCodePanel({
 }: PreviewCodePanelProps) {
   const currentFile = projectFiles[selectedFileIndex] ?? null;
 
-  // Show AI generation animation when streaming (but not if already has preview)
+  // Show AI generation animation when streaming
   if (
     streamState?.isStreaming &&
-    !previewUrl &&
     viewMode === 'preview' &&
     !isRegeneratingPreview
   ) {
-    return (
-      <GenerationPreview
-        status={streamState.status}
-        toolHistory={streamState.toolHistory}
-        currentTool={streamState.currentTool}
-      />
-    );
+    return <AILoadingAnimation />;
   }
 
   // Show loading state for preview server starting
