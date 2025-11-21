@@ -3,25 +3,144 @@
 import { useState, useEffect } from 'react';
 import { Code2, Search, Sparkles, FileCode } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { StreamState } from '~/hooks/useAIGenerationStream';
 
 const loadingSteps = [
-  { icon: Search, text: 'Reading codebase', duration: 2000 },
-  { icon: Sparkles, text: 'Analyzing requirements', duration: 2000 },
-  { icon: Code2, text: 'Generating code', duration: 3000 },
-  { icon: FileCode, text: 'Implementing changes', duration: 2000 },
+  { icon: Search, text: 'Reading codebase' },
+  { icon: Sparkles, text: 'Analyzing requirements' },
+  { icon: Code2, text: 'Generating code' },
+  { icon: FileCode, text: 'Implementing changes' },
 ];
 
-const AILoadingAnimation = () => {
-  const [currentStep, setCurrentStep] = useState(0);
+// Minimum duration for each step (in milliseconds)
+const STEP_MIN_DURATIONS = {
+  0: 4000, // Reading codebase: 4 seconds
+  1: 2000, // Analyzing requirements: 2 seconds
+  2: 5500, // Generating code: 5.5 seconds
+  3: 0, // Implementing changes: no minimum, stays until done
+} as const;
 
-  useEffect(() => {
-    if (currentStep < loadingSteps.length) {
-      const timer = setTimeout(() => {
-        setCurrentStep((prev) => prev + 1);
-      }, loadingSteps[currentStep]?.duration ?? 2000);
-      return () => clearTimeout(timer);
+interface AILoadingAnimationProps {
+  streamState?: StreamState;
+}
+
+const AILoadingAnimation = ({ streamState }: AILoadingAnimationProps) => {
+  const [currentStep, setCurrentStep] = useState(0);
+  const [lastStepChangeTime, setLastStepChangeTime] = useState(Date.now());
+
+  // Extract current file being edited
+  const getCurrentFile = (): string => {
+    // Check currentTool first for the file being written right now
+    if (streamState?.currentTool) {
+      const toolName = streamState.currentTool.name;
+      // Check if it's a write tool
+      if (toolName.includes('Write')) {
+        const filePath = streamState.currentTool.input.file_path as
+          | string
+          | undefined;
+        if (filePath) {
+          // Extract just the filename from the path
+          const parts = filePath.split('/');
+          return parts[parts.length - 1] ?? 'component.tsx';
+        }
+      }
     }
-  }, [currentStep]);
+
+    // Fallback to toolHistory for the most recent file write
+    if (streamState?.toolHistory && streamState.toolHistory.length > 0) {
+      // Get the most recent tool from history
+      const recentTools = [...streamState.toolHistory].reverse();
+      for (const tool of recentTools) {
+        if (tool.name.includes('Write')) {
+          const filePath = tool.input.file_path as string | undefined;
+          if (filePath) {
+            // Extract just the filename from the path
+            const parts = filePath.split('/');
+            return parts[parts.length - 1] ?? 'component.tsx';
+          }
+        }
+      }
+    }
+
+    return 'component.tsx';
+  };
+
+  // Determine current step based on stream state
+  const getStepFromStreamState = (): number => {
+    if (!streamState) return 0;
+
+    switch (streamState.status) {
+      case 'initializing':
+        return 0; // Reading codebase
+      case 'thinking':
+        return 1; // Analyzing requirements
+      case 'tool_use':
+        // Check what tool is being used
+        if (streamState.currentTool?.name?.includes('Write')) {
+          return 3; // Implementing changes
+        }
+        return 2; // Generating code
+      case 'writing':
+      case 'executing':
+        return 3; // Implementing changes
+      case 'completing':
+      case 'completed':
+        return 3; // Stay on implementing changes when completing
+      default:
+        return 0;
+    }
+  };
+
+  // Update step based on stream state with smooth transitions and minimum durations
+  useEffect(() => {
+    if (streamState) {
+      const targetStep = getStepFromStreamState();
+
+      // Only allow forward progression (never go backwards)
+      if (targetStep <= currentStep) {
+        return;
+      }
+
+      // Always move to the next step sequentially (never skip steps)
+      const nextStep = currentStep + 1;
+
+      // Calculate time elapsed since last step change
+      const timeElapsed = Date.now() - lastStepChangeTime;
+      const minDuration =
+        STEP_MIN_DURATIONS[currentStep as keyof typeof STEP_MIN_DURATIONS] ?? 0;
+
+      // If minimum duration hasn't passed, schedule the change for later
+      if (timeElapsed < minDuration) {
+        const remainingTime = minDuration - timeElapsed;
+        const timer = setTimeout(() => {
+          setCurrentStep(nextStep);
+          setLastStepChangeTime(Date.now());
+        }, remainingTime);
+        return () => clearTimeout(timer);
+      } else {
+        // Minimum duration has passed, move to next step immediately
+        setCurrentStep(nextStep);
+        setLastStepChangeTime(Date.now());
+      }
+    } else {
+      // Fallback to automatic progression if no stream state
+      if (currentStep < loadingSteps.length - 1) {
+        const timer = setTimeout(
+          () => {
+            setCurrentStep((prev) => prev + 1);
+            setLastStepChangeTime(Date.now());
+          },
+          currentStep < 2 ? 3000 : 5000
+        ); // Slower progression for first 3 steps
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [
+    streamState?.status,
+    streamState?.currentTool,
+    currentStep,
+    lastStepChangeTime,
+  ]);
 
   return (
     <div className="flex h-full flex-col items-center justify-center space-y-10 p-8">
@@ -39,7 +158,7 @@ const AILoadingAnimation = () => {
               <div className="inline-flex items-center gap-2 rounded-lg border border-border/30 bg-background/60 px-3 py-1">
                 <div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
                 <span className="font-mono text-xs font-medium text-foreground">
-                  component.tsx
+                  {getCurrentFile()}
                 </span>
               </div>
             </div>

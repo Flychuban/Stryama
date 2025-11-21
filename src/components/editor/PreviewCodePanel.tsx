@@ -4,6 +4,8 @@ import { cn } from '@/lib/utils';
 import CodeView from './CodeView';
 import type { DeviceMode, ViewMode } from './ControlBar';
 import type { RefObject } from 'react';
+import type { StreamState } from '~/hooks/useAIGenerationStream';
+import AILoadingAnimation from './AILoadingAnimation';
 
 export type ProjectFile = {
   id: string;
@@ -26,6 +28,7 @@ interface PreviewCodePanelProps {
   isMobile?: boolean;
   iframeRef?: RefObject<HTMLIFrameElement | null>;
   iframeKey?: number;
+  streamState?: StreamState;
 }
 
 export function PreviewCodePanel({
@@ -43,10 +46,20 @@ export function PreviewCodePanel({
   isMobile = false,
   iframeRef,
   iframeKey = 0,
+  streamState,
 }: PreviewCodePanelProps) {
   const currentFile = projectFiles[selectedFileIndex] ?? null;
 
-  // Show loading state
+  // Show AI generation animation when streaming
+  if (
+    streamState?.isStreaming &&
+    viewMode === 'preview' &&
+    !isRegeneratingPreview
+  ) {
+    return <AILoadingAnimation streamState={streamState} />;
+  }
+
+  // Show loading state for preview server starting
   if (isGeneratingPreview || isRegeneratingPreview) {
     return (
       <div className="flex h-full items-center justify-center">
