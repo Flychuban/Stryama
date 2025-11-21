@@ -9,9 +9,10 @@ export const createQueryClient = () =>
   new QueryClient({
     defaultOptions: {
       queries: {
-        // With SSR, we usually want to set some default staleTime
-        // above 0 to avoid refetching immediately on the client
-        staleTime: 30 * 1000,
+        // CRITICAL: Set staleTime to 0 to allow immediate refetches after invalidation
+        // This fixes the race condition where AI generation saves files to DB but UI doesn't update
+        // Without this, queries marked as "stale" via invalidate() won't refetch for 30 seconds
+        staleTime: 0,
         // Disable automatic refetching on window focus to prevent auth race conditions
         // When React Query refetches stale queries, Clerk's auth tokens may be expired
         refetchOnWindowFocus: false,

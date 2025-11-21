@@ -1157,6 +1157,19 @@ export const aiRouter = createTRPCRouter({
                 console.log(
                   `[AI Stream] ✅ ========== DATABASE SAVE COMPLETE ==========`
                 );
+
+                // CRITICAL: Emit database_persisted event to signal client that all DB operations are complete
+                // This prevents race condition where client refetches before files are saved to DB
+                console.log(
+                  `[AI Stream] 📡 Emitting database_persisted event to client`
+                );
+                emit.next({
+                  type: 'database_persisted',
+                  sessionId: completionResult.sessionId,
+                  projectId,
+                  timestamp: Date.now(),
+                  message: 'All database operations complete - safe to refetch',
+                });
               } catch (dbError) {
                 console.error(
                   `[AI Stream] ❌ ========== DATABASE ERROR ==========`

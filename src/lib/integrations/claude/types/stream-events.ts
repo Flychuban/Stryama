@@ -148,6 +148,19 @@ export type StreamPreviewEvent = {
 };
 
 /**
+ * Database persisted event - All database operations complete
+ * Emitted when files, session, and generation data are saved to DB
+ * Signals that client can safely refetch to get updated data
+ */
+export type StreamDatabasePersistedEvent = {
+  type: 'database_persisted';
+  sessionId?: string;
+  projectId: string;
+  message?: string;
+  timestamp: number;
+};
+
+/**
  * Union type of all stream events
  */
 export type StreamEvent =
@@ -161,7 +174,8 @@ export type StreamEvent =
   | StreamErrorEvent
   | StreamSessionInitEvent
   | StreamSandboxEvent
-  | StreamPreviewEvent;
+  | StreamPreviewEvent
+  | StreamDatabasePersistedEvent;
 
 /**
  * Stream event callback type

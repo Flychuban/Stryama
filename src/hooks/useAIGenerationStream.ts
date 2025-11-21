@@ -89,6 +89,7 @@ export interface StreamState {
   isStreaming: boolean;
   isComplete: boolean;
   hasError: boolean;
+  isDatabasePersisted: boolean; // True when server has saved all data to DB
 }
 
 interface UseAIGenerationStreamOptions {
@@ -115,6 +116,7 @@ export function useAIGenerationStream(
     isStreaming: false,
     isComplete: false,
     hasError: false,
+    isDatabasePersisted: false,
   });
 
   const [generationId, setGenerationId] = useState<string | null>(null);
@@ -300,6 +302,13 @@ export function useAIGenerationStream(
           newState.totalCost = event.result.totalCost;
           break;
 
+        case 'database_persisted':
+          console.log(
+            '[Stream] Database operations complete - safe to refetch'
+          );
+          newState.isDatabasePersisted = true;
+          break;
+
         case 'error':
           newState.status = 'error';
           newState.hasError = true;
@@ -332,6 +341,7 @@ export function useAIGenerationStream(
         isStreaming: true,
         isComplete: false,
         hasError: false,
+        isDatabasePersisted: false,
       });
 
       // Phase 1: Initialize generation with prompt
@@ -407,6 +417,7 @@ export function useAIGenerationStream(
       isStreaming: false,
       isComplete: false,
       hasError: false,
+      isDatabasePersisted: false,
     });
   }, [cancel]);
 

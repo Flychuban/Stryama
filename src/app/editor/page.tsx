@@ -78,6 +78,7 @@ function EditorContent() {
   // Track which sessions we've already handled to prevent duplicate processing
   const handledCompletionsRef = useRef(new Set<string>());
   const handledErrorsRef = useRef(new Set<string>());
+  const handledDatabasePersistRef = useRef(new Set<string>());
 
   // Ref to iframe for reloading on subsequent prompts
   const previewIframeRef = useRef<HTMLIFrameElement>(null);
@@ -117,6 +118,8 @@ function EditorContent() {
     const result = streamState.result; // Store in const for type safety
 
     const handleCompletion = async () => {
+      console.log('[Editor] 🎯 Handling completion for session:', sessionId);
+
       // Add AI message to chat
       const aiMessage: Message = {
         role: 'assistant',
@@ -125,60 +128,9 @@ function EditorContent() {
       };
       setMessages((prev) => [...prev, aiMessage]);
 
-      // Refetch project files and start/refresh preview
-      if (projectId && result.sandboxId) {
-        try {
-          // IMPORTANT: Refetch project to get updated files and trigger re-render
-          // This is safe now because the project loading effect won't reload messages
-          // when messages.length > 0
-          await refetchProject();
-
-          // Fetch preview URL from DB
-          console.log('[Editor] Fetching preview URL...');
-          const previewData = await utils.sandbox.getPreviewUrl.fetch({
-            projectId,
-          });
-
-          if (previewData.url) {
-            // Preview exists - Vite HMR will handle the file updates automatically
-            console.log(
-              '[Editor] Preview running, waiting for Vite HMR to rebuild...'
-            );
-            setPreviewUrl(previewData.url);
-            setPreviewError(null);
-
-            // Wait 3 seconds for Vite HMR to detect changes and rebuild
-            // (HMR is already working - we just need to give it time to rebuild)
-            await new Promise((resolve) => setTimeout(resolve, 3000));
-
-            // Reload iframe to show the updated content
-            console.log('[Editor] Reloading iframe with updated content...');
-            setIframeKey((prev) => prev + 1);
-          } else {
-            // No preview exists yet - start one
-            console.log('[Editor] No preview found, starting new preview...');
-            setIsGeneratingPreview(true);
-            const previewResult = await startPreviewMutation.mutateAsync({
-              projectId,
-              sandboxId: result.sandboxId,
-            });
-            setPreviewUrl(previewResult.url);
-            setPreviewError(null);
-          }
-        } catch (error) {
-          console.error('[Editor] Failed to start preview server', error);
-          const errorMessage =
-            error instanceof Error
-              ? error.message
-              : 'Unable to start preview server';
-          setPreviewError(
-            `${errorMessage}. Try clicking "Regenerate" to restart the preview.`
-          );
-          setPreviewUrl(null);
-        } finally {
-          setIsGeneratingPreview(false);
-        }
-      }
+      // NOTE: Refetch and invalidation now happens in separate effect
+      // that waits for isDatabasePersisted flag to prevent race condition
+      console.log('[Editor] ⏳ Waiting for database operations to complete...');
     };
 
     void handleCompletion();
@@ -186,26 +138,98 @@ function EditorContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamState.isComplete, streamState.result?.sessionId, projectId, utils]);
 
-  // Watch for preview URL updates from stream and auto-reload iframe
+  // Wait for database operations to complete before refetching
+  // This prevents race condition where client refetches before files are saved to DB
   useEffect(() => {
-    if (!streamState.previewUrl) return;
+    if (!streamState.isDatabasePersisted || !streamState.result) return;
+    if (!projectId || !streamState.result.sandboxId) return;
 
-    console.log(
-      '[Editor] Preview URL updated from stream:',
-      streamState.previewUrl
-    );
-    setPreviewUrl(streamState.previewUrl);
-    setPreviewError(null);
+    const sessionId = streamState.result.sessionId;
 
-    // Wait 2 seconds for server to be fully ready and stable
-    // This is especially important after server restart
-    const timer = setTimeout(() => {
-      console.log('[Editor] Auto-reloading iframe with new preview URL');
-      setIframeKey((prev) => prev + 1);
-    }, 2000);
+    // Prevent duplicate handling of the same database persist event
+    if (handledDatabasePersistRef.current.has(sessionId)) {
+      return;
+    }
 
-    return () => clearTimeout(timer);
-  }, [streamState.previewUrl]);
+    // Mark this session as handled
+    handledDatabasePersistRef.current.add(sessionId);
+    console.log('[Editor] 💾 Database persisted for session:', sessionId);
+
+    const handleDatabasePersisted = async () => {
+      try {
+        // CRITICAL: Now that database operations are complete, refetch project data
+        console.log(
+          '[Editor] 🔄 Refetching project with fresh data from DB...'
+        );
+        await refetchProject();
+
+        // Invalidate queries to ensure all components get fresh data
+        await utils.project.getById.invalidate({ id: projectId });
+        await utils.ai.getHistory.invalidate({ projectId });
+        console.log('[Editor] ✅ Queries refetched and invalidated');
+
+        // Fetch preview URL from DB
+        console.log('[Editor] Fetching preview URL...');
+        const previewData = await utils.sandbox.getPreviewUrl.fetch({
+          projectId,
+        });
+
+        if (previewData.url) {
+          // Preview exists - Vite HMR will handle the file updates automatically
+          console.log(
+            '[Editor] Preview running, waiting for Vite HMR to rebuild...'
+          );
+          setPreviewUrl(previewData.url);
+          setPreviewError(null);
+
+          // Wait 8 seconds for Vite HMR to detect changes and rebuild
+          // Increased from 3s to 8s to prevent "Closed Port Error" during hot reload
+          console.log('[Editor] ⏳ Waiting for HMR to rebuild (8s)...');
+          await new Promise((resolve) => setTimeout(resolve, 8000));
+
+          // Reload iframe to show the updated content
+          console.log('[Editor] ✨ Reloading iframe with updated content...');
+          setIframeKey((prev) => prev + 1);
+        } else {
+          // No preview exists yet - start one
+          console.log('[Editor] No preview found, starting new preview...');
+          setIsGeneratingPreview(true);
+          const previewResult = await startPreviewMutation.mutateAsync({
+            projectId,
+            sandboxId: streamState.result.sandboxId!,
+          });
+          setPreviewUrl(previewResult.url);
+          setPreviewError(null);
+        }
+      } catch (error) {
+        console.error('[Editor] Failed to update after DB persist', error);
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : 'Unable to start preview server';
+        setPreviewError(
+          `${errorMessage}. Try clicking "Regenerate" to restart the preview.`
+        );
+        setPreviewUrl(null);
+      } finally {
+        setIsGeneratingPreview(false);
+      }
+    };
+
+    void handleDatabasePersisted();
+  }, [
+    streamState.isDatabasePersisted,
+    streamState.result,
+    projectId,
+    utils,
+    refetchProject,
+    startPreviewMutation,
+  ]);
+
+  // REMOVED: Conflicting preview URL watcher effect
+  // This effect was causing "Closed Port Error" by reloading iframe after only 2 seconds
+  // The completion handler above already waits 8 seconds for Vite HMR to complete
+  // Keeping only the 8-second wait ensures smooth preview reload without errors
 
   // Handle streaming errors - watch state directly
   useEffect(() => {
