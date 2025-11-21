@@ -8,7 +8,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Progress } from '~/components/ui/progress';
 import type { StreamState } from '~/hooks/useAIGenerationStream';
+import { FileWritePreview } from './FileWritePreview';
+import { CommandOutput } from './CommandOutput';
+import { ProgressTimeline } from './ProgressTimeline';
 
 interface StreamingIndicatorProps {
   state: StreamState;
@@ -101,29 +105,51 @@ export function StreamingIndicator({
 
     switch (name) {
       case 'E2B_Write':
+        const filePath = input.file_path as string;
+        const content = input.content as string;
+
+        if (filePath && content) {
+          return (
+            <div className="mt-3">
+              <FileWritePreview filePath={filePath} content={content} />
+            </div>
+          );
+        }
         return (
           <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
             Writing:{' '}
             <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">
-              {input.file_path as string}
+              {filePath}
             </code>
           </div>
         );
+
       case 'E2B_Bash':
+        const command = input.command as string;
+
+        // Try to get result from tool history if this tool has completed
+        const toolResult = state.toolHistory.find(
+          (t) => t.id === state.currentTool?.id
+        );
+
         return (
-          <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            Running:{' '}
-            <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">
-              {input.command as string}
-            </code>
+          <div className="mt-3">
+            <CommandOutput
+              command={command}
+              output={toolResult?.result}
+              isError={toolResult?.isError}
+              isRunning={!toolResult}
+            />
           </div>
         );
+
       case 'E2B_GetPreviewURL':
         return (
           <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            Generating preview URL
+            Generating preview URL...
           </div>
         );
+
       default:
         return (
           <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
@@ -133,78 +159,112 @@ export function StreamingIndicator({
     }
   };
 
+  const getSandboxProgress = (): number => {
+    switch (state.sandboxStatus) {
+      case 'creating':
+        return 20;
+      case 'created':
+        return 40;
+      case 'installing_deps':
+        return 60;
+      case 'deps_installed':
+        return 80;
+      case 'setup_complete':
+        return 100;
+      default:
+        return 0;
+    }
+  };
+
   return (
     <div
-      className={`rounded-lg border bg-white p-4 dark:bg-gray-900 ${className}`}
+      className={`rounded-lg border bg-white p-4 shadow-sm dark:bg-gray-900 ${className}`}
     >
       <div className="flex items-start gap-3">
         <div className="text-2xl" aria-label={state.status}>
           {getStatusIcon()}
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1 space-y-4">
+          {/* Status header */}
+          <div>
             <p className="font-medium text-gray-900 dark:text-gray-100">
               {getStatusText()}
               {state.isStreaming && (
                 <span className="inline-block w-8 text-left">{dots}</span>
               )}
             </p>
+
+            {/* Token usage */}
+            {state.tokensUsed > 0 && (
+              <div className="mt-1 text-xs text-gray-500 dark:text-gray-500">
+                {state.tokensUsed.toLocaleString()} tokens
+                {state.totalCost > 0 && ` • $${state.totalCost.toFixed(4)}`}
+              </div>
+            )}
           </div>
 
-          {/* Tool details */}
-          {getToolDetails()}
-
-          {/* Sandbox status */}
+          {/* Sandbox setup progress */}
           {state.sandboxStatus && state.sandboxStatus !== 'setup_complete' && (
-            <div className="mt-2 text-sm text-blue-600 dark:text-blue-400">
-              {state.sandboxStatus === 'creating' && 'Creating sandbox...'}
-              {state.sandboxStatus === 'created' && 'Sandbox created'}
-              {state.sandboxStatus === 'installing_deps' &&
-                'Installing dependencies...'}
-              {state.sandboxStatus === 'deps_installed' &&
-                'Dependencies installed'}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-blue-600 dark:text-blue-400">
+                  {state.sandboxStatus === 'creating' && 'Creating sandbox...'}
+                  {state.sandboxStatus === 'created' && 'Sandbox created'}
+                  {state.sandboxStatus === 'installing_deps' &&
+                    'Installing dependencies...'}
+                  {state.sandboxStatus === 'deps_installed' &&
+                    'Dependencies installed'}
+                </span>
+                <span className="text-xs text-gray-500">
+                  {getSandboxProgress()}%
+                </span>
+              </div>
+              <Progress value={getSandboxProgress()} className="h-2" />
             </div>
           )}
 
-          {/* Token usage */}
-          {state.tokensUsed > 0 && (
-            <div className="mt-2 text-xs text-gray-500 dark:text-gray-500">
-              {state.tokensUsed.toLocaleString()} tokens
-              {state.totalCost > 0 && ` • $${state.totalCost.toFixed(4)}`}
-            </div>
+          {/* Progress timeline */}
+          {(state.toolHistory.length > 0 || state.currentTool) && (
+            <ProgressTimeline
+              toolHistory={state.toolHistory}
+              currentTool={state.currentTool}
+              sandboxStatus={state.sandboxStatus}
+              status={state.status}
+            />
           )}
 
-          {/* Tool history summary */}
-          {state.toolHistory.length > 0 && state.isComplete && (
-            <div className="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700">
-              <p className="mb-2 text-xs text-gray-500 dark:text-gray-500">
-                Tools used: {state.toolHistory.length}
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {state.toolHistory.slice(0, 5).map((tool, idx) => (
-                  <span
-                    key={`${tool.id}-${idx}`}
-                    className={`rounded px-2 py-1 text-xs ${
-                      tool.isError
-                        ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300'
-                        : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-                    }`}
-                  >
-                    {tool.name}
-                  </span>
-                ))}
-                {state.toolHistory.length > 5 && (
-                  <span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-                    +{state.toolHistory.length - 5} more
-                  </span>
-                )}
+          {/* Thinking content (prominent display) */}
+          {state.thinking && state.isStreaming && (
+            <div className="rounded-lg border border-purple-200 bg-purple-50 p-3 dark:border-purple-800 dark:bg-purple-900/20">
+              <div className="mb-1 flex items-center gap-2">
+                <span className="text-xs font-medium text-purple-700 dark:text-purple-300">
+                  💭 Thinking
+                </span>
+              </div>
+              <div className="max-h-32 overflow-y-auto text-sm text-purple-900 dark:text-purple-100">
+                {state.thinking}
               </div>
             </div>
           )}
 
+          {/* Accumulated content (AI explanation) */}
+          {state.accumulatedContent && state.isStreaming && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
+              <div className="mb-1 text-xs font-medium text-blue-700 dark:text-blue-300">
+                📝 AI Response
+              </div>
+              <div className="max-h-32 overflow-y-auto text-sm text-blue-900 dark:text-blue-100">
+                {state.accumulatedContent}
+              </div>
+            </div>
+          )}
+
+          {/* Tool details */}
+          {getToolDetails()}
+
           {/* Error details */}
           {state.hasError && state.error && (
-            <div className="mt-3 rounded border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
+            <div className="rounded border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
               <p className="text-sm font-medium text-red-800 dark:text-red-300">
                 {state.error.message}
               </p>
@@ -216,16 +276,26 @@ export function StreamingIndicator({
             </div>
           )}
 
-          {/* Thinking content (if available) */}
-          {state.thinking && (
-            <details className="mt-3">
-              <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300">
-                View extended thinking
-              </summary>
-              <div className="mt-2 max-h-40 overflow-y-auto rounded bg-gray-50 p-2 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                {state.thinking}
+          {/* Completion summary */}
+          {state.isComplete && state.result && (
+            <div className="rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-900/20">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-sm font-medium text-green-800 dark:text-green-300">
+                  ✅ Generation Complete
+                </span>
               </div>
-            </details>
+              <div className="space-y-1 text-xs text-green-700 dark:text-green-400">
+                {state.result.files && (
+                  <div>📁 {state.result.files.length} files created</div>
+                )}
+                {state.toolHistory.length > 0 && (
+                  <div>🔧 {state.toolHistory.length} tools used</div>
+                )}
+                <div>
+                  ⏱️ Duration: {(state.result.duration / 1000).toFixed(1)}s
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>

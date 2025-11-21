@@ -179,6 +179,27 @@ button {
   animation: gradient-shift 15s ease infinite;
 }
 
+/* Animation delay utilities */
+.animation-delay-100 {
+  animation-delay: 100ms;
+}
+
+.animation-delay-200 {
+  animation-delay: 200ms;
+}
+
+.animation-delay-300 {
+  animation-delay: 300ms;
+}
+
+.animation-delay-400 {
+  animation-delay: 400ms;
+}
+
+.animation-delay-500 {
+  animation-delay: 500ms;
+}
+
 /* Syntax Highlighting - GitHub Dark Theme with Purple Accents */
 .hljs {
   display: block;

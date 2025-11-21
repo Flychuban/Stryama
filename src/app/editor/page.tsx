@@ -593,6 +593,7 @@ function EditorContent() {
                   onRegeneratePreview={handleRegeneratePreview}
                   iframeRef={previewIframeRef}
                   iframeKey={iframeKey}
+                  streamState={streamState}
                 />
               </div>
             </Panel>
