@@ -28,8 +28,8 @@ import {
 
 const HEALTH_CHECK_CONFIG = {
   INTERVAL_MS: 2000,
-  MAX_TIMEOUT_MS: 4000, // 2 attempts × 2000ms = 4 seconds max
-  MAX_ATTEMPTS: 2, // Reduced from 15 to 2 for faster feedback
+  MAX_TIMEOUT_MS: 30000, // 15 attempts × 2000ms = 30 seconds max (enough for Vite compilation + HMR setup)
+  MAX_ATTEMPTS: 15, // Increased to wait for Vite to fully compile and serve content (can take 10-15 seconds for larger projects)
 } as const;
 
 /**
@@ -107,14 +107,83 @@ if (typeof setInterval !== 'undefined' && typeof process !== 'undefined') {
   }
 }
 
+/**
+ * Check if preview server is healthy AND serving actual Vite content
+ * This prevents false positives where port is open but Vite is still compiling
+ *
+ * @param url - Preview URL to check
+ * @returns true if server is responding with valid Vite HTML content, false otherwise
+ */
 export async function isPreviewHealthy(url: string): Promise<boolean> {
   try {
+    // Use GET instead of HEAD to verify actual content is being served
     const response = await fetch(url, {
-      method: 'HEAD',
-      signal: AbortSignal.timeout(5000), // 5 second timeout per request
+      method: 'GET',
+      signal: AbortSignal.timeout(8000), // 8 second timeout per request (increased from 5s for slower compilation)
     });
-    return response.ok;
-  } catch {
+
+    // Check if response is successful
+    if (!response.ok) {
+      return false;
+    }
+
+    // Verify we're getting HTML content, not just any response
+    const contentType = response.headers.get('content-type');
+    if (!contentType?.includes('text/html')) {
+      console.log(
+        `[Preview Health] ❌ Wrong content type: ${contentType ?? 'none'} (expected text/html)`
+      );
+      return false;
+    }
+
+    // Read the HTML content to verify it's actually Vite-generated
+    const html = await response.text();
+
+    // Check for E2B error page markers (indicates service not ready)
+    const isE2BError =
+      html.includes('Closed Port Error') ||
+      html.includes('no service running on port') ||
+      html.includes('Connection refused on port');
+
+    if (isE2BError) {
+      console.log(
+        `[Preview Health] ❌ E2B error page detected - Vite not ready yet`
+      );
+      return false;
+    }
+
+    // Check for Vite-specific markers that indicate proper HTML is being served
+    // Look for common React+Vite patterns
+    const hasRootDiv = html.includes('<div id="root">');
+    const hasModuleScript = html.includes('type="module"');
+    const hasSrcMain =
+      html.includes('src/main') ||
+      html.includes('/src/main') ||
+      html.includes('src="./main');
+
+    // Vite HTML should have at least root div and module script
+    const isViteContent = hasRootDiv && hasModuleScript;
+
+    if (!isViteContent) {
+      console.log(
+        `[Preview Health] ❌ Not valid Vite content (root: ${hasRootDiv}, module: ${hasModuleScript}, main: ${hasSrcMain})`
+      );
+      // Log first 500 chars of HTML for debugging
+      console.log(
+        `[Preview Health] HTML preview: ${html.substring(0, 500)}...`
+      );
+      return false;
+    }
+
+    console.log(
+      `[Preview Health] ✅ Valid Vite content detected (HTML with root div + module script)`
+    );
+    return true;
+  } catch (error) {
+    // Log error for debugging but return false
+    if (error instanceof Error) {
+      console.log(`[Preview Health] ❌ Health check failed: ${error.message}`);
+    }
     return false;
   }
 }

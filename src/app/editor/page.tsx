@@ -22,12 +22,52 @@ import { MobileEditorTabs } from '@/components/editor/MobileEditorTabs';
 import { downloadProjectAsZip } from '@/lib/utils/download-project';
 import { FeedbackButton } from '@/components/feedback/FeedbackButton';
 
+/**
+ * Check if preview server is healthy AND serving actual Vite content
+ * This prevents false positives where port is open but Vite is still compiling
+ */
 const checkPreviewHealth = async (url: string): Promise<boolean> => {
   try {
-    await fetch(url, {
-      method: 'HEAD',
-      signal: AbortSignal.timeout(3000),
+    // Use GET instead of HEAD to verify actual content is being served
+    const response = await fetch(url, {
+      method: 'GET',
+      signal: AbortSignal.timeout(8000),
     });
+
+    if (!response.ok) {
+      return false;
+    }
+
+    // Verify we're getting HTML content
+    const contentType = response.headers.get('content-type');
+    if (!contentType?.includes('text/html')) {
+      return false;
+    }
+
+    // Read HTML to verify it's Vite content (not E2B error page)
+    const html = await response.text();
+
+    // Check for E2B error page markers
+    const isE2BError =
+      html.includes('Closed Port Error') ||
+      html.includes('no service running on port') ||
+      html.includes('Connection refused on port');
+
+    if (isE2BError) {
+      console.log('[Preview Health] E2B error page detected - Vite not ready');
+      return false;
+    }
+
+    // Verify Vite-specific markers are present
+    const hasRootDiv = html.includes('<div id="root">');
+    const hasModuleScript = html.includes('type="module"');
+    const isViteContent = hasRootDiv && hasModuleScript;
+
+    if (!isViteContent) {
+      console.log('[Preview Health] Not valid Vite content yet');
+      return false;
+    }
+
     return true;
   } catch {
     return false;
@@ -62,6 +102,7 @@ function EditorContent() {
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
   const [isRegeneratingPreview, setIsRegeneratingPreview] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
+  const [isWaitingForVite, setIsWaitingForVite] = useState(false);
 
   // Persist chat panel width in localStorage
   const [chatPanelSize, setChatPanelSize] = useLocalStorage<number>(
@@ -242,10 +283,58 @@ function EditorContent() {
         streamState.skipPreviewReload ?? false
       );
 
+      if (!streamState.previewUrl) return;
+
+      // PHASE 2: Add client-side polling to verify Vite is truly ready
+      // Server health check ensures port is open and serving content,
+      // but client-side polling adds extra safety for edge cases
+      console.log('[Editor] 🔍 Polling preview URL to verify Vite is ready...');
+      setIsWaitingForVite(true);
+
+      const maxAttempts = 15; // 15 attempts × 2 seconds = 30 seconds max
+      const pollInterval = 2000; // 2 seconds between attempts
+      let attempts = 0;
+      let isReady = false;
+
+      while (attempts < maxAttempts && !isReady) {
+        attempts++;
+        console.log(
+          `[Editor] Poll attempt ${attempts}/${maxAttempts} for ${streamState.previewUrl}`
+        );
+
+        isReady = await checkPreviewHealth(streamState.previewUrl);
+
+        if (isReady) {
+          console.log(
+            `[Editor] ✅ Vite ready after ${attempts} attempts (${(attempts * pollInterval) / 1000}s)`
+          );
+          break;
+        }
+
+        if (attempts < maxAttempts) {
+          console.log(
+            `[Editor] ⏳ Vite not ready, waiting ${pollInterval}ms...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        }
+      }
+
+      setIsWaitingForVite(false);
+
+      if (!isReady) {
+        console.warn(
+          `[Editor] ⚠️ Vite did not become ready after ${maxAttempts} attempts (${(maxAttempts * pollInterval) / 1000}s)`
+        );
+        setPreviewError(
+          'Preview server is taking longer than expected to start. Please wait a moment and try refreshing.'
+        );
+        return;
+      }
+
       // CRITICAL: Set preview URL from stream state
-      // This triggers iframe to load with the URL validated by the server
-      if (streamState.previewUrl && streamState.previewUrl !== previewUrl) {
-        console.log('[Editor] Setting preview URL:', streamState.previewUrl);
+      // This triggers iframe to load with the URL validated by both server AND client
+      if (streamState.previewUrl !== previewUrl) {
+        console.log('[Editor] ✅ Setting preview URL:', streamState.previewUrl);
         setPreviewUrl(streamState.previewUrl);
         setPreviewError(null);
       }
@@ -268,7 +357,25 @@ function EditorContent() {
     streamState.previewUpdateTimestamp,
     streamState.previewUrl,
     streamState.skipPreviewReload,
+    previewUrl,
   ]);
+
+  // Show loading overlay immediately when streaming starts on 2nd+ generation
+  // The overlay will cover any E2B errors that might appear during Vite restart
+  useEffect(() => {
+    // Only act when streaming starts
+    if (!streamState.isStreaming) return;
+
+    // Only show overlay if there's already a preview loaded (2nd+ generation)
+    // First generation has no preview URL yet
+    if (!previewUrl) return;
+
+    // Show loading overlay immediately to cover any E2B errors during Vite restart
+    console.log(
+      '[Editor] 🔄 Streaming started - showing loading overlay to prevent E2B error flash'
+    );
+    setIsWaitingForVite(true);
+  }, [streamState.isStreaming, previewUrl]);
 
   // Handle streaming errors - watch state directly
   useEffect(() => {
@@ -649,6 +756,7 @@ function EditorContent() {
                   previewError={previewError}
                   isGeneratingPreview={isGeneratingPreview}
                   isRegeneratingPreview={isRegeneratingPreview}
+                  isWaitingForVite={isWaitingForVite}
                   projectFiles={projectFiles}
                   selectedFileIndex={selectedFileIndex}
                   onFileSelect={setSelectedFileIndex}
