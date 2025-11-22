@@ -34,6 +34,7 @@ export interface StreamState {
 
   // Preview info
   previewUrl?: string;
+  skipPreviewReload?: boolean; // If true, don't reload iframe (Vite HMR will handle it)
 
   // Session info
   sessionId?: string;
@@ -248,8 +249,10 @@ export function useAIGenerationStream(
 
         case 'preview_url_updated':
           console.log('[Stream] Preview URL updated:', event.url);
+          console.log('[Stream] Skip reload:', event.skipReload ?? false);
           newState.previewUrl = event.url;
           newState.previewUpdateTimestamp = event.timestamp;
+          newState.skipPreviewReload = event.skipReload ?? false;
           if (event.sandboxId) {
             newState.sandboxId = event.sandboxId;
           }

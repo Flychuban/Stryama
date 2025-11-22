@@ -19,10 +19,7 @@ import type { ProjectContext } from '~/lib/integrations/claude';
 import type { StreamEvent } from '~/lib/integrations/claude/types/stream-events';
 import { createSandboxEvent } from '~/lib/integrations/claude/stream-manager';
 import { sandboxManager } from '~/lib/integrations/e2b/services/sandbox-manager';
-import {
-  setupInfrastructure,
-  isPreviewHealthy,
-} from '~/lib/integrations/e2b/services/preview-manager';
+import { setupInfrastructure } from '~/lib/integrations/e2b/services/preview-manager';
 import { E2B_CONFIG } from '~/lib/integrations/e2b/config';
 import type { Sandbox } from '@e2b/code-interpreter';
 import { UsageTrackingService } from '~/lib/services/usageTracking';
@@ -1027,42 +1024,87 @@ export const aiRouter = createTRPCRouter({
                   `[AI Stream] ✅ Files saved to database (${filesDuration}ms)`
                 );
 
-                // Check if preview server is actually running and responsive
-                // IMPORTANT: We must verify the server is ACTUALLY responding, not just check database
-                // The server may have crashed or never started even if previewUrl exists in DB
+                // Check if preview server is already running
+                // Strategy: On first prompt, start server. On subsequent prompts, trust Vite HMR.
                 if (sandboxInstance && sandboxId) {
                   console.log(
                     `[AI Stream] 🔍 Checking preview server status...`
                   );
 
-                  // Get the preview URL (either from database or generate it)
-                  const host = sandboxInstance.getHost(5173);
-                  const previewUrl = `https://${host}`;
+                  // Check if preview server was already started (exists in database)
+                  const dbSandbox = await ctx.db.sandbox.findUnique({
+                    where: { id: sandboxId },
+                    select: {
+                      previewUrl: true,
+                      createdAt: true,
+                      metadata: true,
+                    },
+                  });
 
-                  // ALWAYS verify server is actually responding with HTTP health check
                   console.log(
-                    `[AI Stream] 🏥 Performing health check on: ${previewUrl}`
+                    `[AI Stream] 🔍 Database sandbox check result:`,
+                    dbSandbox
+                      ? {
+                          hasPreviewUrl: !!dbSandbox.previewUrl,
+                          previewUrl: dbSandbox.previewUrl,
+                          metadata: dbSandbox.metadata,
+                        }
+                      : 'NULL'
                   );
-                  const isHealthy = await isPreviewHealthy(previewUrl);
 
-                  if (isHealthy) {
-                    // Server is responding - HMR will handle file updates automatically
-                    console.log(
-                      `[AI Stream] ✅ Preview server is responsive and healthy`
-                    );
-                    console.log(
-                      `[AI Stream] ✅ Files updated - Vite HMR will handle live reload automatically`
-                    );
-                    console.log(`[AI Stream] Preview URL: ${previewUrl}`);
+                  // CRITICAL: Only check previewUrl, NOT devServerPid
+                  // devServerPid gets set by Claude during THIS generation (Event #14-15)
+                  // previewUrl only gets set after startPreviewServer completes (from previous session)
+                  // Checking devServerPid causes first prompt to skip preview setup!
+                  const hasRunningServer = !!dbSandbox?.previewUrl;
 
-                    // Update database to ensure previewUrl is saved
-                    await ctx.db.sandbox.update({
-                      where: { id: sandboxId },
-                      data: {
-                        previewUrl,
-                        lastActivity: new Date(),
-                      },
+                  if (hasRunningServer) {
+                    // CRITICAL FIX: Vite HMR is unreliable and slow (60+ seconds, often gets stuck with 502 errors)
+                    // Instead of waiting for HMR, RESTART the dev server for predictable, fast results
+                    console.log(
+                      `[AI Stream] 🔄 Preview server exists - restarting for clean rebuild (HMR is unreliable)...`
+                    );
+                    const previewStartTime = Date.now();
+
+                    // Get updated files from database (Claude just wrote them)
+                    const updatedFiles = await ctx.db.file.findMany({
+                      where: { projectId },
+                      orderBy: { path: 'asc' },
                     });
+
+                    console.log(
+                      `[AI Stream] 📁 Found ${updatedFiles.length} files to serve`
+                    );
+
+                    // Import and call startPreviewServer - it handles killing old server and starting new one
+                    const { startPreviewServer } = await import(
+                      '~/lib/integrations/e2b/services/preview-manager'
+                    );
+
+                    const previewResult = await startPreviewServer(
+                      sandboxInstance,
+                      projectId,
+                      updatedFiles,
+                      sandboxId,
+                      true // forceRestart = true to kill old server and start fresh
+                    );
+
+                    if (!previewResult.success || !previewResult.data) {
+                      console.error(
+                        `[AI Stream] ❌ Failed to restart preview server: ${previewResult.error}`
+                      );
+                      throw new Error(
+                        `Preview server restart failed: ${previewResult.error}`
+                      );
+                    }
+
+                    const previewDuration = Date.now() - previewStartTime;
+                    console.log(
+                      `[AI Stream] ✅ Preview server restarted successfully in ${(previewDuration / 1000).toFixed(1)}s`
+                    );
+                    console.log(
+                      `[AI Stream] Preview URL: ${previewResult.data.url}`
+                    );
 
                     // Emit preview URL update event to frontend
                     console.log(
@@ -1070,15 +1112,16 @@ export const aiRouter = createTRPCRouter({
                     );
                     emit.next({
                       type: 'preview_url_updated',
-                      url: previewUrl,
+                      url: previewResult.data.url,
                       sandboxId: sandboxId,
-                      message: 'Preview server is healthy and ready',
+                      message: 'Dev server restarted with updated files',
                       timestamp: Date.now(),
+                      skipReload: false, // Always reload iframe to show fresh content
                     });
                   } else {
-                    // Server not responding - need to start/restart it
+                    // First prompt - need to start preview server
                     console.log(
-                      `[AI Stream] ⚠️ Preview server not responding - starting server...`
+                      `[AI Stream] 🚀 First prompt - starting preview server...`
                     );
                     const previewStartTime = Date.now();
 
@@ -1096,7 +1139,7 @@ export const aiRouter = createTRPCRouter({
                       projectId,
                       updatedFiles,
                       sandboxId,
-                      true // forceRestart: true - skip redundant health checks since we already know server is dead
+                      false // forceRestart: false - clean start, no need to force
                     );
 
                     const previewDuration = Date.now() - previewStartTime;
@@ -1125,7 +1168,7 @@ export const aiRouter = createTRPCRouter({
                         type: 'preview_url_updated',
                         url: previewResult.data.url,
                         sandboxId: sandboxId,
-                        message: 'Preview server restarted and ready',
+                        message: 'Preview server started and ready',
                         timestamp: Date.now(),
                       });
                     } else {

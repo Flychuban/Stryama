@@ -183,41 +183,14 @@ function EditorContent() {
           '[Editor] ✅ Project refetched and chat history invalidated'
         );
 
-        // Fetch preview URL from DB
-        console.log('[Editor] Fetching preview URL...');
-        const previewData = await utils.sandbox.getPreviewUrl.fetch({
-          projectId,
-        });
-
-        if (previewData.url) {
-          // Preview exists - set URL and wait for server's preview_url_updated event
-          // The server will emit this event after it restarts the preview (if needed)
-          console.log('[Editor] Preview URL from DB:', previewData.url);
-
-          // CRITICAL: Only update previewUrl if it actually changed
-          // Changing previewUrl triggers iframe src change, causing immediate reload
-          if (previewUrl !== previewData.url) {
-            console.log('[Editor] Preview URL changed, updating...');
-            setPreviewUrl(previewData.url);
-          }
-          setPreviewError(null);
-
-          // NOTE: Iframe reload now happens in separate effect that watches for
-          // preview_url_updated event from server (see below)
-          console.log(
-            '[Editor] ⏳ Waiting for server preview_url_updated event...'
-          );
-        } else {
-          // No preview exists yet - start one
-          console.log('[Editor] No preview found, starting new preview...');
-          setIsGeneratingPreview(true);
-          const previewResult = await startPreviewMutation.mutateAsync({
-            projectId,
-            sandboxId: result.sandboxId!,
-          });
-          setPreviewUrl(previewResult.url);
-          setPreviewError(null);
-        }
+        // CRITICAL FIX: Do NOT fetch or set preview URL here!
+        // Setting previewUrl triggers immediate iframe reload BEFORE Vite HMR is ready
+        // This causes "Closed Port Error" on subsequent prompts
+        // Instead, ONLY set preview URL when we receive preview_url_updated event from server
+        // The server validates Vite is ready before emitting that event
+        console.log(
+          '[Editor] ⏳ Waiting for server preview_url_updated event before loading preview...'
+        );
       } catch (error) {
         console.error('[Editor] Failed to update after DB persist', error);
         const errorMessage =
@@ -236,7 +209,6 @@ function EditorContent() {
     void handleDatabasePersisted();
     // Intentionally omit startPreviewMutation from deps - mutation objects are unstable
     // Using server timestamp (databasePersistedTimestamp) prevents duplicate executions
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     streamState.isDatabasePersisted,
     streamState.databasePersistedTimestamp,
@@ -265,19 +237,38 @@ function EditorContent() {
     const handlePreviewUpdate = async () => {
       console.log('[Editor] 🔔 Server emitted preview_url_updated event');
       console.log('[Editor] Preview URL:', streamState.previewUrl);
+      console.log(
+        '[Editor] Skip reload:',
+        streamState.skipPreviewReload ?? false
+      );
 
-      // Wait for Vite HMR to detect file changes and rebuild
-      // This prevents "Closed Port Error" from reloading before Vite finishes
-      console.log('[Editor] ⏳ Waiting 8s for Vite HMR to rebuild...');
-      await new Promise((resolve) => setTimeout(resolve, 8000));
+      // CRITICAL: Set preview URL from stream state
+      // This triggers iframe to load with the URL validated by the server
+      if (streamState.previewUrl && streamState.previewUrl !== previewUrl) {
+        console.log('[Editor] Setting preview URL:', streamState.previewUrl);
+        setPreviewUrl(streamState.previewUrl);
+        setPreviewError(null);
+      }
 
-      // Now reload iframe to show updated content
+      // Check if we should skip iframe reload (subsequent prompts with Vite HMR)
+      if (streamState.skipPreviewReload) {
+        console.log(
+          '[Editor] ⚡ Skipping iframe reload - Vite HMR will handle updates automatically'
+        );
+        return;
+      }
+
+      // First prompt - reload iframe to show initial preview
       console.log('[Editor] ✨ Reloading iframe with fresh preview...');
       setIframeKey((prev) => prev + 1);
     };
 
     void handlePreviewUpdate();
-  }, [streamState.previewUpdateTimestamp, streamState.previewUrl]);
+  }, [
+    streamState.previewUpdateTimestamp,
+    streamState.previewUrl,
+    streamState.skipPreviewReload,
+  ]);
 
   // Handle streaming errors - watch state directly
   useEffect(() => {

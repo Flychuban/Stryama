@@ -28,8 +28,8 @@ import {
 
 const HEALTH_CHECK_CONFIG = {
   INTERVAL_MS: 2000,
-  MAX_TIMEOUT_MS: 30000,
-  MAX_ATTEMPTS: 15,
+  MAX_TIMEOUT_MS: 4000, // 2 attempts × 2000ms = 4 seconds max
+  MAX_ATTEMPTS: 2, // Reduced from 15 to 2 for faster feedback
 } as const;
 
 /**

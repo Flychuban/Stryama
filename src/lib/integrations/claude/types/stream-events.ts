@@ -145,6 +145,7 @@ export type StreamPreviewEvent = {
   sandboxId?: string;
   message?: string;
   timestamp: number;
+  skipReload?: boolean; // If true, frontend should not reload iframe (Vite HMR will handle it)
 };
 
 /**
