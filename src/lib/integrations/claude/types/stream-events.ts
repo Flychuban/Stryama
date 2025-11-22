@@ -145,6 +145,20 @@ export type StreamPreviewEvent = {
   sandboxId?: string;
   message?: string;
   timestamp: number;
+  skipReload?: boolean; // If true, frontend should not reload iframe (Vite HMR will handle it)
+};
+
+/**
+ * Database persisted event - All database operations complete
+ * Emitted when files, session, and generation data are saved to DB
+ * Signals that client can safely refetch to get updated data
+ */
+export type StreamDatabasePersistedEvent = {
+  type: 'database_persisted';
+  sessionId?: string;
+  projectId: string;
+  message?: string;
+  timestamp: number;
 };
 
 /**
@@ -161,7 +175,8 @@ export type StreamEvent =
   | StreamErrorEvent
   | StreamSessionInitEvent
   | StreamSandboxEvent
-  | StreamPreviewEvent;
+  | StreamPreviewEvent
+  | StreamDatabasePersistedEvent;
 
 /**
  * Stream event callback type

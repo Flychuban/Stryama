@@ -6,6 +6,7 @@ import type { DeviceMode, ViewMode } from './ControlBar';
 import type { RefObject } from 'react';
 import type { StreamState } from '~/hooks/useAIGenerationStream';
 import AILoadingAnimation from './AILoadingAnimation';
+import { useState, useEffect } from 'react';
 
 export type ProjectFile = {
   id: string;
@@ -20,6 +21,7 @@ interface PreviewCodePanelProps {
   previewError: string | null;
   isGeneratingPreview: boolean;
   isRegeneratingPreview: boolean;
+  isWaitingForVite?: boolean;
   projectFiles: ProjectFile[];
   selectedFileIndex: number;
   onFileSelect: (index: number) => void;
@@ -38,6 +40,7 @@ export function PreviewCodePanel({
   previewError,
   isGeneratingPreview,
   isRegeneratingPreview,
+  isWaitingForVite = false,
   projectFiles,
   selectedFileIndex,
   onFileSelect,
@@ -49,6 +52,71 @@ export function PreviewCodePanel({
   streamState,
 }: PreviewCodePanelProps) {
   const currentFile = projectFiles[selectedFileIndex] ?? null;
+
+  // Phase 3: Track iframe loading state and detect E2B errors
+  const [isIframeLoading, setIsIframeLoading] = useState(false);
+  const [iframeLoadError, setIframeLoadError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+
+  // Reset states when preview URL changes
+  useEffect(() => {
+    setIsIframeLoading(true);
+    setIframeLoadError(false);
+    setRetryCount(0);
+  }, [previewUrl, iframeKey]);
+
+  // Handle iframe load event
+  const handleIframeLoad = () => {
+    setIsIframeLoading(false);
+
+    // Try to detect E2B error page by checking iframe content
+    // Note: We can't access cross-origin iframe content directly,
+    // but we can detect it via timing and retry logic
+    if (iframeRef?.current) {
+      try {
+        // If iframe loaded successfully, content should be accessible
+        // Cross-origin will throw an error which we catch below
+        const iframeDoc =
+          iframeRef.current.contentDocument ??
+          iframeRef.current.contentWindow?.document;
+
+        if (iframeDoc) {
+          const html = iframeDoc.documentElement.innerHTML;
+
+          // Check for E2B error page markers
+          if (
+            html.includes('Closed Port Error') ||
+            html.includes('no service running on port') ||
+            html.includes('Connection refused on port')
+          ) {
+            console.log(
+              '[Preview] E2B error page detected in iframe - will retry'
+            );
+            setIframeLoadError(true);
+
+            // Retry after 3 seconds if not too many retries
+            if (retryCount < 3) {
+              setTimeout(() => {
+                console.log(
+                  `[Preview] Retrying iframe load (attempt ${retryCount + 1}/3)`
+                );
+                setRetryCount((prev) => prev + 1);
+                setIsIframeLoading(true);
+                setIframeLoadError(false);
+                // Force reload by incrementing key would happen in parent
+              }, 3000);
+            }
+          }
+        }
+      } catch (e) {
+        // Cross-origin error is expected and means the preview loaded successfully
+        // (our preview server is on different domain than our app)
+        console.log(
+          '[Preview] Iframe loaded (cross-origin - this is expected)'
+        );
+      }
+    }
+  };
 
   // Show AI generation animation when streaming
   if (
@@ -223,6 +291,47 @@ export function PreviewCodePanel({
                   Open in New Tab
                 </Button>
               </div>
+
+              {/* Loading overlay when waiting for Vite to be ready after server restart */}
+              {(isWaitingForVite || streamState?.isStreaming) &&
+                viewMode === 'preview' && (
+                  <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm">
+                    <div className="space-y-4 text-center">
+                      <div className="mx-auto h-16 w-16 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
+                      <div>
+                        <h3 className="text-lg font-semibold">
+                          Starting preview server...
+                        </h3>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          Vite is compiling your changes, this usually takes
+                          5-10 seconds
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+              {/* Phase 3: Loading overlay for iframe while E2B error is showing */}
+              {(isIframeLoading || iframeLoadError) && (
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/95 backdrop-blur-sm">
+                  <div className="space-y-4 text-center">
+                    <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
+                    <div>
+                      <h3 className="text-base font-semibold">
+                        {iframeLoadError
+                          ? 'Waiting for preview server...'
+                          : 'Loading preview...'}
+                      </h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {iframeLoadError
+                          ? `Retrying (${retryCount + 1}/3)...`
+                          : 'Vite is finishing compilation'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <iframe
                 ref={iframeRef}
                 key={iframeKey}
@@ -232,6 +341,7 @@ export function PreviewCodePanel({
                 referrerPolicy="no-referrer-when-downgrade"
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
                 allow="accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; clipboard-read; clipboard-write"
+                onLoad={handleIframeLoad}
               />
             </>
           ) : (

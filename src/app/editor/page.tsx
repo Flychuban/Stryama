@@ -22,12 +22,52 @@ import { MobileEditorTabs } from '@/components/editor/MobileEditorTabs';
 import { downloadProjectAsZip } from '@/lib/utils/download-project';
 import { FeedbackButton } from '@/components/feedback/FeedbackButton';
 
+/**
+ * Check if preview server is healthy AND serving actual Vite content
+ * This prevents false positives where port is open but Vite is still compiling
+ */
 const checkPreviewHealth = async (url: string): Promise<boolean> => {
   try {
-    await fetch(url, {
-      method: 'HEAD',
-      signal: AbortSignal.timeout(3000),
+    // Use GET instead of HEAD to verify actual content is being served
+    const response = await fetch(url, {
+      method: 'GET',
+      signal: AbortSignal.timeout(8000),
     });
+
+    if (!response.ok) {
+      return false;
+    }
+
+    // Verify we're getting HTML content
+    const contentType = response.headers.get('content-type');
+    if (!contentType?.includes('text/html')) {
+      return false;
+    }
+
+    // Read HTML to verify it's Vite content (not E2B error page)
+    const html = await response.text();
+
+    // Check for E2B error page markers
+    const isE2BError =
+      html.includes('Closed Port Error') ||
+      html.includes('no service running on port') ||
+      html.includes('Connection refused on port');
+
+    if (isE2BError) {
+      console.log('[Preview Health] E2B error page detected - Vite not ready');
+      return false;
+    }
+
+    // Verify Vite-specific markers are present
+    const hasRootDiv = html.includes('<div id="root">');
+    const hasModuleScript = html.includes('type="module"');
+    const isViteContent = hasRootDiv && hasModuleScript;
+
+    if (!isViteContent) {
+      console.log('[Preview Health] Not valid Vite content yet');
+      return false;
+    }
+
     return true;
   } catch {
     return false;
@@ -62,6 +102,7 @@ function EditorContent() {
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
   const [isRegeneratingPreview, setIsRegeneratingPreview] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
+  const [isWaitingForVite, setIsWaitingForVite] = useState(false);
 
   // Persist chat panel width in localStorage
   const [chatPanelSize, setChatPanelSize] = useLocalStorage<number>(
@@ -75,9 +116,15 @@ function EditorContent() {
   // Track if we've already triggered auto-start to prevent duplicate execution
   const hasTriggeredAutoStart = useRef(false);
 
-  // Track which sessions we've already handled to prevent duplicate processing
-  const handledCompletionsRef = useRef(new Set<string>());
+  // Track which generations we've already handled to prevent duplicate processing
+  // CRITICAL: Use server timestamps (numbers) for deduplication, not Date.now()
+  // Server timestamps are unique per event and work correctly with session resumption
+  const handledCompletionsRef = useRef(new Set<number>());
   const handledErrorsRef = useRef(new Set<string>());
+  const handledDatabasePersistRef = useRef(new Set<number>());
+
+  // Track last preview update timestamp to detect server restarts
+  const lastPreviewUpdateRef = useRef(0);
 
   // Ref to iframe for reloading on subsequent prompts
   const previewIframeRef = useRef<HTMLIFrameElement>(null);
@@ -104,19 +151,22 @@ function EditorContent() {
   useEffect(() => {
     if (!streamState.isComplete || !streamState.result) return;
 
-    const sessionId = streamState.result.sessionId;
+    const timestamp = streamState.completionTimestamp;
 
-    // Prevent duplicate handling of the same completion
-    if (handledCompletionsRef.current.has(sessionId)) {
+    // CRITICAL: Use server timestamp to prevent duplicate handling
+    // This works correctly with session resumption (sessionId is reused but timestamp is unique)
+    if (handledCompletionsRef.current.has(timestamp)) {
       return;
     }
 
-    // Mark this session as handled
-    handledCompletionsRef.current.add(sessionId);
+    // Mark this completion as handled
+    handledCompletionsRef.current.add(timestamp);
 
     const result = streamState.result; // Store in const for type safety
 
     const handleCompletion = async () => {
+      console.log('[Editor] 🎯 Handling completion at:', timestamp);
+
       // Add AI message to chat
       const aiMessage: Message = {
         role: 'assistant',
@@ -125,87 +175,207 @@ function EditorContent() {
       };
       setMessages((prev) => [...prev, aiMessage]);
 
-      // Refetch project files and start/refresh preview
-      if (projectId && result.sandboxId) {
-        try {
-          // IMPORTANT: Refetch project to get updated files and trigger re-render
-          // This is safe now because the project loading effect won't reload messages
-          // when messages.length > 0
-          await refetchProject();
-
-          // Fetch preview URL from DB
-          console.log('[Editor] Fetching preview URL...');
-          const previewData = await utils.sandbox.getPreviewUrl.fetch({
-            projectId,
-          });
-
-          if (previewData.url) {
-            // Preview exists - Vite HMR will handle the file updates automatically
-            console.log(
-              '[Editor] Preview running, waiting for Vite HMR to rebuild...'
-            );
-            setPreviewUrl(previewData.url);
-            setPreviewError(null);
-
-            // Wait 3 seconds for Vite HMR to detect changes and rebuild
-            // (HMR is already working - we just need to give it time to rebuild)
-            await new Promise((resolve) => setTimeout(resolve, 3000));
-
-            // Reload iframe to show the updated content
-            console.log('[Editor] Reloading iframe with updated content...');
-            setIframeKey((prev) => prev + 1);
-          } else {
-            // No preview exists yet - start one
-            console.log('[Editor] No preview found, starting new preview...');
-            setIsGeneratingPreview(true);
-            const previewResult = await startPreviewMutation.mutateAsync({
-              projectId,
-              sandboxId: result.sandboxId,
-            });
-            setPreviewUrl(previewResult.url);
-            setPreviewError(null);
-          }
-        } catch (error) {
-          console.error('[Editor] Failed to start preview server', error);
-          const errorMessage =
-            error instanceof Error
-              ? error.message
-              : 'Unable to start preview server';
-          setPreviewError(
-            `${errorMessage}. Try clicking "Regenerate" to restart the preview.`
-          );
-          setPreviewUrl(null);
-        } finally {
-          setIsGeneratingPreview(false);
-        }
-      }
+      // NOTE: Refetch and invalidation now happens in separate effect
+      // that waits for isDatabasePersisted flag to prevent race condition
+      console.log('[Editor] ⏳ Waiting for database operations to complete...');
     };
 
     void handleCompletion();
-    // Intentionally omit startPreviewMutation from deps - mutation objects are unstable
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamState.isComplete, streamState.result?.sessionId, projectId, utils]);
+    // Using server timestamp (completionTimestamp) prevents duplicate executions
+  }, [
+    streamState.isComplete,
+    streamState.completionTimestamp,
+    streamState.result,
+  ]);
 
-  // Watch for preview URL updates from stream and auto-reload iframe
+  // Wait for database operations to complete before refetching
+  // This prevents race condition where client refetches before files are saved to DB
   useEffect(() => {
-    if (!streamState.previewUrl) return;
+    if (!streamState.isDatabasePersisted || !streamState.result) return;
+    if (!projectId || !streamState.result.sandboxId) return;
 
-    console.log(
-      '[Editor] Preview URL updated from stream:',
-      streamState.previewUrl
-    );
-    setPreviewUrl(streamState.previewUrl);
-    setPreviewError(null);
+    const timestamp = streamState.databasePersistedTimestamp;
 
-    // Wait 2 seconds for server to be fully ready and stable
-    // This is especially important after server restart
-    const timer = setTimeout(() => {
-      console.log('[Editor] Auto-reloading iframe with new preview URL');
+    // CRITICAL: Use server timestamp to prevent duplicate handling
+    // This works correctly with session resumption and avoids unstable dependencies
+    if (handledDatabasePersistRef.current.has(timestamp)) {
+      return;
+    }
+
+    // Mark this persist event as handled
+    handledDatabasePersistRef.current.add(timestamp);
+    console.log('[Editor] 💾 Database persisted at:', timestamp);
+
+    const result = streamState.result; // Capture for type safety in async function
+
+    const handleDatabasePersisted = async () => {
+      try {
+        // CRITICAL: Now that database operations are complete, refetch project data
+        console.log(
+          '[Editor] 🔄 Refetching project with fresh data from DB...'
+        );
+        await refetchProject();
+
+        // Invalidate AI history to refresh chat (project was already refetched above)
+        // NOTE: We DON'T invalidate project.getById here to avoid race condition
+        // where invalidation triggers project loading effect before messages state updates
+        await utils.ai.getHistory.invalidate({ projectId });
+        console.log(
+          '[Editor] ✅ Project refetched and chat history invalidated'
+        );
+
+        // CRITICAL FIX: Do NOT fetch or set preview URL here!
+        // Setting previewUrl triggers immediate iframe reload BEFORE Vite HMR is ready
+        // This causes "Closed Port Error" on subsequent prompts
+        // Instead, ONLY set preview URL when we receive preview_url_updated event from server
+        // The server validates Vite is ready before emitting that event
+        console.log(
+          '[Editor] ⏳ Waiting for server preview_url_updated event before loading preview...'
+        );
+      } catch (error) {
+        console.error('[Editor] Failed to update after DB persist', error);
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : 'Unable to start preview server';
+        setPreviewError(
+          `${errorMessage}. Try clicking "Regenerate" to restart the preview.`
+        );
+        setPreviewUrl(null);
+      } finally {
+        setIsGeneratingPreview(false);
+      }
+    };
+
+    void handleDatabasePersisted();
+    // Intentionally omit startPreviewMutation from deps - mutation objects are unstable
+    // Using server timestamp (databasePersistedTimestamp) prevents duplicate executions
+  }, [
+    streamState.isDatabasePersisted,
+    streamState.databasePersistedTimestamp,
+    streamState.result,
+    projectId,
+    utils,
+    refetchProject,
+    previewUrl,
+  ]);
+
+  // Watch for server's preview_url_updated event and reload iframe
+  // This event is emitted when the server starts/restarts the preview server
+  // Waiting for this event ensures the server is ready before we reload iframe
+  useEffect(() => {
+    const timestamp = streamState.previewUpdateTimestamp;
+
+    // Skip if no preview update event yet
+    if (timestamp === 0) return;
+
+    // Skip if we've already handled this event
+    if (lastPreviewUpdateRef.current === timestamp) return;
+
+    // Mark this event as handled
+    lastPreviewUpdateRef.current = timestamp;
+
+    const handlePreviewUpdate = async () => {
+      console.log('[Editor] 🔔 Server emitted preview_url_updated event');
+      console.log('[Editor] Preview URL:', streamState.previewUrl);
+      console.log(
+        '[Editor] Skip reload:',
+        streamState.skipPreviewReload ?? false
+      );
+
+      if (!streamState.previewUrl) return;
+
+      // PHASE 2: Add client-side polling to verify Vite is truly ready
+      // Server health check ensures port is open and serving content,
+      // but client-side polling adds extra safety for edge cases
+      console.log('[Editor] 🔍 Polling preview URL to verify Vite is ready...');
+      setIsWaitingForVite(true);
+
+      const maxAttempts = 15; // 15 attempts × 2 seconds = 30 seconds max
+      const pollInterval = 2000; // 2 seconds between attempts
+      let attempts = 0;
+      let isReady = false;
+
+      while (attempts < maxAttempts && !isReady) {
+        attempts++;
+        console.log(
+          `[Editor] Poll attempt ${attempts}/${maxAttempts} for ${streamState.previewUrl}`
+        );
+
+        isReady = await checkPreviewHealth(streamState.previewUrl);
+
+        if (isReady) {
+          console.log(
+            `[Editor] ✅ Vite ready after ${attempts} attempts (${(attempts * pollInterval) / 1000}s)`
+          );
+          break;
+        }
+
+        if (attempts < maxAttempts) {
+          console.log(
+            `[Editor] ⏳ Vite not ready, waiting ${pollInterval}ms...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        }
+      }
+
+      setIsWaitingForVite(false);
+
+      if (!isReady) {
+        console.warn(
+          `[Editor] ⚠️ Vite did not become ready after ${maxAttempts} attempts (${(maxAttempts * pollInterval) / 1000}s)`
+        );
+        setPreviewError(
+          'Preview server is taking longer than expected to start. Please wait a moment and try refreshing.'
+        );
+        return;
+      }
+
+      // CRITICAL: Set preview URL from stream state
+      // This triggers iframe to load with the URL validated by both server AND client
+      if (streamState.previewUrl !== previewUrl) {
+        console.log('[Editor] ✅ Setting preview URL:', streamState.previewUrl);
+        setPreviewUrl(streamState.previewUrl);
+        setPreviewError(null);
+      }
+
+      // Check if we should skip iframe reload (subsequent prompts with Vite HMR)
+      if (streamState.skipPreviewReload) {
+        console.log(
+          '[Editor] ⚡ Skipping iframe reload - Vite HMR will handle updates automatically'
+        );
+        return;
+      }
+
+      // First prompt - reload iframe to show initial preview
+      console.log('[Editor] ✨ Reloading iframe with fresh preview...');
       setIframeKey((prev) => prev + 1);
-    }, 2000);
+    };
 
-    return () => clearTimeout(timer);
-  }, [streamState.previewUrl]);
+    void handlePreviewUpdate();
+  }, [
+    streamState.previewUpdateTimestamp,
+    streamState.previewUrl,
+    streamState.skipPreviewReload,
+    previewUrl,
+  ]);
+
+  // Show loading overlay immediately when streaming starts on 2nd+ generation
+  // The overlay will cover any E2B errors that might appear during Vite restart
+  useEffect(() => {
+    // Only act when streaming starts
+    if (!streamState.isStreaming) return;
+
+    // Only show overlay if there's already a preview loaded (2nd+ generation)
+    // First generation has no preview URL yet
+    if (!previewUrl) return;
+
+    // Show loading overlay immediately to cover any E2B errors during Vite restart
+    console.log(
+      '[Editor] 🔄 Streaming started - showing loading overlay to prevent E2B error flash'
+    );
+    setIsWaitingForVite(true);
+  }, [streamState.isStreaming, previewUrl]);
 
   // Handle streaming errors - watch state directly
   useEffect(() => {
@@ -220,6 +390,10 @@ function EditorContent() {
 
     // Mark this error as handled
     handledErrorsRef.current.add(errorKey);
+
+    // CRITICAL: Reset overlay state when streaming errors occur
+    // Otherwise overlay stays visible forever if error happens during 2nd+ generation
+    setIsWaitingForVite(false);
 
     const errorMessage: Message = {
       role: 'assistant',
@@ -586,6 +760,7 @@ function EditorContent() {
                   previewError={previewError}
                   isGeneratingPreview={isGeneratingPreview}
                   isRegeneratingPreview={isRegeneratingPreview}
+                  isWaitingForVite={isWaitingForVite}
                   projectFiles={projectFiles}
                   selectedFileIndex={selectedFileIndex}
                   onFileSelect={setSelectedFileIndex}

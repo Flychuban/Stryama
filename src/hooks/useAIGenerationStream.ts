@@ -34,6 +34,7 @@ export interface StreamState {
 
   // Preview info
   previewUrl?: string;
+  skipPreviewReload?: boolean; // If true, don't reload iframe (Vite HMR will handle it)
 
   // Session info
   sessionId?: string;
@@ -89,6 +90,12 @@ export interface StreamState {
   isStreaming: boolean;
   isComplete: boolean;
   hasError: boolean;
+  isDatabasePersisted: boolean; // True when server has saved all data to DB
+
+  // Event timestamps (from server) - used for deduplication to prevent duplicate processing
+  completionTimestamp: number; // Timestamp when 'complete' event was received
+  databasePersistedTimestamp: number; // Timestamp when 'database_persisted' event was received
+  previewUpdateTimestamp: number; // Timestamp when 'preview_url_updated' event was received
 }
 
 interface UseAIGenerationStreamOptions {
@@ -115,6 +122,10 @@ export function useAIGenerationStream(
     isStreaming: false,
     isComplete: false,
     hasError: false,
+    isDatabasePersisted: false,
+    completionTimestamp: 0,
+    databasePersistedTimestamp: 0,
+    previewUpdateTimestamp: 0,
   });
 
   const [generationId, setGenerationId] = useState<string | null>(null);
@@ -238,7 +249,10 @@ export function useAIGenerationStream(
 
         case 'preview_url_updated':
           console.log('[Stream] Preview URL updated:', event.url);
+          console.log('[Stream] Skip reload:', event.skipReload ?? false);
           newState.previewUrl = event.url;
+          newState.previewUpdateTimestamp = event.timestamp;
+          newState.skipPreviewReload = event.skipReload ?? false;
           if (event.sandboxId) {
             newState.sandboxId = event.sandboxId;
           }
@@ -298,6 +312,15 @@ export function useAIGenerationStream(
           newState.result = event.result;
           newState.tokensUsed = event.result.tokensUsed;
           newState.totalCost = event.result.totalCost;
+          newState.completionTimestamp = event.timestamp;
+          break;
+
+        case 'database_persisted':
+          console.log(
+            '[Stream] Database operations complete - safe to refetch'
+          );
+          newState.isDatabasePersisted = true;
+          newState.databasePersistedTimestamp = event.timestamp;
           break;
 
         case 'error':
@@ -332,6 +355,10 @@ export function useAIGenerationStream(
         isStreaming: true,
         isComplete: false,
         hasError: false,
+        isDatabasePersisted: false,
+        completionTimestamp: 0,
+        databasePersistedTimestamp: 0,
+        previewUpdateTimestamp: 0,
       });
 
       // Phase 1: Initialize generation with prompt
@@ -407,6 +434,10 @@ export function useAIGenerationStream(
       isStreaming: false,
       isComplete: false,
       hasError: false,
+      isDatabasePersisted: false,
+      completionTimestamp: 0,
+      databasePersistedTimestamp: 0,
+      previewUpdateTimestamp: 0,
     });
   }, [cancel]);
 
