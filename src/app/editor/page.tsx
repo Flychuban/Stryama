@@ -391,6 +391,10 @@ function EditorContent() {
     // Mark this error as handled
     handledErrorsRef.current.add(errorKey);
 
+    // CRITICAL: Reset overlay state when streaming errors occur
+    // Otherwise overlay stays visible forever if error happens during 2nd+ generation
+    setIsWaitingForVite(false);
+
     const errorMessage: Message = {
       role: 'assistant',
       content: `Sorry, I encountered an error: ${streamState.error.message}`,
