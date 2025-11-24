@@ -1270,7 +1270,9 @@ export async function stopPreviewServer(
     const killCommand = `
       (fuser -k -9 ${port}/tcp 2>/dev/null || true) && \
       (lsof -ti:${port} 2>/dev/null | xargs -r kill -9 2>/dev/null || true) && \
-      (pkill -9 -f 'vite.*${port}' 2>/dev/null || true)
+      (pkill -9 -f 'vite.*${port}' 2>/dev/null || true) && \
+      (pkill -9 -f 'npm.*dev' 2>/dev/null || true) && \
+      (pkill -9 -f 'node.*vite' 2>/dev/null || true)
     `.trim();
 
     const result = await sandbox.commands.run(killCommand, {
@@ -1292,8 +1294,29 @@ export async function stopPreviewServer(
       );
     }
 
-    // Give the OS a moment to release the port
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // CRITICAL FIX: Wait longer for OS to fully release the port
+    // 500ms is often not enough, especially under load
+    console.log(`[Preview] ⏳ Waiting 2s for OS to release port ${port}...`);
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    // Verify port is actually free before returning
+    const portCheck = await sandbox.commands.run(
+      `lsof -ti:${port} 2>/dev/null || echo "free"`,
+      { timeoutMs: 3000 }
+    );
+
+    const portIsFree = portCheck.stdout.trim() === 'free';
+    if (!portIsFree) {
+      console.warn(
+        `[Preview] ⚠️ Port ${port} still in use after kill. PIDs: ${portCheck.stdout.trim()}`
+      );
+      // Try one more aggressive kill
+      await sandbox.commands.run(
+        `kill -9 $(lsof -ti:${port}) 2>/dev/null || true`,
+        { timeoutMs: 3000 }
+      );
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
 
     console.log(`[Preview] ✅ Port ${port} cleared`);
 
@@ -1327,34 +1350,73 @@ export async function restartPreviewServer(
   console.log(`[Preview] E2B Sandbox ID: ${sandbox.sandboxId}`);
   console.log(`[Preview] Timestamp: ${new Date().toISOString()}`);
 
-  console.log(`[Preview] Step 1: Stopping existing server...`);
-  const stopStartTime = Date.now();
-  await stopPreviewServer(sandbox);
-  const stopDuration = Date.now() - stopStartTime;
-  console.log(`[Preview] ✅ Server stopped successfully (${stopDuration}ms)`);
+  // CRITICAL FIX: Add retry logic for "Port already in use" errors
+  // This can happen when the port isn't fully released after stopPreviewServer
+  const MAX_RESTART_ATTEMPTS = 3;
+  let lastError: string | null = null;
 
-  console.log(`[Preview] Step 2: Starting new server with force restart...`);
-  const startStartTime = Date.now();
-  const result = await startPreviewServer(
-    sandbox,
-    projectId,
-    files,
-    sandboxId,
-    true // forceRestart=true to skip health check and start fresh
-  );
-  const startDuration = Date.now() - startStartTime;
-
-  if (result.success) {
+  for (let attempt = 1; attempt <= MAX_RESTART_ATTEMPTS; attempt++) {
     console.log(
-      `[Preview] ✅ Server restarted successfully in ${(startDuration / 1000).toFixed(1)}s`
+      `[Preview] 🔄 Restart attempt ${attempt}/${MAX_RESTART_ATTEMPTS}...`
     );
-    console.log(`[Preview] 🏁 ========== RESTART COMPLETE ==========`);
-  } else {
+
+    console.log(`[Preview] Step 1: Stopping existing server...`);
+    const stopStartTime = Date.now();
+    await stopPreviewServer(sandbox);
+    const stopDuration = Date.now() - stopStartTime;
+    console.log(`[Preview] ✅ Server stopped successfully (${stopDuration}ms)`);
+
+    console.log(`[Preview] Step 2: Starting new server with force restart...`);
+    const startStartTime = Date.now();
+    const result = await startPreviewServer(
+      sandbox,
+      projectId,
+      files,
+      sandboxId,
+      true // forceRestart=true to skip health check and start fresh
+    );
+    const startDuration = Date.now() - startStartTime;
+
+    if (result.success) {
+      console.log(
+        `[Preview] ✅ Server restarted successfully in ${(startDuration / 1000).toFixed(1)}s (attempt ${attempt})`
+      );
+      console.log(`[Preview] 🏁 ========== RESTART COMPLETE ==========`);
+      return result;
+    }
+
+    // Check if this is a "Port already in use" error
+    const isPortInUseError =
+      result.error?.toLowerCase().includes('port') &&
+      result.error?.toLowerCase().includes('already in use');
+
+    if (isPortInUseError && attempt < MAX_RESTART_ATTEMPTS) {
+      console.warn(
+        `[Preview] ⚠️ Port still in use after stop (attempt ${attempt}), waiting and retrying...`
+      );
+      lastError = result.error ?? 'Port already in use';
+      // Wait progressively longer between retries
+      const waitTime = attempt * 2000; // 2s, 4s, 6s
+      console.log(`[Preview] ⏳ Waiting ${waitTime}ms before retry...`);
+      await new Promise((resolve) => setTimeout(resolve, waitTime));
+      continue;
+    }
+
+    // Not a port-in-use error or last attempt - return the error
     console.error(
       `[Preview] ❌ Server restart failed after ${(startDuration / 1000).toFixed(1)}s`
     );
     console.error(`[Preview] Error: ${result.error}`);
+    return result;
   }
 
-  return result;
+  // All retries exhausted
+  console.error(
+    `[Preview] ❌ All ${MAX_RESTART_ATTEMPTS} restart attempts failed`
+  );
+  return {
+    success: false,
+    data: null,
+    error: `Failed to restart after ${MAX_RESTART_ATTEMPTS} attempts. Last error: ${lastError}`,
+  };
 }

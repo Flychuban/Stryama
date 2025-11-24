@@ -732,6 +732,18 @@ export const sandboxRouter = createTRPCRouter({
           });
         }
 
+        // CRITICAL FIX: Save previewUrl to database so AI Stream can find it
+        // Previously this was missing, causing AI Stream to think no server was running
+        console.log(`[Sandbox Router] 💾 Saving preview URL to database...`);
+        await ctx.db.sandbox.update({
+          where: { id: sandboxId },
+          data: {
+            previewUrl: previewResult.data.url,
+            lastActivity: new Date(),
+          },
+        });
+        console.log(`[Sandbox Router] ✅ Preview URL saved to database`);
+
         const duration = ((Date.now() - startTime) / 1000).toFixed(1);
         console.log(
           `[Sandbox Router] ✅ Preview ready in ${duration}s: ${previewResult.data.url}`

@@ -1025,7 +1025,7 @@ export const aiRouter = createTRPCRouter({
                 );
 
                 // Check if preview server is already running
-                // Strategy: On first prompt, start server. On subsequent prompts, trust Vite HMR.
+                // Strategy: Check if server is ACTUALLY responding, not just if URL exists in DB
                 if (sandboxInstance && sandboxId) {
                   console.log(
                     `[AI Stream] 🔍 Checking preview server status...`
@@ -1052,17 +1052,55 @@ export const aiRouter = createTRPCRouter({
                       : 'NULL'
                   );
 
-                  // CRITICAL: Only check previewUrl, NOT devServerPid
-                  // devServerPid gets set by Claude during THIS generation (Event #14-15)
-                  // previewUrl only gets set after startPreviewServer completes (from previous session)
-                  // Checking devServerPid causes first prompt to skip preview setup!
-                  const hasRunningServer = !!dbSandbox?.previewUrl;
+                  // CRITICAL FIX: Don't just check if URL exists - verify the server is ACTUALLY responding
+                  // Servers can die unexpectedly (E2B hibernation, Vite crash, etc.)
+                  // so we need to do a real HTTP health check
+                  let hasRunningServer = false;
+                  let serverIsHealthy = false;
 
-                  if (hasRunningServer) {
+                  if (dbSandbox?.previewUrl) {
+                    console.log(
+                      `[AI Stream] 🔍 URL exists in DB, performing health check on: ${dbSandbox.previewUrl}`
+                    );
+                    try {
+                      // Import isPreviewHealthy from preview-manager
+                      const { isPreviewHealthy } = await import(
+                        '~/lib/integrations/e2b/services/preview-manager'
+                      );
+
+                      const healthCheckStart = Date.now();
+                      serverIsHealthy = await isPreviewHealthy(
+                        dbSandbox.previewUrl
+                      );
+                      const healthCheckDuration = Date.now() - healthCheckStart;
+
+                      console.log(
+                        `[AI Stream] 🏥 Health check result: ${serverIsHealthy ? '✅ HEALTHY' : '❌ NOT HEALTHY'} (${healthCheckDuration}ms)`
+                      );
+
+                      hasRunningServer = serverIsHealthy;
+                    } catch (healthError) {
+                      console.error(
+                        `[AI Stream] ❌ Health check failed:`,
+                        healthError
+                      );
+                      hasRunningServer = false;
+                    }
+                  } else {
+                    console.log(
+                      `[AI Stream] ℹ️ No preview URL in database - first prompt scenario`
+                    );
+                  }
+
+                  // Determine action: restart if URL existed before (even if unhealthy), start fresh if first prompt
+                  const urlExistedBefore = !!dbSandbox?.previewUrl;
+
+                  if (urlExistedBefore) {
+                    // Server was previously started (URL exists in DB)
                     // CRITICAL FIX: Vite HMR is unreliable and slow (60+ seconds, often gets stuck with 502 errors)
                     // Instead of waiting for HMR, RESTART the dev server for predictable, fast results
                     console.log(
-                      `[AI Stream] 🔄 Preview server exists - restarting for clean rebuild (HMR is unreliable)...`
+                      `[AI Stream] 🔄 Previous server ${serverIsHealthy ? 'is healthy but' : 'has died -'} restarting for clean rebuild (HMR is unreliable)...`
                     );
                     const previewStartTime = Date.now();
 
@@ -1166,9 +1204,9 @@ export const aiRouter = createTRPCRouter({
                       );
                     }
                   } else {
-                    // First prompt - need to start preview server
+                    // First prompt - need to start preview server (no URL in database yet)
                     console.log(
-                      `[AI Stream] 🚀 First prompt - starting preview server...`
+                      `[AI Stream] 🚀 First prompt - starting preview server (no previous URL in DB)...`
                     );
                     const previewStartTime = Date.now();
 
