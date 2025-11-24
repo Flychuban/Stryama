@@ -1102,6 +1102,15 @@ export const aiRouter = createTRPCRouter({
                       console.log(
                         `[AI Stream] ✅ Server is healthy - no restart needed, just refreshing preview`
                       );
+
+                      // Emit status event first so frontend knows we're processing preview
+                      emit.next({
+                        type: 'status',
+                        status: 'executing',
+                        message: 'Preview server ready, loading preview...',
+                        timestamp: Date.now(),
+                      });
+
                       console.log(
                         `[AI Stream] 📡 Emitting preview_url_updated event to client`
                       );
@@ -1392,6 +1401,14 @@ export const aiRouter = createTRPCRouter({
               console.warn(`[AI Stream]   - projectId: ${!!projectId}`);
               console.warn(`[AI Stream]   - project: ${!!project}`);
             }
+
+            // CRITICAL: Add small buffer before completing stream
+            // This ensures client has time to receive and process preview_url_updated event
+            // before the stream completes (which might reset some client state)
+            console.log(
+              `[AI Stream] ⏳ Adding 500ms buffer before stream completion...`
+            );
+            await new Promise((resolve) => setTimeout(resolve, 500));
 
             // Mark as complete
             console.log(
