@@ -96,6 +96,103 @@ function cleanupStaleProcesses(): void {
   }
 }
 
+/**
+ * Robust port cleanup with verification
+ * Kills any process on the specified port and verifies it's truly free
+ *
+ * @param sandbox - E2B sandbox instance
+ * @param port - Port to clean up
+ * @param maxWaitMs - Maximum time to wait for port release (default 5000ms)
+ * @returns True if port is free, false otherwise
+ */
+async function cleanupPortWithVerification(
+  sandbox: Sandbox,
+  port: number,
+  maxWaitMs = 5000
+): Promise<boolean> {
+  const startTime = Date.now();
+  console.log(`[Preview] 🧹 Starting robust port ${port} cleanup...`);
+
+  // Step 1: Kill any processes using the port with multiple methods
+  const killCommands = [
+    `fuser -k -9 ${port}/tcp 2>/dev/null`,
+    `lsof -ti:${port} 2>/dev/null | xargs -r kill -9 2>/dev/null`,
+    `pkill -9 -f 'vite.*${port}' 2>/dev/null`,
+    `pkill -9 -f 'npm.*dev' 2>/dev/null`,
+    `pkill -9 -f 'node.*vite' 2>/dev/null`,
+  ];
+
+  for (const cmd of killCommands) {
+    try {
+      await sandbox.commands.run(`${cmd} || true`, { timeoutMs: 3000 });
+    } catch {
+      // Ignore errors - command may fail if no matching process
+    }
+  }
+
+  // Step 2: Poll for port release with exponential backoff
+  const pollDelays = [500, 1000, 1500, 2000]; // Total: 5 seconds
+  let totalWaited = 0;
+
+  for (const delay of pollDelays) {
+    if (totalWaited + delay > maxWaitMs) break;
+
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    totalWaited += delay;
+
+    // Check if port is free
+    try {
+      const checkResult = await sandbox.commands.run(
+        `lsof -ti:${port} 2>/dev/null || echo "FREE"`,
+        { timeoutMs: 3000 }
+      );
+
+      const output = checkResult.stdout.trim();
+      if (output === 'FREE' || output === '') {
+        const duration = Date.now() - startTime;
+        console.log(`[Preview] ✅ Port ${port} is free after ${duration}ms`);
+        return true;
+      }
+
+      console.log(
+        `[Preview] ⏳ Port ${port} still in use (waited ${totalWaited}ms), PIDs: ${output}`
+      );
+
+      // Try one more aggressive kill
+      await sandbox.commands.run(
+        `kill -9 ${output.split('\n').join(' ')} 2>/dev/null || true`,
+        { timeoutMs: 2000 }
+      );
+    } catch {
+      // Check failed, continue waiting
+    }
+  }
+
+  // Final check
+  try {
+    const finalCheck = await sandbox.commands.run(
+      `lsof -ti:${port} 2>/dev/null || echo "FREE"`,
+      { timeoutMs: 3000 }
+    );
+
+    const isFree =
+      finalCheck.stdout.trim() === 'FREE' || finalCheck.stdout.trim() === '';
+    const duration = Date.now() - startTime;
+
+    if (isFree) {
+      console.log(`[Preview] ✅ Port ${port} freed after ${duration}ms`);
+    } else {
+      console.warn(
+        `[Preview] ⚠️ Port ${port} still in use after ${duration}ms: ${finalCheck.stdout.trim()}`
+      );
+    }
+
+    return isFree;
+  } catch {
+    return false;
+  }
+}
+
 // Set up periodic cleanup to prevent memory leaks
 // Only run in server environment (not during build or in browser)
 if (typeof setInterval !== 'undefined' && typeof process !== 'undefined') {
@@ -623,7 +720,27 @@ export async function startPreviewServer(
       );
     } else {
       console.log(
-        `[Preview] ⚡ FORCE RESTART mode - skipping health check, will start fresh server`
+        `[Preview] ⚡ FORCE RESTART mode - performing robust port cleanup before starting fresh server`
+      );
+
+      // CRITICAL FIX: Use robust cleanup with verification when force restarting
+      // This prevents "Port already in use" errors by ensuring the port is truly free
+      const portCleanupStartTime = Date.now();
+      const portIsFree = await cleanupPortWithVerification(sandbox, port, 5000);
+      const portCleanupDuration = Date.now() - portCleanupStartTime;
+
+      if (!portIsFree) {
+        console.error(
+          `[Preview] ❌ Failed to free port ${port} after ${portCleanupDuration}ms`
+        );
+        throw new PreviewServerStartError(
+          `Port ${port} is still in use after cleanup. The previous dev server may not have terminated properly. Try again in a few seconds.`,
+          { projectId, port }
+        );
+      }
+
+      console.log(
+        `[Preview] ✅ Port ${port} cleanup complete in ${portCleanupDuration}ms`
       );
     }
 
@@ -641,34 +758,28 @@ export async function startPreviewServer(
         `[Preview] No existing server found, will set up infrastructure and start dev server`
       );
 
-      // SAFETY: Kill any zombie processes that might be on the port but not responding
+      // SAFETY: Use robust cleanup to kill any zombie processes on the port
       // This prevents "Port already in use" errors from dead/hanging processes
       console.log(
         `[Preview] 🧹 Cleaning up any zombie processes on port ${port}...`
       );
-      const killStartTime = Date.now();
-      try {
-        const killResult = await sandbox.commands.run(
-          `lsof -ti:${port} | xargs -r kill -9 2>/dev/null || true`,
-          { timeoutMs: 3000 }
-        );
-        const killDuration = Date.now() - killStartTime;
-        if (killResult.exitCode === 0 && killResult.stdout.trim()) {
-          console.log(
-            `[Preview] ✅ Cleaned up zombie process(es) on port ${port} (${killDuration}ms)`
-          );
-          console.log(`[Preview] Killed PIDs: ${killResult.stdout.trim()}`);
-        } else {
-          console.log(
-            `[Preview] ✅ No zombie processes found (${killDuration}ms)`
-          );
-        }
-      } catch (error) {
-        const killDuration = Date.now() - killStartTime;
+      const cleanupStartTime = Date.now();
+      const portCleared = await cleanupPortWithVerification(
+        sandbox,
+        port,
+        3000
+      );
+      const cleanupDuration = Date.now() - cleanupStartTime;
+
+      if (portCleared) {
         console.log(
-          `[Preview] ℹ️  Cleanup not needed or failed (${killDuration}ms):`,
-          error instanceof Error ? error.message : 'Unknown error'
+          `[Preview] ✅ Port ${port} cleared in ${cleanupDuration}ms`
         );
+      } else {
+        console.log(
+          `[Preview] ⚠️ Port ${port} may still have stale processes (${cleanupDuration}ms)`
+        );
+        // Don't fail here - the port check just failed, it might still work
       }
 
       // Check if dependencies are already installed and valid
@@ -1257,35 +1368,15 @@ export async function getPreviewLogs(
 export async function stopPreviewServer(
   sandbox: Sandbox
 ): Promise<ServiceResult<boolean>> {
+  const startTime = Date.now();
+  const port = getFrameworkPort(); // Get the port (5173 for Vite)
+
+  console.log(`[Preview] 🛑 ========== STOP PREVIEW SERVER ==========`);
+  console.log(`[Preview] Port: ${port}`);
+  console.log(`[Preview] E2B Sandbox ID: ${sandbox.sandboxId}`);
+
   try {
-    const port = getFrameworkPort(); // Get the port (5173 for Vite)
-
-    console.log(`[Preview] 🛑 Stopping any processes on port ${port}...`);
-
-    // Find and kill any process using the port
-    // Try multiple methods to ensure compatibility across different environments
-    // 1. fuser (most common in containers)
-    // 2. lsof (if available)
-    // 3. pkill by name pattern
-    const killCommand = `
-      (fuser -k -9 ${port}/tcp 2>/dev/null || true) && \
-      (lsof -ti:${port} 2>/dev/null | xargs -r kill -9 2>/dev/null || true) && \
-      (pkill -9 -f 'vite.*${port}' 2>/dev/null || true) && \
-      (pkill -9 -f 'npm.*dev' 2>/dev/null || true) && \
-      (pkill -9 -f 'node.*vite' 2>/dev/null || true)
-    `.trim();
-
-    const result = await sandbox.commands.run(killCommand, {
-      timeoutMs: 5000,
-    });
-
-    console.log(`[Preview] Kill command output:`, {
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.exitCode,
-    });
-
-    // Clean up from in-memory map (if it exists)
+    // Clean up from in-memory map first (if it exists)
     const processInfo = previewProcesses.get(sandbox.sandboxId);
     if (processInfo) {
       previewProcesses.delete(sandbox.sandboxId);
@@ -1294,39 +1385,37 @@ export async function stopPreviewServer(
       );
     }
 
-    // CRITICAL FIX: Wait longer for OS to fully release the port
-    // 500ms is often not enough, especially under load
-    console.log(`[Preview] ⏳ Waiting 2s for OS to release port ${port}...`);
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Use robust cleanup with verification
+    // This ensures the port is truly free before returning
+    const portIsFree = await cleanupPortWithVerification(sandbox, port, 5000);
 
-    // Verify port is actually free before returning
-    const portCheck = await sandbox.commands.run(
-      `lsof -ti:${port} 2>/dev/null || echo "free"`,
-      { timeoutMs: 3000 }
-    );
+    const duration = Date.now() - startTime;
 
-    const portIsFree = portCheck.stdout.trim() === 'free';
     if (!portIsFree) {
       console.warn(
-        `[Preview] ⚠️ Port ${port} still in use after kill. PIDs: ${portCheck.stdout.trim()}`
+        `[Preview] ⚠️ Port ${port} may still be in use after ${duration}ms cleanup attempt`
       );
-      // Try one more aggressive kill
-      await sandbox.commands.run(
-        `kill -9 $(lsof -ti:${port}) 2>/dev/null || true`,
-        { timeoutMs: 3000 }
+      // Return success anyway - the port check might have failed but server is likely dead
+      // The caller can handle "port in use" error if it actually happens during start
+    } else {
+      console.log(
+        `[Preview] ✅ Port ${port} confirmed free after ${duration}ms`
       );
-      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
-    console.log(`[Preview] ✅ Port ${port} cleared`);
+    console.log(`[Preview] 🏁 ========== STOP COMPLETE ==========`);
 
     return {
       success: true,
-      data: true,
+      data: portIsFree,
       error: null,
     };
   } catch (error) {
-    console.error('[Preview] Failed to stop preview server:', error);
+    const duration = Date.now() - startTime;
+    console.error(
+      `[Preview] ❌ Failed to stop preview server after ${duration}ms:`,
+      error
+    );
     return {
       success: false,
       data: false,

@@ -1055,7 +1055,6 @@ export const aiRouter = createTRPCRouter({
                   // CRITICAL FIX: Don't just check if URL exists - verify the server is ACTUALLY responding
                   // Servers can die unexpectedly (E2B hibernation, Vite crash, etc.)
                   // so we need to do a real HTTP health check
-                  let hasRunningServer = false;
                   let serverIsHealthy = false;
 
                   if (dbSandbox?.previewUrl) {
@@ -1077,14 +1076,12 @@ export const aiRouter = createTRPCRouter({
                       console.log(
                         `[AI Stream] 🏥 Health check result: ${serverIsHealthy ? '✅ HEALTHY' : '❌ NOT HEALTHY'} (${healthCheckDuration}ms)`
                       );
-
-                      hasRunningServer = serverIsHealthy;
                     } catch (healthError) {
                       console.error(
                         `[AI Stream] ❌ Health check failed:`,
                         healthError
                       );
-                      hasRunningServer = false;
+                      // serverIsHealthy remains false from initialization
                     }
                   } else {
                     console.log(
@@ -1092,116 +1089,138 @@ export const aiRouter = createTRPCRouter({
                     );
                   }
 
-                  // Determine action: restart if URL existed before (even if unhealthy), start fresh if first prompt
+                  // Determine action based on server health and whether URL existed before
                   const urlExistedBefore = !!dbSandbox?.previewUrl;
 
                   if (urlExistedBefore) {
                     // Server was previously started (URL exists in DB)
-                    // CRITICAL FIX: Vite HMR is unreliable and slow (60+ seconds, often gets stuck with 502 errors)
-                    // Instead of waiting for HMR, RESTART the dev server for predictable, fast results
-                    console.log(
-                      `[AI Stream] 🔄 Previous server ${serverIsHealthy ? 'is healthy but' : 'has died -'} restarting for clean rebuild (HMR is unreliable)...`
-                    );
-                    const previewStartTime = Date.now();
 
-                    try {
-                      // Get updated files from database (Claude just wrote them)
-                      const updatedFiles = await ctx.db.file.findMany({
-                        where: { projectId },
-                        orderBy: { path: 'asc' },
-                      });
-
+                    if (serverIsHealthy && dbSandbox.previewUrl) {
+                      // CRITICAL FIX: Server is already healthy and responding!
+                      // Don't restart - just emit the URL to client so iframe can reload
+                      // This avoids unnecessary restarts and "port already in use" race conditions
                       console.log(
-                        `[AI Stream] 📁 Found ${updatedFiles.length} files to serve`
+                        `[AI Stream] ✅ Server is healthy - no restart needed, just refreshing preview`
+                      );
+                      console.log(
+                        `[AI Stream] 📡 Emitting preview_url_updated event to client`
                       );
 
-                      // Emit status update so frontend can show progress
                       emit.next({
-                        type: 'status',
-                        status: 'executing',
+                        type: 'preview_url_updated',
+                        url: dbSandbox.previewUrl,
+                        sandboxId: sandboxId,
                         message:
-                          'Restarting preview server with updated files...',
+                          'Preview server is ready - Vite HMR will update automatically',
                         timestamp: Date.now(),
+                        skipReload: false, // Reload iframe to ensure latest content is shown
                       });
-
-                      // Import and call startPreviewServer - it handles killing old server and starting new one
-                      const { startPreviewServer } = await import(
-                        '~/lib/integrations/e2b/services/preview-manager'
+                    } else {
+                      // Server has died or is unhealthy - need to restart
+                      console.log(
+                        `[AI Stream] 🔄 Server has died - restarting for clean rebuild...`
                       );
+                      const previewStartTime = Date.now();
 
-                      const previewResult = await startPreviewServer(
-                        sandboxInstance,
-                        projectId,
-                        updatedFiles,
-                        sandboxId,
-                        true // forceRestart = true to kill old server and start fresh
-                      );
+                      try {
+                        // Get updated files from database (Claude just wrote them)
+                        const updatedFiles = await ctx.db.file.findMany({
+                          where: { projectId },
+                          orderBy: { path: 'asc' },
+                        });
 
-                      if (!previewResult.success || !previewResult.data) {
-                        const errorMessage = `Preview server restart failed: ${previewResult.error}`;
-                        console.error(`[AI Stream] ❌ ${errorMessage}`);
+                        console.log(
+                          `[AI Stream] 📁 Found ${updatedFiles.length} files to serve`
+                        );
 
-                        // Emit explicit error event to frontend instead of throwing
-                        // This ensures the error reaches the client even if they're still connected
+                        // Emit status update so frontend can show progress
+                        emit.next({
+                          type: 'status',
+                          status: 'executing',
+                          message:
+                            'Restarting preview server with updated files...',
+                          timestamp: Date.now(),
+                        });
+
+                        // Import and call startPreviewServer - it handles killing old server and starting new one
+                        const { startPreviewServer } = await import(
+                          '~/lib/integrations/e2b/services/preview-manager'
+                        );
+
+                        const previewResult = await startPreviewServer(
+                          sandboxInstance,
+                          projectId,
+                          updatedFiles,
+                          sandboxId,
+                          true // forceRestart = true to kill old server and start fresh
+                        );
+
+                        if (!previewResult.success || !previewResult.data) {
+                          const errorMessage = `Preview server restart failed: ${previewResult.error}`;
+                          console.error(`[AI Stream] ❌ ${errorMessage}`);
+
+                          // Emit explicit error event to frontend instead of throwing
+                          // This ensures the error reaches the client even if they're still connected
+                          emit.next({
+                            type: 'error',
+                            error: {
+                              message: errorMessage,
+                              code: 'PREVIEW_RESTART_FAILED',
+                            },
+                            timestamp: Date.now(),
+                          });
+
+                          // Don't throw - let the generation complete but preview failed
+                          // User can manually restart preview using the button
+                          console.log(
+                            '[AI Stream] ⚠️ Preview failed but continuing with generation'
+                          );
+                        } else {
+                          const previewDuration = Date.now() - previewStartTime;
+                          console.log(
+                            `[AI Stream] ✅ Preview server restarted successfully in ${(previewDuration / 1000).toFixed(1)}s`
+                          );
+                          console.log(
+                            `[AI Stream] Preview URL: ${previewResult.data.url}`
+                          );
+
+                          // Emit preview URL update event to frontend
+                          console.log(
+                            `[AI Stream] 📡 Emitting preview_url_updated event to client`
+                          );
+                          emit.next({
+                            type: 'preview_url_updated',
+                            url: previewResult.data.url,
+                            sandboxId: sandboxId,
+                            message: 'Dev server restarted with updated files',
+                            timestamp: Date.now(),
+                            skipReload: false, // Always reload iframe to show fresh content
+                          });
+                        }
+                      } catch (previewError) {
+                        const errorMessage =
+                          previewError instanceof Error
+                            ? previewError.message
+                            : 'Unknown preview restart error';
+                        console.error(
+                          `[AI Stream] ❌ Preview restart exception: ${errorMessage}`
+                        );
+
+                        // Emit error event to frontend
                         emit.next({
                           type: 'error',
                           error: {
-                            message: errorMessage,
-                            code: 'PREVIEW_RESTART_FAILED',
+                            message: `Failed to restart preview server: ${errorMessage}`,
+                            code: 'PREVIEW_RESTART_EXCEPTION',
                           },
                           timestamp: Date.now(),
                         });
 
-                        // Don't throw - let the generation complete but preview failed
-                        // User can manually restart preview using the button
+                        // Don't throw - let generation complete
                         console.log(
-                          '[AI Stream] ⚠️ Preview failed but continuing with generation'
+                          '[AI Stream] ⚠️ Preview error handled, continuing with generation'
                         );
-                      } else {
-                        const previewDuration = Date.now() - previewStartTime;
-                        console.log(
-                          `[AI Stream] ✅ Preview server restarted successfully in ${(previewDuration / 1000).toFixed(1)}s`
-                        );
-                        console.log(
-                          `[AI Stream] Preview URL: ${previewResult.data.url}`
-                        );
-
-                        // Emit preview URL update event to frontend
-                        console.log(
-                          `[AI Stream] 📡 Emitting preview_url_updated event to client`
-                        );
-                        emit.next({
-                          type: 'preview_url_updated',
-                          url: previewResult.data.url,
-                          sandboxId: sandboxId,
-                          message: 'Dev server restarted with updated files',
-                          timestamp: Date.now(),
-                          skipReload: false, // Always reload iframe to show fresh content
-                        });
                       }
-                    } catch (previewError) {
-                      const errorMessage =
-                        previewError instanceof Error
-                          ? previewError.message
-                          : 'Unknown preview restart error';
-                      console.error(
-                        `[AI Stream] ❌ Preview restart exception: ${errorMessage}`
-                      );
-
-                      // Emit error event to frontend
-                      emit.next({
-                        type: 'error',
-                        error: {
-                          message: `Failed to restart preview server: ${errorMessage}`,
-                          code: 'PREVIEW_RESTART_EXCEPTION',
-                        },
-                        timestamp: Date.now(),
-                      });
-
-                      // Don't throw - let generation complete
-                      console.log(
-                        '[AI Stream] ⚠️ Preview error handled, continuing with generation'
-                      );
                     }
                   } else {
                     // First prompt - need to start preview server (no URL in database yet)
