@@ -28,8 +28,8 @@ import {
 
 const HEALTH_CHECK_CONFIG = {
   INTERVAL_MS: 2000,
-  MAX_TIMEOUT_MS: 30000, // 15 attempts × 2000ms = 30 seconds max (enough for Vite compilation + HMR setup)
-  MAX_ATTEMPTS: 15, // Increased to wait for Vite to fully compile and serve content (can take 10-15 seconds for larger projects)
+  MAX_TIMEOUT_MS: 20000, // 10 attempts × 2000ms = 20 seconds max (sufficient for Vite compilation)
+  MAX_ATTEMPTS: 10, // Reduced timeout for faster failure detection while still giving Vite enough time
 } as const;
 
 /**
