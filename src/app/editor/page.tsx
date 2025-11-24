@@ -103,6 +103,8 @@ function EditorContent() {
   const [isRegeneratingPreview, setIsRegeneratingPreview] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
   const [isWaitingForVite, setIsWaitingForVite] = useState(false);
+  const [isExpectingPreviewUpdate, setIsExpectingPreviewUpdate] =
+    useState(false);
 
   // Persist chat panel width in localStorage
   const [chatPanelSize, setChatPanelSize] = useLocalStorage<number>(
@@ -262,7 +264,8 @@ function EditorContent() {
 
   // Watch for server's preview_url_updated event and reload iframe
   // This event is emitted when the server starts/restarts the preview server
-  // Waiting for this event ensures the server is ready before we reload iframe
+  // CRITICAL: The server already verifies preview health before emitting this event,
+  // so we trust the server's health check and load the preview immediately
   useEffect(() => {
     const timestamp = streamState.previewUpdateTimestamp;
 
@@ -275,84 +278,45 @@ function EditorContent() {
     // Mark this event as handled
     lastPreviewUpdateRef.current = timestamp;
 
-    const handlePreviewUpdate = async () => {
-      console.log('[Editor] 🔔 Server emitted preview_url_updated event');
-      console.log('[Editor] Preview URL:', streamState.previewUrl);
+    // We received the expected preview update - clear waiting state
+    setIsExpectingPreviewUpdate(false);
+    setIsWaitingForVite(false);
+
+    console.log('[Editor] 🔔 Server emitted preview_url_updated event');
+    console.log('[Editor] Preview URL:', streamState.previewUrl);
+    console.log(
+      '[Editor] Skip reload:',
+      streamState.skipPreviewReload ?? false
+    );
+
+    if (!streamState.previewUrl) return;
+
+    // SIMPLIFIED: Trust the server's health check - it already verified preview is ready
+    // No redundant client-side polling needed (server validates before emitting event)
+    console.log(
+      '[Editor] ✅ Setting preview URL (server verified healthy):',
+      streamState.previewUrl
+    );
+
+    // Clear any previous errors
+    setPreviewError(null);
+
+    // Set the preview URL
+    if (streamState.previewUrl !== previewUrl) {
+      setPreviewUrl(streamState.previewUrl);
+    }
+
+    // Check if we should skip iframe reload (subsequent prompts with Vite HMR)
+    if (streamState.skipPreviewReload) {
       console.log(
-        '[Editor] Skip reload:',
-        streamState.skipPreviewReload ?? false
+        '[Editor] ⚡ Skipping iframe reload - Vite HMR will handle updates automatically'
       );
+      return;
+    }
 
-      if (!streamState.previewUrl) return;
-
-      // PHASE 2: Add client-side polling to verify Vite is truly ready
-      // Server health check ensures port is open and serving content,
-      // but client-side polling adds extra safety for edge cases
-      console.log('[Editor] 🔍 Polling preview URL to verify Vite is ready...');
-      setIsWaitingForVite(true);
-
-      const maxAttempts = 15; // 15 attempts × 2 seconds = 30 seconds max
-      const pollInterval = 2000; // 2 seconds between attempts
-      let attempts = 0;
-      let isReady = false;
-
-      while (attempts < maxAttempts && !isReady) {
-        attempts++;
-        console.log(
-          `[Editor] Poll attempt ${attempts}/${maxAttempts} for ${streamState.previewUrl}`
-        );
-
-        isReady = await checkPreviewHealth(streamState.previewUrl);
-
-        if (isReady) {
-          console.log(
-            `[Editor] ✅ Vite ready after ${attempts} attempts (${(attempts * pollInterval) / 1000}s)`
-          );
-          break;
-        }
-
-        if (attempts < maxAttempts) {
-          console.log(
-            `[Editor] ⏳ Vite not ready, waiting ${pollInterval}ms...`
-          );
-          await new Promise((resolve) => setTimeout(resolve, pollInterval));
-        }
-      }
-
-      setIsWaitingForVite(false);
-
-      if (!isReady) {
-        console.warn(
-          `[Editor] ⚠️ Vite did not become ready after ${maxAttempts} attempts (${(maxAttempts * pollInterval) / 1000}s)`
-        );
-        setPreviewError(
-          'Preview server is taking longer than expected to start. Please wait a moment and try refreshing.'
-        );
-        return;
-      }
-
-      // CRITICAL: Set preview URL from stream state
-      // This triggers iframe to load with the URL validated by both server AND client
-      if (streamState.previewUrl !== previewUrl) {
-        console.log('[Editor] ✅ Setting preview URL:', streamState.previewUrl);
-        setPreviewUrl(streamState.previewUrl);
-        setPreviewError(null);
-      }
-
-      // Check if we should skip iframe reload (subsequent prompts with Vite HMR)
-      if (streamState.skipPreviewReload) {
-        console.log(
-          '[Editor] ⚡ Skipping iframe reload - Vite HMR will handle updates automatically'
-        );
-        return;
-      }
-
-      // First prompt - reload iframe to show initial preview
-      console.log('[Editor] ✨ Reloading iframe with fresh preview...');
-      setIframeKey((prev) => prev + 1);
-    };
-
-    void handlePreviewUpdate();
+    // Reload iframe to show the preview (cache-busted via iframeKey)
+    console.log('[Editor] ✨ Reloading iframe with fresh preview...');
+    setIframeKey((prev) => prev + 1);
   }, [
     streamState.previewUpdateTimestamp,
     streamState.previewUrl,
@@ -360,22 +324,197 @@ function EditorContent() {
     previewUrl,
   ]);
 
-  // Show loading overlay immediately when streaming starts on 2nd+ generation
-  // The overlay will cover any E2B errors that might appear during Vite restart
+  // FALLBACK: Poll database for preview URL if stream event was missed
+  // This handles cases where tRPC subscription disconnects before receiving preview_url_updated
+  // SIMPLIFIED: Uses isExpectingPreviewUpdate flag and trusts the database (no redundant health checks)
+  useEffect(() => {
+    // Only activate fallback after AI generation completes AND we're still expecting preview
+    if (!streamState.isComplete || !streamState.result) return;
+    if (!isExpectingPreviewUpdate) return; // Already received preview, no fallback needed
+    if (!projectId) return;
+
+    // Short delay - backend adds 500ms buffer before completion, give a bit more time
+    const fallbackDelay = 3000; // 3 seconds after completion
+    let isCancelled = false;
+
+    console.log(
+      '[Editor] ⏰ Setting up fallback DB polling in 3s (stream event may have been missed)...'
+    );
+
+    const fallbackTimer = setTimeout(() => {
+      // Double-check we still need the fallback
+      if (isCancelled || !isExpectingPreviewUpdate) return;
+
+      console.log(
+        '[Editor] 🔄 Starting fallback DB polling for preview URL...'
+      );
+
+      // Wrap async polling in IIFE to satisfy TypeScript
+      void (async () => {
+        // Simple polling: 5 attempts × 2s = 10 seconds max
+        for (let attempt = 1; attempt <= 5; attempt++) {
+          if (isCancelled) return;
+
+          try {
+            console.log(`[Editor] 📊 Fallback poll attempt ${attempt}/5...`);
+
+            const previewData = await utils.sandbox.getPreviewUrl.fetch({
+              projectId,
+            });
+
+            if (isCancelled) return;
+
+            if (previewData.url) {
+              // SIMPLIFIED: Trust the database - server already verified health before saving
+              console.log(
+                '[Editor] ✅ Found preview URL via fallback:',
+                previewData.url
+              );
+              setPreviewUrl(previewData.url);
+              setPreviewError(null);
+              setIsExpectingPreviewUpdate(false);
+              setIsWaitingForVite(false);
+              setIframeKey((prev) => prev + 1);
+              return;
+            }
+
+            // Wait before next attempt
+            if (attempt < 5 && !isCancelled) {
+              await new Promise((resolve) => setTimeout(resolve, 2000));
+            }
+          } catch (error) {
+            if (isCancelled) return;
+            console.error('[Editor] Fallback polling error:', error);
+          }
+        }
+
+        if (isCancelled) return;
+
+        // All attempts failed
+        console.warn('[Editor] ⚠️ Fallback polling exhausted');
+        setIsWaitingForVite(false);
+        setIsExpectingPreviewUpdate(false);
+        setPreviewError(
+          'Preview server startup timed out. Click "Restart Preview" to try again.'
+        );
+      })();
+    }, fallbackDelay);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(fallbackTimer);
+    };
+  }, [
+    streamState.isComplete,
+    streamState.result,
+    isExpectingPreviewUpdate,
+    projectId,
+    utils,
+  ]);
+
+  // Mark that we're expecting a preview update when streaming starts
+  // This works for BOTH first prompt (no previewUrl) and subsequent prompts
   useEffect(() => {
     // Only act when streaming starts
     if (!streamState.isStreaming) return;
 
-    // Only show overlay if there's already a preview loaded (2nd+ generation)
-    // First generation has no preview URL yet
-    if (!previewUrl) return;
-
-    // Show loading overlay immediately to cover any E2B errors during Vite restart
+    // CRITICAL FIX: Set expectation flag for ALL prompts (first and subsequent)
+    // This ensures the fallback polling and timeout logic works correctly
     console.log(
-      '[Editor] 🔄 Streaming started - showing loading overlay to prevent E2B error flash'
+      '[Editor] 🔄 Streaming started - expecting preview update event'
     );
-    setIsWaitingForVite(true);
+    setIsExpectingPreviewUpdate(true);
+
+    // Only show loading overlay if there's already a preview loaded (2nd+ generation)
+    // First generation has no preview to cover with an overlay
+    if (previewUrl) {
+      console.log(
+        '[Editor] 🔄 Showing loading overlay to cover existing preview during update'
+      );
+      setIsWaitingForVite(true);
+    }
+
+    // Note: setState functions are intentionally omitted as React guarantees their stability
   }, [streamState.isStreaming, previewUrl]);
+
+  // Auto-reset overlay state after maximum wait time to prevent stuck UI
+  // This is a safety net if preview update events are missed or delayed
+  useEffect(() => {
+    if (!isWaitingForVite) return;
+
+    const maxWaitTime = 45000; // 45 seconds maximum
+
+    console.log('[Editor] ⏰ Setting overlay auto-reset timer for 45s...');
+
+    const timeoutId = setTimeout(() => {
+      console.warn(
+        '[Editor] ⏱️ Overlay auto-reset triggered after 45s timeout'
+      );
+      setIsWaitingForVite(false);
+
+      // CRITICAL FIX: Show error if we're still expecting a preview update
+      // This works correctly for both 1st generation (no previewUrl) and 2nd+ generation (previewUrl exists from previous gen)
+      if (isExpectingPreviewUpdate) {
+        console.error(
+          '[Editor] ⚠️ Preview update timeout - expected preview but did not receive it'
+        );
+        setPreviewError(
+          'Preview server startup is taking longer than expected. Try clicking "Restart Preview" or refresh the page.'
+        );
+        setIsExpectingPreviewUpdate(false);
+      }
+    }, maxWaitTime);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+
+    // Note: setState functions (setIsWaitingForVite, setPreviewError, setIsExpectingPreviewUpdate)
+    // are intentionally omitted as React guarantees their stability
+  }, [isWaitingForVite, isExpectingPreviewUpdate]);
+
+  // Reset overlay when streaming completes or AI generation finishes
+  useEffect(() => {
+    // Reset when streaming stops (completion or error)
+    if (streamState.isStreaming) return;
+
+    // If streaming is done and overlay is still showing, reset it
+    if (isWaitingForVite && (streamState.isComplete || streamState.hasError)) {
+      console.log(
+        '[Editor] ✅ Streaming finished, checking if overlay should reset'
+      );
+
+      // Give a small delay to allow preview_url_updated event to arrive
+      const resetDelay = setTimeout(() => {
+        // CRITICAL FIX: Don't reset overlay if we're still expecting a preview update
+        // This prevents flickering: overlay disappears at T+2s, reappears at T+10s when fallback starts
+        // Instead, keep overlay visible if expecting update - let fallback polling or timeout handle it
+        if (isExpectingPreviewUpdate) {
+          console.log(
+            '[Editor] ⏳ Still expecting preview update, keeping overlay visible for fallback polling'
+          );
+          return;
+        }
+
+        console.log(
+          '[Editor] ✅ Preview received or not expected, resetting overlay'
+        );
+        setIsWaitingForVite(false);
+      }, 2000);
+
+      return () => {
+        clearTimeout(resetDelay);
+      };
+    }
+
+    // Note: setIsWaitingForVite is intentionally omitted as React guarantees its stability
+  }, [
+    streamState.isStreaming,
+    streamState.isComplete,
+    streamState.hasError,
+    isWaitingForVite,
+    isExpectingPreviewUpdate,
+  ]);
 
   // Handle streaming errors - watch state directly
   useEffect(() => {
@@ -395,11 +534,29 @@ function EditorContent() {
     // Otherwise overlay stays visible forever if error happens during 2nd+ generation
     setIsWaitingForVite(false);
 
-    const errorMessage: Message = {
-      role: 'assistant',
-      content: `Sorry, I encountered an error: ${streamState.error.message}`,
-    };
-    setMessages((prev) => [...prev, errorMessage]);
+    // CRITICAL FIX: Differentiate preview errors from generation errors
+    // Preview errors should not be added to chat as they're not AI generation failures
+    // Error codes: PREVIEW_START_FAILED, PREVIEW_RESTART_FAILED, PREVIEW_START_EXCEPTION, PREVIEW_RESTART_EXCEPTION
+    const isPreviewError = streamState.error.code.startsWith('PREVIEW_');
+
+    if (isPreviewError) {
+      // Preview-specific error - show in preview panel, not in chat
+      console.log(
+        '[Editor] 📺 Preview error detected, setting preview error state (not adding to chat)'
+      );
+      setPreviewError(streamState.error.message);
+    } else {
+      // Actual generation error - add to chat as AI message
+      console.log('[Editor] 🤖 Generation error detected, adding to chat');
+      const errorMessage: Message = {
+        role: 'assistant',
+        content: `Sorry, I encountered an error: ${streamState.error.message}`,
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    }
+
+    // Note: setState functions (setIsWaitingForVite, setPreviewError, setMessages)
+    // are intentionally omitted as React guarantees their stability
   }, [streamState.hasError, streamState.error]);
 
   // Reusable error handler for preview operations
