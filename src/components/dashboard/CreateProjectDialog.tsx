@@ -17,7 +17,7 @@ import { Loader2 } from 'lucide-react';
 interface CreateProjectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreateProject: (data: { name: string; description?: string }) => void;
+  onCreateProject: (data: { name: string }) => void;
   isCreating: boolean;
 }
 
@@ -28,18 +28,15 @@ export function CreateProjectDialog({
   isCreating,
 }: CreateProjectDialogProps) {
   const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim()) {
       onCreateProject({
         name: name.trim(),
-        description: description.trim() || undefined,
       });
       // Reset form
       setName('');
-      setDescription('');
     }
   };
 
@@ -63,16 +60,6 @@ export function CreateProjectDialog({
                 onChange={(e) => setName(e.target.value)}
                 disabled={isCreating}
                 required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">Description (Optional)</Label>
-              <Input
-                id="description"
-                placeholder="What will you build?"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                disabled={isCreating}
               />
             </div>
           </div>

@@ -19,7 +19,6 @@ datasource db {
 model Project {
     id            String    @id @default(cuid())
     name          String
-    description   String?
     fileStructure Json?
     clerkUserId   String    // References Clerk's user ID directly
     createdAt     DateTime  @default(now())

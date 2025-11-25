@@ -14,7 +14,6 @@ async function main() {
   const project1 = await prisma.project.create({
     data: {
       name: 'Sample React App',
-      description: 'A sample React application for testing',
       clerkUserId: testClerkUserId1,
       fileStructure: {
         src: {
@@ -32,7 +31,6 @@ async function main() {
   const project2 = await prisma.project.create({
     data: {
       name: 'Task Manager App',
-      description: 'A React task manager application',
       clerkUserId: testClerkUserId2,
       fileStructure: {
         src: {

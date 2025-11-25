@@ -134,10 +134,7 @@ export default function DashboardPage() {
     setIsDialogOpen(true);
   };
 
-  const handleCreateProject = (data: {
-    name: string;
-    description?: string;
-  }): void => {
+  const handleCreateProject = (data: { name: string }): void => {
     createProject.mutate(data);
   };
 
@@ -150,7 +147,6 @@ export default function DashboardPage() {
     if (projectToDuplicate) {
       duplicateProject.mutate({
         name: `${projectToDuplicate.name} (Copy)`,
-        description: projectToDuplicate.description ?? '',
       });
     }
   };
@@ -189,7 +185,6 @@ export default function DashboardPage() {
       // Create project with stored prompt
       createProject.mutate({
         name: generateProjectName(storedData.prompt),
-        description: storedData.prompt,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
