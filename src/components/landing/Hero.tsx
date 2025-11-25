@@ -122,7 +122,6 @@ export function Hero() {
       // User is authenticated - create project immediately
       createProjectMutation.mutate({
         name: generateProjectName(prompt),
-        description: prompt,
       });
     } else {
       // User is not authenticated - store prompt and redirect to sign-up

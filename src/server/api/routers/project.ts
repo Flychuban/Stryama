@@ -48,7 +48,6 @@ export const projectRouter = createTRPCRouter({
     .input(
       z.object({
         name: z.string().min(1).max(100),
-        description: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -66,7 +65,6 @@ export const projectRouter = createTRPCRouter({
       const project = await ctx.db.project.create({
         data: {
           name: input.name,
-          description: input.description,
           clerkUserId: ctx.auth.userId,
         },
       });
@@ -80,7 +78,6 @@ export const projectRouter = createTRPCRouter({
       z.object({
         id: z.string(),
         name: z.string().min(1).max(100).optional(),
-        description: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -105,7 +102,6 @@ export const projectRouter = createTRPCRouter({
         },
         data: {
           name: input.name,
-          description: input.description,
         },
       });
 
