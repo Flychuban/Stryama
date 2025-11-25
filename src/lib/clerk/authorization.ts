@@ -39,6 +39,8 @@ const BETA_TESTERS: Record<string, UserPlan> = {
   // Add your beta testers here (get userId from Clerk Dashboard):
   // 'user_YOUR_BETA_TESTER_ID_HERE': 'BUILDER',
   user_35fdFZFhUmja838TWCP2gtT1wrp: 'BUILDER',
+  user_35zB9LjrMyBGyrCNrZdnL5DEkv7: 'BUILDER',
+  user_35miscS7uvTh6zxzo10f4o4eZuY: 'BUILDER',
 };
 
 /**
