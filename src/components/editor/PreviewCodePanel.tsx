@@ -14,6 +14,99 @@ export type ProjectFile = {
   content: string;
 };
 
+/**
+ * Convert technical error messages to user-friendly explanations
+ */
+function getUserFriendlyErrorMessage(error: string): {
+  title: string;
+  message: string;
+  action: string;
+} {
+  const errorLower = error.toLowerCase();
+
+  // Connection errors
+  if (
+    errorLower.includes('econnrefused') ||
+    errorLower.includes('connection refused')
+  ) {
+    return {
+      title: 'Preview Server Starting',
+      message:
+        'The preview is still starting up. This usually takes 20-30 seconds.',
+      action: 'Please wait a moment, then try restarting the preview.',
+    };
+  }
+
+  // Timeout errors
+  if (errorLower.includes('timeout') || errorLower.includes('etimedout')) {
+    return {
+      title: 'Preview Took Too Long',
+      message:
+        'The preview server is taking longer than expected to start. This can happen with slow network connections or heavy dependencies.',
+      action:
+        'Try restarting the preview or checking your internet connection.',
+    };
+  }
+
+  // Sandbox not found / expired
+  if (
+    errorLower.includes('not found') ||
+    errorLower.includes('sandbox not found') ||
+    errorLower.includes("doesn't exist")
+  ) {
+    return {
+      title: 'Preview Expired',
+      message:
+        'The preview sandbox has expired after a period of inactivity. This is normal.',
+      action:
+        'Click "Regenerate Preview" below to create a new preview from your saved files.',
+    };
+  }
+
+  // Compilation errors
+  if (errorLower.includes('compilation') || errorLower.includes('syntax')) {
+    return {
+      title: 'Code Compilation Error',
+      message:
+        'There is an issue with the generated code preventing compilation.',
+      action:
+        'Try generating the code again or check the code view for errors.',
+    };
+  }
+
+  // Port errors
+  if (errorLower.includes('port') || errorLower.includes('eaddrinuse')) {
+    return {
+      title: 'Port Conflict',
+      message: 'The preview server encountered a port conflict.',
+      action: 'Restart the preview to resolve this issue.',
+    };
+  }
+
+  // Network errors
+  if (
+    errorLower.includes('network') ||
+    errorLower.includes('enetunreach') ||
+    errorLower.includes('enotfound')
+  ) {
+    return {
+      title: 'Network Error',
+      message: 'Unable to reach the preview server due to network issues.',
+      action:
+        'Check your internet connection and try again. If the problem persists, restart the preview.',
+    };
+  }
+
+  // Default fallback
+  return {
+    title: 'Preview Error',
+    message:
+      'We encountered an issue loading the preview. This is usually temporary.',
+    action:
+      'Try restarting the preview. If the issue persists, contact support with the error details below.',
+  };
+}
+
 interface PreviewCodePanelProps {
   viewMode: ViewMode;
   deviceMode: DeviceMode;
@@ -243,40 +336,55 @@ export function PreviewCodePanel({
                 <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-destructive/20">
                   <AlertCircle className="h-10 w-10 text-destructive" />
                 </div>
-                <h3 className="text-xl font-semibold">
-                  {previewError.includes('not found') ||
-                  previewError.includes('Sandbox Not Found')
-                    ? 'Preview Expired'
-                    : 'Preview Failed'}
-                </h3>
-                <p className="text-muted-foreground">
-                  {previewError.includes('not found') ||
-                  previewError.includes('Sandbox Not Found')
-                    ? 'The preview sandbox has expired. Click below to regenerate from your saved files.'
-                    : previewError}
-                </p>
-                {previewError.includes('not found') ||
-                previewError.includes('Sandbox Not Found')
-                  ? onRegeneratePreview && (
-                      <Button
-                        onClick={onRegeneratePreview}
-                        variant="default"
-                        disabled={isRegeneratingPreview}
-                      >
-                        <RefreshCw
-                          className={cn(
-                            'mr-2 h-4 w-4',
-                            isRegeneratingPreview && 'animate-spin'
-                          )}
-                        />
-                        Regenerate Preview
-                      </Button>
-                    )
-                  : onRestartPreview && (
-                      <Button onClick={onRestartPreview} variant="outline">
-                        Restart Preview
-                      </Button>
-                    )}
+                {(() => {
+                  const friendlyError =
+                    getUserFriendlyErrorMessage(previewError);
+                  return (
+                    <>
+                      <h3 className="text-xl font-semibold">
+                        {friendlyError.title}
+                      </h3>
+                      <p className="text-muted-foreground">
+                        {friendlyError.message}
+                      </p>
+                      <p className="text-sm text-muted-foreground/80">
+                        {friendlyError.action}
+                      </p>
+                      {(previewError.includes('not found') ||
+                        previewError.includes('Sandbox Not Found') ||
+                        previewError.includes("doesn't exist")) &&
+                      onRegeneratePreview ? (
+                        <Button
+                          onClick={onRegeneratePreview}
+                          variant="default"
+                          disabled={isRegeneratingPreview}
+                        >
+                          <RefreshCw
+                            className={cn(
+                              'mr-2 h-4 w-4',
+                              isRegeneratingPreview && 'animate-spin'
+                            )}
+                          />
+                          Regenerate Preview
+                        </Button>
+                      ) : onRestartPreview ? (
+                        <Button onClick={onRestartPreview} variant="outline">
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                          Restart Preview
+                        </Button>
+                      ) : null}
+                      {/* Technical details (collapsible) */}
+                      <details className="mt-4 text-left">
+                        <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
+                          Show technical details
+                        </summary>
+                        <pre className="mt-2 max-h-32 overflow-auto rounded-md bg-muted p-3 text-xs text-muted-foreground">
+                          {previewError}
+                        </pre>
+                      </details>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           ) : previewUrl ? (

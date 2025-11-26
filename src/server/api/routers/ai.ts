@@ -27,6 +27,7 @@ import { ModelSelectionService } from '~/lib/services/modelSelection';
 import { getUserPlanFromClerk } from '~/lib/clerk/authorization';
 import { saveGeneratedFilesToDatabase } from '~/lib/integrations/e2b/utils/file-saver';
 import { saveSessionToDB } from '~/lib/integrations/claude/session-cache';
+import { logger } from '~/lib/utils/logger';
 
 export const aiRouter = createTRPCRouter({
   /**
@@ -47,7 +48,7 @@ export const aiRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        console.log(
+        logger.debug(
           `[AI Router] 🚀 Initializing generation for user ${ctx.auth.userId}...`
         );
 
@@ -130,7 +131,7 @@ export const aiRouter = createTRPCRouter({
           });
         }
 
-        console.log(
+        logger.debug(
           `[AI Router] ✅ Initialized generation ${generation.id} for user ${ctx.auth.userId}`
         );
 
@@ -194,7 +195,7 @@ export const aiRouter = createTRPCRouter({
       // Get user plan from Clerk session entitlements (no database query needed)
       const userPlan = await getUserPlanFromClerk();
 
-      console.log(
+      logger.debug(
         `[AI Router] User ${ctx.auth.userId} has plan: ${userPlan} (from Clerk session)`
       );
 
@@ -218,7 +219,7 @@ export const aiRouter = createTRPCRouter({
       );
       const modelId = ModelSelectionService.getModelId(selectedModel);
 
-      console.log(
+      logger.debug(
         `[AI Router] Using model: ${selectedModel} (${modelId}) for plan: ${userPlan}`
       );
 
@@ -254,9 +255,9 @@ export const aiRouter = createTRPCRouter({
 
         if (lastGeneration?.sessionId) {
           sessionId = lastGeneration.sessionId;
-          console.log(`[AI Router] Resuming session: ${sessionId}`);
+          logger.debug(`[AI Router] Resuming session: ${sessionId}`);
         } else {
-          console.log(
+          logger.debug(
             '[AI Router] No previous session found - starting new conversation'
           );
         }
@@ -270,7 +271,7 @@ export const aiRouter = createTRPCRouter({
         // CRITICAL: Create E2B sandbox BEFORE calling Claude
         // This allows Claude to write directly to the sandbox using MCP tools
         if (input.useSandbox) {
-          console.log(
+          logger.debug(
             '[AI Router] Creating/getting E2B sandbox before generation'
           );
           const sandboxResult = await sandboxManager.getOrCreateSandbox(
@@ -283,32 +284,32 @@ export const aiRouter = createTRPCRouter({
           if (sandboxResult.success && sandboxResult.data) {
             sandboxId = sandboxResult.data.id;
             sandboxInstance = sandboxResult.data.instance; // Store instance for later use
-            console.log(`[AI Router] Using sandbox: ${sandboxId}`);
+            logger.debug(`[AI Router] Using sandbox: ${sandboxId}`);
 
             // PHASE 2: Setup infrastructure BEFORE Claude runs
             // This creates package.json, vite.config.ts, tsconfig.json
             // Claude will create ALL application files (index.html, src/*, etc.)
-            console.log('[AI Router] Setting up infrastructure in sandbox');
+            logger.debug('[AI Router] Setting up infrastructure in sandbox');
             const infraResult = await setupInfrastructure(
               sandboxResult.data.instance,
               project.name
             );
 
             if (infraResult.success) {
-              console.log(
+              logger.debug(
                 '[AI Router] ✅ Infrastructure ready - running npm install'
               );
 
               // Run npm install to prepare dependencies
               try {
-                console.log(
+                logger.debug(
                   '[AI Router] 📦 Installing dependencies (may take 5-10 minutes)...'
                 );
                 await sandboxResult.data.instance.commands.run(
                   'cd /project && npm install',
                   { timeoutMs: 600000 } // 10 minutes (matches preview-manager timeout)
                 );
-                console.log(
+                logger.debug(
                   '[AI Router] ✅ Dependencies installed - sandbox ready for Claude'
                 );
               } catch (installError) {
@@ -391,7 +392,7 @@ export const aiRouter = createTRPCRouter({
       ]);
 
       // Enhanced logging for file generation
-      console.log(`[AI Router] Generation result:`, {
+      logger.debug(`[AI Router] Generation result:`, {
         filesGenerated: result.data.files.length,
         filesPaths: result.data.files.map((f) => f.path),
         hasProjectId: !!input.projectId,
@@ -420,7 +421,7 @@ export const aiRouter = createTRPCRouter({
           });
         }
       } else {
-        console.log(
+        logger.debug(
           '[AI Router] No projectId provided - skipping database save'
         );
       }
@@ -533,15 +534,17 @@ export const aiRouter = createTRPCRouter({
       })
     )
     .subscription(async ({ ctx, input }) => {
-      console.log(
+      logger.debug(
         `[AI Stream] 🚀 ========== STREAM GENERATION START ==========`
       );
-      console.log(`[AI Stream] Generation ID: ${input.generationId}`);
-      console.log(`[AI Stream] User ID: ${ctx.auth.userId}`);
-      console.log(`[AI Stream] Timestamp: ${new Date().toISOString()}`);
+      logger.debug(`[AI Stream] Generation ID: ${input.generationId}`);
+      logger.debug(`[AI Stream] User ID: ${ctx.auth.userId}`);
+      logger.debug(`[AI Stream] Timestamp: ${new Date().toISOString()}`);
 
       // Fetch the generation record to get the prompt
-      console.log(`[AI Stream] 🔍 Fetching generation record from database...`);
+      logger.debug(
+        `[AI Stream] 🔍 Fetching generation record from database...`
+      );
       const generation = await ctx.db.aIGeneration.findFirst({
         where: {
           id: input.generationId,
@@ -559,16 +562,16 @@ export const aiRouter = createTRPCRouter({
         });
       }
 
-      console.log(`[AI Stream] ✅ Generation record found`);
+      logger.debug(`[AI Stream] ✅ Generation record found`);
       const prompt = generation.prompt;
       const projectId = generation.projectId ?? undefined;
       const useSandbox = true; // Default to true
 
-      console.log(
+      logger.debug(
         `[AI Stream] 📝 User prompt (${prompt.length} chars):`,
         prompt.substring(0, 200) + (prompt.length > 200 ? '...' : '')
       );
-      console.log(
+      logger.debug(
         `[AI Stream] 📦 Project ID: ${projectId ?? 'none'}, Use Sandbox: ${useSandbox}`
       );
 
@@ -579,7 +582,7 @@ export const aiRouter = createTRPCRouter({
       const selectedModel = ModelSelectionService.selectModel(prompt, userPlan);
       const modelId = ModelSelectionService.getModelId(selectedModel);
 
-      console.log(
+      logger.debug(
         `[AI Stream] Using model: ${selectedModel} (${modelId}) for plan: ${userPlan}`
       );
 
@@ -605,7 +608,9 @@ export const aiRouter = createTRPCRouter({
 
             // Gather project context if project ID provided
             if (projectId) {
-              console.log(`[AI Stream] 🔍 Looking up project: ${projectId}...`);
+              logger.debug(
+                `[AI Stream] 🔍 Looking up project: ${projectId}...`
+              );
               project = await ctx.db.project.findFirst({
                 where: {
                   id: projectId,
@@ -625,12 +630,12 @@ export const aiRouter = createTRPCRouter({
                 return;
               }
 
-              console.log(
+              logger.debug(
                 `[AI Stream] ✅ Project found: "${project.name}" (${projectId})`
               );
 
               // Get existing session ID for continuity
-              console.log(
+              logger.debug(
                 `[AI Stream] 🔍 Checking for previous session to restore...`
               );
               const lastGeneration = await ctx.db.aIGeneration.findFirst({
@@ -648,17 +653,17 @@ export const aiRouter = createTRPCRouter({
               // This ensures the session file is restored in the same execution context
               // where the Claude CLI subprocess runs (critical for serverless environments)
               if (sessionId) {
-                console.log(
+                logger.debug(
                   `[AI Stream] 🔄 Found previous session ${sessionId} - will attempt to restore in Claude client`
                 );
               } else {
-                console.log(
+                logger.debug(
                   `[AI Stream] 📝 No previous session found - starting fresh conversation`
                 );
               }
 
               // Gather project context
-              console.log(
+              logger.debug(
                 `[AI Stream] 🔍 Gathering project context (existing files, dependencies)...`
               );
               const gatherer = new ProjectContextGatherer(ctx.db);
@@ -666,13 +671,13 @@ export const aiRouter = createTRPCRouter({
                 maxFiles: 5,
                 maxFileSize: 3000,
               });
-              console.log(
+              logger.debug(
                 `[AI Stream] ✅ Context gathered: ${context.existingFiles?.length ?? 0} existing files, ${context.dependencies?.length ?? 0} dependencies`
               );
 
               // Set up E2B sandbox if enabled
               if (useSandbox) {
-                console.log(
+                logger.debug(
                   `[AI Stream] 🏗️  Starting sandbox setup for project...`
                 );
                 emit.next(
@@ -684,7 +689,7 @@ export const aiRouter = createTRPCRouter({
                 );
 
                 const sandboxStartTime = Date.now();
-                console.log(
+                logger.debug(
                   `[AI Stream] 🔍 Calling sandboxManager.getOrCreateSandbox...`
                 );
                 const sandboxResult = await sandboxManager.getOrCreateSandbox(
@@ -694,7 +699,7 @@ export const aiRouter = createTRPCRouter({
                   E2B_CONFIG.maxTimeoutMs
                 );
                 const sandboxDuration = Date.now() - sandboxStartTime;
-                console.log(
+                logger.debug(
                   `[AI Stream] ⏱️  Sandbox operation took ${sandboxDuration}ms`
                 );
 
@@ -715,7 +720,7 @@ export const aiRouter = createTRPCRouter({
                 sandboxId = sandboxResult.data.id;
                 sandboxInstance = sandboxResult.data.instance;
 
-                console.log(
+                logger.debug(
                   `[AI Stream] ✅ Sandbox ready - DB ID: ${sandboxId}, E2B ID: ${sandboxResult.data.e2bId}`
                 );
                 emit.next(
@@ -723,7 +728,7 @@ export const aiRouter = createTRPCRouter({
                 );
 
                 // Set up infrastructure
-                console.log(
+                logger.debug(
                   `[AI Stream] 🏗️  Setting up infrastructure (package.json, configs)...`
                 );
                 emit.next(
@@ -740,15 +745,15 @@ export const aiRouter = createTRPCRouter({
                   project.name
                 );
                 const infraDuration = Date.now() - infraStartTime;
-                console.log(
+                logger.debug(
                   `[AI Stream] ⏱️  Infrastructure setup took ${infraDuration}ms`
                 );
 
                 if (infraResult.success) {
-                  console.log(`[AI Stream] ✅ Infrastructure setup complete`);
+                  logger.debug(`[AI Stream] ✅ Infrastructure setup complete`);
                   // Run npm install
                   try {
-                    console.log(
+                    logger.debug(
                       `[AI Stream] 📦 Installing dependencies (timeout: 10 minutes)...`
                     );
                     const npmStartTime = Date.now();
@@ -757,7 +762,7 @@ export const aiRouter = createTRPCRouter({
                       { timeoutMs: 600000 } // 10 minutes
                     );
                     const npmDuration = Date.now() - npmStartTime;
-                    console.log(
+                    logger.debug(
                       `[AI Stream] ✅ npm install completed in ${(npmDuration / 1000).toFixed(1)}s`
                     );
                     emit.next(
@@ -792,7 +797,7 @@ export const aiRouter = createTRPCRouter({
                   );
                 }
 
-                console.log(
+                logger.debug(
                   `[AI Stream] ✅ Sandbox fully configured and ready`
                 );
                 emit.next(
@@ -804,28 +809,28 @@ export const aiRouter = createTRPCRouter({
                 );
               }
             } else {
-              console.log(
+              logger.debug(
                 `[AI Stream] ℹ️  No project ID - using empty context`
               );
               context = { existingFiles: [], dependencies: [] };
             }
 
             // Start streaming generation
-            console.log(
+            logger.debug(
               '[AI Stream] 🚀 ========== STARTING CLAUDE STREAM =========='
             );
-            console.log(
+            logger.debug(
               `[AI Stream] Context: ${context?.existingFiles?.length ?? 0} existing files`
             );
-            console.log(`[AI Stream] Session: ${sessionId ?? 'NEW SESSION'}`);
-            console.log(`[AI Stream] Sandbox ID: ${sandboxId ?? 'none'}`);
-            console.log(`[AI Stream] Model: ${selectedModel}`);
-            console.log(`[AI Stream] Timestamp: ${new Date().toISOString()}`);
+            logger.debug(`[AI Stream] Session: ${sessionId ?? 'NEW SESSION'}`);
+            logger.debug(`[AI Stream] Sandbox ID: ${sandboxId ?? 'none'}`);
+            logger.debug(`[AI Stream] Model: ${selectedModel}`);
+            logger.debug(`[AI Stream] Timestamp: ${new Date().toISOString()}`);
 
             const streamStartTime = Date.now();
             let streamIterator;
             try {
-              console.log(
+              logger.debug(
                 `[AI Stream] 🔄 Calling claudeClient.generateCodeStreaming...`
               );
               streamIterator = claudeClient.generateCodeStreaming(
@@ -837,7 +842,7 @@ export const aiRouter = createTRPCRouter({
                 ctx.db,
                 sandboxId
               );
-              console.log(
+              logger.debug(
                 `[AI Stream] ✅ Stream iterator created successfully`
               );
             } catch (error) {
@@ -857,7 +862,7 @@ export const aiRouter = createTRPCRouter({
             let lastEventTime = Date.now();
             // Yield all events from the stream and capture completion data
             try {
-              console.log(
+              logger.debug(
                 `[AI Stream] 🔄 Starting to iterate over stream events...`
               );
               for await (const event of streamIterator) {
@@ -876,7 +881,7 @@ export const aiRouter = createTRPCRouter({
                   timeSinceLastEvent > 5000; // Log if >5s since last event
 
                 if (shouldLogDetails) {
-                  console.log(
+                  logger.debug(
                     `[AI Stream] 📨 Event #${eventCount} (+${timeSinceLastEvent}ms): ${event.type}`,
                     event.type === 'tool_use'
                       ? `| Tool: ${event.toolName}`
@@ -888,7 +893,7 @@ export const aiRouter = createTRPCRouter({
                   );
                 } else if (eventCount % 10 === 0) {
                   // Log every 10th event to show progress
-                  console.log(
+                  logger.debug(
                     `[AI Stream] 📊 Progress: ${eventCount} events received (${event.type})`
                   );
                 }
@@ -897,7 +902,7 @@ export const aiRouter = createTRPCRouter({
 
                 // Capture completion data for database persistence
                 if (event.type === 'complete' && event.result) {
-                  console.log(
+                  logger.debug(
                     `[AI Stream] 🎯 Completion event received - capturing result data`
                   );
                   completionResult = event.result;
@@ -905,14 +910,14 @@ export const aiRouter = createTRPCRouter({
               }
 
               const streamDuration = Date.now() - streamStartTime;
-              console.log(
+              logger.debug(
                 `[AI Stream] ✅ ========== STREAM COMPLETED ========== `
               );
-              console.log(`[AI Stream] Total events: ${eventCount}`);
-              console.log(
+              logger.debug(`[AI Stream] Total events: ${eventCount}`);
+              logger.debug(
                 `[AI Stream] Total duration: ${(streamDuration / 1000).toFixed(1)}s`
               );
-              console.log(
+              logger.debug(
                 `[AI Stream] Completion result:`,
                 completionResult
                   ? {
@@ -947,20 +952,20 @@ export const aiRouter = createTRPCRouter({
 
             // CRITICAL: Update the existing generation record after stream completes
             if (completionResult && projectId && project) {
-              console.log(
+              logger.debug(
                 `[AI Stream] 💾 ========== SAVING TO DATABASE ==========`
               );
-              console.log(`[AI Stream] Generation ID: ${input.generationId}`);
-              console.log(
+              logger.debug(`[AI Stream] Generation ID: ${input.generationId}`);
+              logger.debug(
                 `[AI Stream] Session ID: ${completionResult.sessionId ?? 'none'}`
               );
-              console.log(
+              logger.debug(
                 `[AI Stream] Tokens used: ${completionResult.tokensUsed}`
               );
 
               try {
                 // Update the existing generation record with results
-                console.log(`[AI Stream] 🔄 Updating AIGeneration record...`);
+                logger.debug(`[AI Stream] 🔄 Updating AIGeneration record...`);
                 const updateStartTime = Date.now();
                 await ctx.db.aIGeneration.update({
                   where: { id: input.generationId },
@@ -974,13 +979,13 @@ export const aiRouter = createTRPCRouter({
                   },
                 });
                 const updateDuration = Date.now() - updateStartTime;
-                console.log(
+                logger.debug(
                   `[AI Stream] ✅ AI generation saved to database (${updateDuration}ms)`
                 );
 
                 // Save session to database for future resumption
                 if (completionResult.sessionId) {
-                  console.log(
+                  logger.debug(
                     `[AI Stream] 💾 Saving session ${completionResult.sessionId} to database...`
                   );
                   const sessionStartTime = Date.now();
@@ -990,7 +995,7 @@ export const aiRouter = createTRPCRouter({
                   );
                   const sessionDuration = Date.now() - sessionStartTime;
                   if (saved) {
-                    console.log(
+                    logger.debug(
                       `[AI Stream] ✅ Session saved to database (${sessionDuration}ms)`
                     );
                   } else {
@@ -1005,10 +1010,10 @@ export const aiRouter = createTRPCRouter({
                 }
 
                 // Save files to database (supports both E2B sandbox and direct response)
-                console.log(
+                logger.debug(
                   `[AI Stream] 💾 Saving generated files to database...`
                 );
-                console.log(
+                logger.debug(
                   `[AI Stream] Sandbox instance available: ${!!sandboxInstance}`
                 );
                 const filesStartTime = Date.now();
@@ -1020,14 +1025,14 @@ export const aiRouter = createTRPCRouter({
                   '[AI Stream]'
                 );
                 const filesDuration = Date.now() - filesStartTime;
-                console.log(
+                logger.debug(
                   `[AI Stream] ✅ Files saved to database (${filesDuration}ms)`
                 );
 
                 // Check if preview server is already running
                 // Strategy: Check if server is ACTUALLY responding, not just if URL exists in DB
                 if (sandboxInstance && sandboxId) {
-                  console.log(
+                  logger.debug(
                     `[AI Stream] 🔍 Checking preview server status...`
                   );
 
@@ -1041,7 +1046,7 @@ export const aiRouter = createTRPCRouter({
                     },
                   });
 
-                  console.log(
+                  logger.debug(
                     `[AI Stream] 🔍 Database sandbox check result:`,
                     dbSandbox
                       ? {
@@ -1058,7 +1063,7 @@ export const aiRouter = createTRPCRouter({
                   let serverIsHealthy = false;
 
                   if (dbSandbox?.previewUrl) {
-                    console.log(
+                    logger.debug(
                       `[AI Stream] 🔍 URL exists in DB, performing health check on: ${dbSandbox.previewUrl}`
                     );
                     try {
@@ -1073,7 +1078,7 @@ export const aiRouter = createTRPCRouter({
                       );
                       const healthCheckDuration = Date.now() - healthCheckStart;
 
-                      console.log(
+                      logger.debug(
                         `[AI Stream] 🏥 Health check result: ${serverIsHealthy ? '✅ HEALTHY' : '❌ NOT HEALTHY'} (${healthCheckDuration}ms)`
                       );
                     } catch (healthError) {
@@ -1084,7 +1089,7 @@ export const aiRouter = createTRPCRouter({
                       // serverIsHealthy remains false from initialization
                     }
                   } else {
-                    console.log(
+                    logger.debug(
                       `[AI Stream] ℹ️ No preview URL in database - first prompt scenario`
                     );
                   }
@@ -1099,7 +1104,7 @@ export const aiRouter = createTRPCRouter({
                       // CRITICAL FIX: Server is already healthy and responding!
                       // Don't restart - just emit the URL to client so iframe can reload
                       // This avoids unnecessary restarts and "port already in use" race conditions
-                      console.log(
+                      logger.debug(
                         `[AI Stream] ✅ Server is healthy - no restart needed, just refreshing preview`
                       );
 
@@ -1111,7 +1116,7 @@ export const aiRouter = createTRPCRouter({
                         timestamp: Date.now(),
                       });
 
-                      console.log(
+                      logger.debug(
                         `[AI Stream] 📡 Emitting preview_url_updated event to client`
                       );
 
@@ -1126,7 +1131,7 @@ export const aiRouter = createTRPCRouter({
                       });
                     } else {
                       // Server has died or is unhealthy - need to restart
-                      console.log(
+                      logger.debug(
                         `[AI Stream] 🔄 Server has died - restarting for clean rebuild...`
                       );
                       const previewStartTime = Date.now();
@@ -1138,7 +1143,7 @@ export const aiRouter = createTRPCRouter({
                           orderBy: { path: 'asc' },
                         });
 
-                        console.log(
+                        logger.debug(
                           `[AI Stream] 📁 Found ${updatedFiles.length} files to serve`
                         );
 
@@ -1181,20 +1186,20 @@ export const aiRouter = createTRPCRouter({
 
                           // Don't throw - let the generation complete but preview failed
                           // User can manually restart preview using the button
-                          console.log(
+                          logger.debug(
                             '[AI Stream] ⚠️ Preview failed but continuing with generation'
                           );
                         } else {
                           const previewDuration = Date.now() - previewStartTime;
-                          console.log(
+                          logger.debug(
                             `[AI Stream] ✅ Preview server restarted successfully in ${(previewDuration / 1000).toFixed(1)}s`
                           );
-                          console.log(
+                          logger.debug(
                             `[AI Stream] Preview URL: ${previewResult.data.url}`
                           );
 
                           // Emit preview URL update event to frontend
-                          console.log(
+                          logger.debug(
                             `[AI Stream] 📡 Emitting preview_url_updated event to client`
                           );
                           emit.next({
@@ -1226,14 +1231,14 @@ export const aiRouter = createTRPCRouter({
                         });
 
                         // Don't throw - let generation complete
-                        console.log(
+                        logger.debug(
                           '[AI Stream] ⚠️ Preview error handled, continuing with generation'
                         );
                       }
                     }
                   } else {
                     // First prompt - need to start preview server (no URL in database yet)
-                    console.log(
+                    logger.debug(
                       `[AI Stream] 🚀 First prompt - starting preview server (no previous URL in DB)...`
                     );
                     const previewStartTime = Date.now();
@@ -1275,15 +1280,15 @@ export const aiRouter = createTRPCRouter({
                           },
                         });
 
-                        console.log(
+                        logger.debug(
                           `[AI Stream] ✅ Preview server started successfully in ${(previewDuration / 1000).toFixed(1)}s`
                         );
-                        console.log(
+                        logger.debug(
                           `[AI Stream] Preview URL: ${previewResult.data.url}`
                         );
 
                         // Emit preview URL update event to frontend
-                        console.log(
+                        logger.debug(
                           `[AI Stream] 📡 Emitting preview_url_updated event to client`
                         );
                         emit.next({
@@ -1308,7 +1313,7 @@ export const aiRouter = createTRPCRouter({
                         });
 
                         // Don't throw - let generation complete
-                        console.log(
+                        logger.debug(
                           '[AI Stream] ⚠️ Preview failed but generation completed successfully'
                         );
                       }
@@ -1332,19 +1337,19 @@ export const aiRouter = createTRPCRouter({
                       });
 
                       // Don't throw - let generation complete
-                      console.log(
+                      logger.debug(
                         '[AI Stream] ⚠️ Preview error handled, generation completed'
                       );
                     }
                   }
                 } else {
-                  console.log(
+                  logger.debug(
                     `[AI Stream] ℹ️ Skipping preview check - sandbox not available`
                   );
                 }
 
                 // Increment usage counters
-                console.log(`[AI Stream] 📊 Updating usage counters...`);
+                logger.debug(`[AI Stream] 📊 Updating usage counters...`);
                 const usageStartTime = Date.now();
                 await Promise.all([
                   rateLimiter.incrementCount(ctx.auth.userId),
@@ -1353,17 +1358,17 @@ export const aiRouter = createTRPCRouter({
                   ),
                 ]);
                 const usageDuration = Date.now() - usageStartTime;
-                console.log(
+                logger.debug(
                   `[AI Stream] ✅ Usage counters updated (${usageDuration}ms)`
                 );
 
-                console.log(
+                logger.debug(
                   `[AI Stream] ✅ ========== DATABASE SAVE COMPLETE ==========`
                 );
 
                 // CRITICAL: Emit database_persisted event to signal client that all DB operations are complete
                 // This prevents race condition where client refetches before files are saved to DB
-                console.log(
+                logger.debug(
                   `[AI Stream] 📡 Emitting database_persisted event to client`
                 );
                 emit.next({
@@ -1405,17 +1410,17 @@ export const aiRouter = createTRPCRouter({
             // CRITICAL: Add small buffer before completing stream
             // This ensures client has time to receive and process preview_url_updated event
             // before the stream completes (which might reset some client state)
-            console.log(
+            logger.debug(
               `[AI Stream] ⏳ Adding 500ms buffer before stream completion...`
             );
             await new Promise((resolve) => setTimeout(resolve, 500));
 
             // Mark as complete
-            console.log(
+            logger.debug(
               `[AI Stream] 🏁 Emitting completion event to client...`
             );
             emit.complete();
-            console.log(
+            logger.debug(
               `[AI Stream] 🏁 ========== STREAM GENERATION END ==========`
             );
           } catch (error) {
@@ -1444,14 +1449,14 @@ export const aiRouter = createTRPCRouter({
         };
 
         // Start streaming
-        console.log(
+        logger.debug(
           `[AI Stream] 🔄 Launching async streamGeneration function...`
         );
         void streamGeneration();
 
         // Cleanup function
         return () => {
-          console.log(
+          logger.debug(
             `[AI Stream] 🔌 Client disconnected - cleaning up subscription`
           );
         };

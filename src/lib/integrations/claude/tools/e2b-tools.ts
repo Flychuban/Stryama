@@ -10,6 +10,7 @@ import { z } from 'zod';
 import type { Sandbox } from '@e2b/code-interpreter';
 import { sandboxManager } from '~/lib/integrations/e2b';
 import type { PrismaClient } from '@prisma/client';
+import { logger } from '~/lib/utils/logger';
 
 /**
  * Get a sandbox instance from the sandbox manager's cache
@@ -21,12 +22,12 @@ async function getSandbox(
   // Use the sandbox manager's cache (single source of truth)
   const cachedInstance = sandboxManager.getCachedInstance(sandboxId);
   if (cachedInstance) {
-    console.log(`[E2B Tools] Using cached sandbox instance: ${sandboxId}`);
+    logger.debug(`[E2B Tools] Using cached sandbox instance: ${sandboxId}`);
 
     // Validate cached instance is still alive
     try {
       await cachedInstance.getInfo();
-      console.log(`[E2B Tools] ✅ Cached sandbox is valid`);
+      logger.debug(`[E2B Tools] ✅ Cached sandbox is valid`);
       return cachedInstance;
     } catch (error) {
       console.error(`[E2B Tools] ❌ Cached sandbox is dead:`, error);
@@ -35,7 +36,7 @@ async function getSandbox(
   }
 
   // Resume the sandbox (will connect if it's active but not cached)
-  console.log(`[E2B Tools] Resuming sandbox: ${sandboxId}`);
+  logger.debug(`[E2B Tools] Resuming sandbox: ${sandboxId}`);
   const result = await sandboxManager.resumeSandbox(db, sandboxId);
 
   if (!result.success || !result.data) {
@@ -62,7 +63,7 @@ async function getSandbox(
   }
 
   // Sandbox is now cached by the manager
-  console.log(`[E2B Tools] Successfully resumed sandbox: ${sandboxId}`);
+  logger.debug(`[E2B Tools] Successfully resumed sandbox: ${sandboxId}`);
   return result.data;
 }
 
@@ -87,7 +88,7 @@ export function createE2BTools(db: PrismaClient) {
     },
     async (args) => {
       try {
-        console.log(
+        logger.debug(
           `[E2B Tool] Writing file: ${args.file_path} to sandbox ${args.sandbox_id}`
         );
 
@@ -100,7 +101,7 @@ export function createE2BTools(db: PrismaClient) {
 
         await sandbox.files.write(fullPath, args.content);
 
-        console.log(`[E2B Tool] ✅ Successfully wrote: ${fullPath}`);
+        logger.debug(`[E2B Tool] ✅ Successfully wrote: ${fullPath}`);
 
         return {
           content: [
@@ -137,7 +138,7 @@ export function createE2BTools(db: PrismaClient) {
     },
     async (args) => {
       try {
-        console.log(
+        logger.debug(
           `[E2B Tool] Reading file: ${args.file_path} from sandbox ${args.sandbox_id}`
         );
 
@@ -149,7 +150,7 @@ export function createE2BTools(db: PrismaClient) {
 
         const content = await sandbox.files.read(fullPath);
 
-        console.log(
+        logger.debug(
           `[E2B Tool] ✅ Successfully read: ${fullPath} (${content.length} bytes)`
         );
 
@@ -196,7 +197,7 @@ export function createE2BTools(db: PrismaClient) {
     },
     async (args) => {
       try {
-        console.log(
+        logger.debug(
           `[E2B Tool] Executing command in sandbox ${args.sandbox_id}: ${args.command}`
         );
 
@@ -220,7 +221,7 @@ export function createE2BTools(db: PrismaClient) {
 
         if (isDevServer) {
           const pid = 'pid' in process ? process.pid : 'unknown';
-          console.log(
+          logger.debug(
             `[E2B Tool] ✅ Dev server started in background with PID: ${pid}`
           );
 
@@ -238,7 +239,7 @@ export function createE2BTools(db: PrismaClient) {
                   },
                 },
               });
-              console.log(
+              logger.debug(
                 `[E2B Tool] ✅ Stored dev server metadata in database (PID: ${pid})`
               );
             } catch (dbError) {
@@ -270,7 +271,7 @@ export function createE2BTools(db: PrismaClient) {
           .filter(Boolean)
           .join('\n');
 
-        console.log(
+        logger.debug(
           `[E2B Tool] ✅ Command completed with exit code: ${process.exitCode}`
         );
 
@@ -313,7 +314,7 @@ export function createE2BTools(db: PrismaClient) {
     },
     async (args) => {
       try {
-        console.log(
+        logger.debug(
           `[E2B Tool] Listing directory: ${args.directory} in sandbox ${args.sandbox_id}`
         );
 
@@ -322,7 +323,7 @@ export function createE2BTools(db: PrismaClient) {
         // Use ls command to list files
         const process = await sandbox.commands.run(`ls -la ${args.directory}`);
 
-        console.log(`[E2B Tool] ✅ Listed directory: ${args.directory}`);
+        logger.debug(`[E2B Tool] ✅ Listed directory: ${args.directory}`);
 
         return {
           content: [
@@ -362,17 +363,17 @@ export function createE2BTools(db: PrismaClient) {
     },
     async (args) => {
       try {
-        console.log(
+        logger.debug(
           `[E2B Tool] Getting preview URL for sandbox ${args.sandbox_id} on port ${args.port}`
         );
 
         const sandbox = await getSandbox(args.sandbox_id, db);
 
         // CRITICAL: Validate E2B sandbox is accessible before generating URL
-        console.log(`[E2B Tool] Validating sandbox is accessible...`);
+        logger.debug(`[E2B Tool] Validating sandbox is accessible...`);
         try {
           const sandboxInfo = await sandbox.getInfo();
-          console.log(
+          logger.debug(
             `[E2B Tool] ✅ Sandbox validated - E2B ID: ${sandboxInfo.sandboxId}`
           );
         } catch (validationError) {
@@ -394,7 +395,7 @@ export function createE2BTools(db: PrismaClient) {
         // Get the public URL for the sandbox
         const url = sandbox.getHost(args.port);
 
-        console.log(`[E2B Tool] ✅ Preview URL: ${url}`);
+        logger.debug(`[E2B Tool] ✅ Preview URL: ${url}`);
 
         return {
           content: [
@@ -435,5 +436,5 @@ export function createE2BTools(db: PrismaClient) {
 export function clearSandboxCache(_sandboxId?: string) {
   // Cache management is now handled by SandboxManager
   // This function is kept for backwards compatibility
-  console.log(`[E2B Tools] Cache clearing delegated to SandboxManager`);
+  logger.debug(`[E2B Tools] Cache clearing delegated to SandboxManager`);
 }

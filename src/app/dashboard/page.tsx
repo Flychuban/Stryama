@@ -285,11 +285,7 @@ export default function DashboardPage() {
 
       {/* Main Content */}
       <main className="mx-auto max-w-7xl px-6 py-12">
-        {isLoading ? (
-          <div className="flex h-64 items-center justify-center">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          </div>
-        ) : transformedProjects.length === 0 ? (
+        {!isLoading && transformedProjects.length === 0 ? (
           <EmptyState onCreateProject={handleNewProject} />
         ) : (
           <ProjectGrid
@@ -297,6 +293,7 @@ export default function DashboardPage() {
             onOpenProject={handleOpenProject}
             onDuplicateProject={handleDuplicateProject}
             onDeleteProject={handleDeleteProject}
+            isLoading={isLoading}
           />
         )}
       </main>

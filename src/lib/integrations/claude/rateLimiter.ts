@@ -14,11 +14,29 @@ type RateLimitData = {
 };
 
 /**
- * In-memory storage for rate limiting
- * TODO: Replace with Redis for production use
+ * PRODUCTION LIMITATION: In-memory rate limiting
+ *
+ * Current implementation uses Map storage which means:
+ * - Rate limits reset on every deployment/server restart
+ * - Won't work correctly with multiple server instances
+ * - Not suitable for serverless/edge deployments with multiple containers
+ *
+ * For production at scale, replace with:
+ * - Redis (via Upstash/Vercel KV for serverless compatibility)
+ * - Or use Clerk's built-in rate limiting features
+ *
+ * Current setup is acceptable for MVP with single instance deployment.
+ * For the initial launch with limited users, this is sufficient.
  */
 const requestCounts = new Map<string, RateLimitData>();
 const dailyCounts = new Map<string, RateLimitData>();
+
+// Log warning in production about in-memory rate limiting
+if (typeof window === 'undefined' && process.env.NODE_ENV === 'production') {
+  console.warn(
+    '[RateLimiter] Using in-memory rate limiting - not suitable for multi-instance deployments'
+  );
+}
 
 export class RateLimiter {
   async checkRateLimit(
