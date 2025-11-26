@@ -62,7 +62,7 @@ export function ControlBar({
           aria-pressed={viewMode === 'preview'}
           onClick={() => onViewModeChange('preview')}
           className={cn(
-            'h-8 rounded-md px-2 text-xs transition-all duration-200 sm:h-9 sm:px-3 sm:text-sm',
+            'h-auto min-h-[44px] rounded-md px-3 py-2 text-xs transition-all duration-200 sm:h-9 sm:px-3 sm:text-sm',
             viewMode === 'preview'
               ? 'bg-primary/10 text-primary shadow-sm hover:bg-primary/10 hover:text-primary'
               : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
@@ -78,7 +78,7 @@ export function ControlBar({
           aria-pressed={viewMode === 'code'}
           onClick={() => onViewModeChange('code')}
           className={cn(
-            'h-8 rounded-md px-2 text-xs transition-all duration-200 sm:h-9 sm:px-3 sm:text-sm',
+            'h-auto min-h-[44px] rounded-md px-3 py-2 text-xs transition-all duration-200 sm:h-9 sm:px-3 sm:text-sm',
             viewMode === 'code'
               ? 'bg-primary/10 text-primary shadow-sm hover:bg-primary/10 hover:text-primary'
               : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
@@ -96,7 +96,7 @@ export function ControlBar({
             variant="outline"
             size="sm"
             onClick={onDownload}
-            className="h-8 rounded-lg border-border/50 px-2 text-xs transition-all duration-200 hover:border-primary/30 hover:bg-primary/5 sm:h-9 sm:px-3 sm:text-sm"
+            className="h-auto min-h-[44px] rounded-lg border-border/50 px-3 py-2 text-xs transition-all duration-200 hover:border-primary/30 hover:bg-primary/5 sm:h-9 sm:px-3 sm:text-sm"
             title="Download code"
           >
             <Download className="h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
@@ -112,7 +112,7 @@ export function ControlBar({
                 size="sm"
                 onClick={onRegeneratePreview}
                 disabled={isRegeneratingPreview}
-                className="h-8 rounded-lg border-border/50 px-2 text-xs transition-all duration-200 hover:border-primary/30 hover:bg-primary/5 sm:h-9 sm:px-3 sm:text-sm"
+                className="h-auto min-h-[44px] rounded-lg border-border/50 px-3 py-2 text-xs transition-all duration-200 hover:border-primary/30 hover:bg-primary/5 sm:h-9 sm:px-3 sm:text-sm"
                 title="Regenerate preview"
               >
                 <RefreshCw
@@ -131,7 +131,7 @@ export function ControlBar({
                   size="sm"
                   onClick={onRestartPreview}
                   disabled={isGeneratingPreview}
-                  className="h-8 rounded-lg border-border/50 px-2 text-xs transition-all duration-200 hover:border-primary/30 hover:bg-primary/5 sm:h-9 sm:px-3 sm:text-sm"
+                  className="h-auto min-h-[44px] rounded-lg border-border/50 px-3 py-2 text-xs transition-all duration-200 hover:border-primary/30 hover:bg-primary/5 sm:h-9 sm:px-3 sm:text-sm"
                   title="Restart preview"
                 >
                   <RefreshCw
@@ -152,7 +152,7 @@ export function ControlBar({
             <Button
               variant="outline"
               size="sm"
-              className="h-8 rounded-lg border-border/50 px-2 text-xs transition-all duration-200 hover:border-primary/30 hover:bg-primary/5 sm:h-9 sm:px-3 sm:text-sm"
+              className="h-auto min-h-[44px] rounded-lg border-border/50 px-3 py-2 text-xs transition-all duration-200 hover:border-primary/30 hover:bg-primary/5 sm:h-9 sm:px-3 sm:text-sm"
             >
               {deviceMode === 'desktop' ? (
                 <>

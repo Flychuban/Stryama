@@ -223,19 +223,35 @@ export function PreviewCodePanel({
   // Show loading state for preview server starting
   if (isGeneratingPreview || isRegeneratingPreview) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="space-y-4 text-center">
+      <div className="flex h-full items-center justify-center p-6">
+        <div className="max-w-md space-y-6 text-center">
           <div className="mx-auto h-16 w-16 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
+
           <div>
             <h3 className="text-lg font-semibold">
               {isRegeneratingPreview
-                ? 'Restoring preview...'
-                : 'Starting preview server...'}
+                ? 'Restoring Your Preview'
+                : 'Starting Preview Server'}
             </h3>
             <p className="mt-2 text-sm text-muted-foreground">
               {isRegeneratingPreview
-                ? 'Syncing files from database and starting preview (20-30s)'
-                : 'Installing dependencies and starting the development server'}
+                ? 'Syncing your latest code and starting the development server'
+                : 'Installing dependencies and compiling your application'}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground/70">
+              This usually takes 20-30 seconds
+            </p>
+          </div>
+
+          {/* Add helpful tip */}
+          <div className="rounded-lg border border-border/50 bg-muted/50 p-4 text-left">
+            <p className="mb-2 flex items-center gap-2 text-xs font-medium">
+              <span>💡</span>
+              <span>Good to know</span>
+            </p>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              After the first load, code changes appear instantly using
+              hot-reload. No waiting!
             </p>
           </div>
         </div>
@@ -271,17 +287,50 @@ export function PreviewCodePanel({
 
     // No files yet
     return (
-      <div className="flex h-full items-center justify-center p-8 text-center">
-        <div className="max-w-md space-y-4">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-muted/50">
-            <Code2 className="h-10 w-10 text-muted-foreground" />
+      <div className="flex h-full items-center justify-center p-8">
+        <div className="max-w-md space-y-6 text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-border/50 bg-muted/50">
+            <Code2 className="h-8 w-8 text-muted-foreground" />
           </div>
+
           <div>
-            <h3 className="text-xl font-semibold">No Files Yet</h3>
+            <h3 className="text-lg font-semibold">No Code Yet</h3>
             <p className="mt-2 text-sm text-muted-foreground">
-              Start a conversation with the AI to generate code files for your
-              project.
+              Start by describing what you want to build in the chat
             </p>
+          </div>
+
+          {/* Add getting started steps */}
+          <div className="space-y-2 rounded-lg border border-border/50 bg-muted/30 p-4 text-left">
+            <p className="mb-3 text-xs font-medium text-foreground">
+              Getting started:
+            </p>
+            <div className="space-y-2">
+              <div className="flex items-start gap-2 text-xs">
+                <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 font-medium text-primary">
+                  1
+                </span>
+                <span className="text-muted-foreground">
+                  Describe your app idea in the chat
+                </span>
+              </div>
+              <div className="flex items-start gap-2 text-xs">
+                <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 font-medium text-primary">
+                  2
+                </span>
+                <span className="text-muted-foreground">
+                  Watch AI generate code in real-time
+                </span>
+              </div>
+              <div className="flex items-start gap-2 text-xs">
+                <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 font-medium text-primary">
+                  3
+                </span>
+                <span className="text-muted-foreground">
+                  Switch to Preview to see it live
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -303,8 +352,8 @@ export function PreviewCodePanel({
             deviceMode === 'desktop'
               ? '100%'
               : isMobile
-                ? 'calc(100vh - 200px)'
-                : '667px',
+                ? 'calc(100svh - 240px)'
+                : 'min(667px, calc(100vh - 200px))',
           maxWidth: '100%',
         }}
       >

@@ -27,17 +27,13 @@ export function ProjectGrid({
   // Show loading skeleton
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {[1, 2, 3].map((i) => (
-          <Card key={i} className="overflow-hidden">
-            <CardContent className="space-y-4 p-6">
-              <Skeleton className="h-6 w-2/3" />
-              <Skeleton className="h-4 w-1/2" />
-              <Skeleton className="h-32 w-full rounded-lg" />
-              <div className="flex gap-2 pt-2">
-                <Skeleton className="h-9 flex-1" />
-                <Skeleton className="h-9 w-9" />
-              </div>
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Card key={i} className="h-[200px] overflow-hidden">
+            <div className="h-[120px] animate-pulse bg-muted/50" />
+            <CardContent className="space-y-2 p-4">
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-3 w-1/2" />
             </CardContent>
           </Card>
         ))}

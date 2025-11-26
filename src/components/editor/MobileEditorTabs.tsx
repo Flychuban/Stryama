@@ -81,26 +81,28 @@ export function MobileEditorTabs({
       <TabsList className="fixed bottom-0 left-0 right-0 z-50 grid h-16 w-full grid-cols-2 rounded-none border-t border-border/50 bg-background/95 backdrop-blur-xl">
         <TabsTrigger
           value="chat"
-          className="flex flex-col items-center gap-1 data-[state=active]:bg-primary/10"
+          className="relative flex min-h-[52px] flex-col items-center justify-center gap-1 py-3 transition-colors data-[state=active]:bg-primary/10"
         >
           <MessageSquare className="h-5 w-5" />
-          <span className="text-xs">Chat</span>
+          <span className="text-xs font-medium">Chat</span>
+          <span className="absolute bottom-0 left-0 right-0 h-1 rounded-t-full bg-primary opacity-0 transition-opacity data-[state=active]:opacity-100" />
         </TabsTrigger>
         <TabsTrigger
           value="preview"
-          className="flex flex-col items-center gap-1 data-[state=active]:bg-primary/10"
+          className="relative flex min-h-[52px] flex-col items-center justify-center gap-1 py-3 transition-colors data-[state=active]:bg-primary/10"
         >
           {viewMode === 'preview' ? (
             <>
               <Eye className="h-5 w-5" />
-              <span className="text-xs">Preview</span>
+              <span className="text-xs font-medium">Preview</span>
             </>
           ) : (
             <>
               <Code2 className="h-5 w-5" />
-              <span className="text-xs">Code</span>
+              <span className="text-xs font-medium">Code</span>
             </>
           )}
+          <span className="absolute bottom-0 left-0 right-0 h-1 rounded-t-full bg-primary opacity-0 transition-opacity data-[state=active]:opacity-100" />
         </TabsTrigger>
       </TabsList>
 

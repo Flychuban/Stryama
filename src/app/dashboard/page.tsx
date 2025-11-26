@@ -3,7 +3,7 @@
 // 1. External libraries
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Loader2 } from 'lucide-react';
+import { Plus, Loader2, Sparkles, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 
 // 2. Internal utilities
@@ -237,7 +237,7 @@ export default function DashboardPage() {
 
       {/* Page Header */}
       <header className="sticky top-16 z-30 border-b border-border/40 bg-background/60 backdrop-blur-xl">
-        <div className="mx-auto flex min-h-24 max-w-7xl flex-col items-start justify-between gap-4 px-6 py-4 sm:h-24 sm:flex-row sm:items-center sm:py-0">
+        <div className="mx-auto flex h-auto min-h-24 max-w-7xl flex-col items-start justify-between gap-4 px-6 py-4 sm:flex-row sm:items-center sm:py-4">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
@@ -251,13 +251,28 @@ export default function DashboardPage() {
               {usageStats && (
                 <Link
                   href="/profile"
-                  className="flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-sm transition-colors hover:bg-blue-100"
+                  className="group flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm transition-all hover:bg-blue-100 hover:shadow-sm dark:border-blue-800 dark:bg-blue-950"
                 >
-                  <span className="font-medium text-blue-900">
-                    {usageStats.generationsRemaining} remaining
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                    <span className="font-medium text-blue-900 dark:text-blue-100">
+                      {usageStats.generationsRemaining}
+                    </span>
+
+                    {/* Mini progress bar */}
+                    <div className="hidden h-1.5 w-12 overflow-hidden rounded-full bg-blue-200 dark:bg-blue-900 sm:block">
+                      <div
+                        className="h-full bg-blue-600 transition-all duration-300 dark:bg-blue-400"
+                        style={{
+                          width: `${Math.max(0, Math.min(100, (usageStats.generationsRemaining / usageStats.generationsLimit) * 100))}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Warning icon */}
                   {usageStats.generationsRemaining < 10 && (
-                    <span className="text-xs text-amber-600">⚠️</span>
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
                   )}
                 </Link>
               )}
