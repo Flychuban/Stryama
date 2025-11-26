@@ -363,9 +363,9 @@ export async function generateAISuggestions(
     return cached;
   }
 
-  // TODO: Implement Claude AI integration for complex error analysis
-  // For now, return empty array
-  // In future: Send error to Claude and parse suggestions from response
+  // Post-MVP: Use Claude AI to analyze complex compilation errors
+  // Current rule-based error suggestions work well for common errors
+  // Future enhancement: Send error to Claude for intelligent error analysis and custom fix suggestions
 
   const aiSuggestions: FixSuggestion[] = [];
 

@@ -29,7 +29,7 @@ export const analytics = {
     if (process.env.NODE_ENV === 'development') {
       console.log('[Analytics] Track event:', eventName, properties);
     }
-    // TODO: Implement PostHog tracking after installation
+    // Post-MVP: Implement PostHog tracking for user analytics
     // posthog.capture(eventName, properties);
   },
 

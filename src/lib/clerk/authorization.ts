@@ -21,27 +21,74 @@ import { type UserPlan } from '@prisma/client';
 /**
  * BETA TESTERS - Temporary Allowlist for MVP Testing
  *
- * Add Clerk user IDs here to grant them free access to paid plans
- * without requiring a subscription.
+ * Beta testers are now configured via the BETA_TESTERS environment variable.
+ * This allows easy management without code deployments.
  *
- * IMPORTANT:
- * - Use Clerk User ID (not email) - more reliable
- * - User IDs are case-sensitive (use exact format from Clerk Dashboard)
- * - To get userId: Clerk Dashboard → Users → Select user → Copy User ID
+ * Format: "user_id1:PLAN,user_id2:PLAN,..."
+ * Example: "user_2NNEqL2nrIRdJ194ndJqAHtrx:BUILDER,user_2XYZ789abc:PRO"
  *
- * TODO: Remove this after beta testing period ends
+ * To add/remove beta testers:
+ * 1. Update BETA_TESTERS env var in Vercel dashboard or .env file
+ * 2. Redeploy (env var changes require deployment)
+ *
+ * To get userId: Clerk Dashboard → Users → Select user → Copy User ID
  */
-const BETA_TESTERS: Record<string, UserPlan> = {
-  // Map Clerk user ID to the plan they should have
-  // Example: 'user_2NNEqL2nrIRdJ194ndJqAHtrx': 'BUILDER',
-  // Example: 'user_2XYZ789abc': 'PRO',
 
-  // Add your beta testers here (get userId from Clerk Dashboard):
-  // 'user_YOUR_BETA_TESTER_ID_HERE': 'BUILDER',
-  user_35fdFZFhUmja838TWCP2gtT1wrp: 'BUILDER',
-  user_35zB9LjrMyBGyrCNrZdnL5DEkv7: 'BUILDER',
-  user_35miscS7uvTh6zxzo10f4o4eZuY: 'BUILDER',
-};
+/**
+ * Parse beta testers from environment variable
+ * Returns a map of userId -> UserPlan
+ */
+function parseBetaTesters(): Record<string, UserPlan> {
+  const betaTestersEnv = process.env.BETA_TESTERS;
+
+  // If not configured, return empty map
+  if (!betaTestersEnv || betaTestersEnv.trim() === '') {
+    return {};
+  }
+
+  const betaTesters: Record<string, UserPlan> = {};
+  const entries = betaTestersEnv.split(',');
+
+  for (const entry of entries) {
+    const trimmedEntry = entry.trim();
+    if (!trimmedEntry) continue;
+
+    const [userId, plan] = trimmedEntry.split(':');
+
+    // Validate format
+    if (!userId || !plan) {
+      console.warn(
+        `[Auth] Invalid BETA_TESTERS format: "${entry}". Expected format: "user_id:PLAN"`
+      );
+      continue;
+    }
+
+    // Validate plan is valid UserPlan
+    if (plan !== 'FREE' && plan !== 'BUILDER' && plan !== 'PRO') {
+      console.warn(
+        `[Auth] Invalid plan "${plan}" for user ${userId}. Must be FREE, BUILDER, or PRO.`
+      );
+      continue;
+    }
+
+    betaTesters[userId.trim()] = plan as UserPlan;
+  }
+
+  // Log in development only
+  if (
+    process.env.NODE_ENV === 'development' &&
+    Object.keys(betaTesters).length > 0
+  ) {
+    console.log(
+      `[Auth] Loaded ${Object.keys(betaTesters).length} beta testers from env`
+    );
+  }
+
+  return betaTesters;
+}
+
+// Parse beta testers once on module load
+const BETA_TESTERS = parseBetaTesters();
 
 /**
  * Get the user's effective plan from Clerk's session entitlements

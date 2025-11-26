@@ -10,7 +10,11 @@ import {
   getSoftwareApplicationSchema,
   getWebSiteSchema,
 } from '@/lib/seo/structured-data';
+import { validateEnvironment } from '@/lib/utils/validate-env';
 import '../styles/globals.css';
+
+// Validate environment variables on server startup (skips during build)
+validateEnvironment();
 
 export const dynamic = 'force-dynamic';
 

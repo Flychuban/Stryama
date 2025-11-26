@@ -33,6 +33,7 @@ import type { StreamEvent } from './types/stream-events';
 import { resolveClaudeCLIPath } from './utils/resolve-cli-path';
 import { getCleanEnvironment } from './utils/env-cleaner';
 import { restoreSessionFromDB, verifySessionFileExists } from './session-cache';
+import { logger } from '~/lib/utils/logger';
 
 export class ClaudeClient {
   private static instance: ClaudeClient;
@@ -79,7 +80,7 @@ export class ClaudeClient {
     const startTime = Date.now();
 
     try {
-      console.log(`[Claude] Starting streaming generation ${generationId}`);
+      logger.debug(`[Claude] Starting streaming generation ${generationId}`);
 
       // Build enhanced prompt with context
       const enhancedPrompt = this.buildEnhancedPrompt(request, sandboxId);
@@ -92,7 +93,7 @@ export class ClaudeClient {
       let canResumeSession = false;
 
       if (sessionId && db) {
-        console.log(
+        logger.debug(
           `[Claude] 🔄 Attempting to restore session ${sessionId} (process ${process.pid})...`
         );
 
@@ -107,7 +108,7 @@ export class ClaudeClient {
           const verification = await verifySessionFileExists(sessionId);
 
           if (verification.exists) {
-            console.log(
+            logger.debug(
               `[Claude] ✅ Session ${sessionId} verified and ready (path: ${verification.path})`
             );
             canResumeSession = true;
@@ -121,7 +122,7 @@ export class ClaudeClient {
             canResumeSession = false;
           }
         } else {
-          console.log(
+          logger.debug(
             `[Claude] ℹ️ No session data found in database for ${sessionId} - starting fresh`
           );
           canResumeSession = false;
@@ -138,7 +139,7 @@ export class ClaudeClient {
 
       const cliPath = resolveClaudeCLIPath();
 
-      console.log(
+      logger.debug(
         `[Claude] Starting query with resume=${canResumeSession ? sessionId : 'none'}`
       );
 
@@ -169,7 +170,7 @@ export class ClaudeClient {
       yield* processSDKStream(sdkStream, sandboxId);
 
       const duration = Date.now() - startTime;
-      console.log(
+      logger.debug(
         `[Claude] Streaming generation ${generationId} completed in ${duration}ms`
       );
     } catch (error) {
@@ -197,9 +198,9 @@ export class ClaudeClient {
     const generationId = this.generateId();
 
     try {
-      console.log(`[Claude] Starting generation ${generationId}`);
+      logger.debug(`[Claude] Starting generation ${generationId}`);
       if (sandboxId) {
-        console.log(`[Claude] Using E2B sandbox mode with ID: ${sandboxId}`);
+        logger.debug(`[Claude] Using E2B sandbox mode with ID: ${sandboxId}`);
       }
 
       const enhancedPrompt = this.buildEnhancedPrompt(request, sandboxId);
@@ -209,7 +210,7 @@ export class ClaudeClient {
       let canResumeSession = false;
 
       if (sessionId && db) {
-        console.log(
+        logger.debug(
           `[Claude] 🔄 Attempting to restore session ${sessionId} (process ${process.pid})...`
         );
 
@@ -224,7 +225,7 @@ export class ClaudeClient {
           const verification = await verifySessionFileExists(sessionId);
 
           if (verification.exists) {
-            console.log(
+            logger.debug(
               `[Claude] ✅ Session ${sessionId} verified and ready (path: ${verification.path})`
             );
             canResumeSession = true;
@@ -238,7 +239,7 @@ export class ClaudeClient {
             canResumeSession = false;
           }
         } else {
-          console.log(
+          logger.debug(
             `[Claude] ℹ️ No session data found in database for ${sessionId} - starting fresh`
           );
           canResumeSession = false;
@@ -259,14 +260,14 @@ export class ClaudeClient {
         sandboxId && db ? { 'e2b-sandbox': createE2BTools(db) } : undefined;
 
       if (mcpServers) {
-        console.log(`[Claude] E2B mode enabled for sandbox: ${sandboxId}`);
+        logger.debug(`[Claude] E2B mode enabled for sandbox: ${sandboxId}`);
       } else {
-        console.log(`[Claude] Local mode enabled`);
+        logger.debug(`[Claude] Local mode enabled`);
       }
 
       const cliPath = resolveClaudeCLIPath();
 
-      console.log(
+      logger.debug(
         `[Claude] Starting query with resume=${canResumeSession ? sessionId : 'none'}`
       );
 
@@ -295,9 +296,9 @@ export class ClaudeClient {
         if (message.type === 'system' && message.subtype === 'init') {
           resultSessionId = message.session_id;
           if (request.sessionId && resultSessionId === request.sessionId) {
-            console.log(`[Claude] ✅ Resumed session ${resultSessionId}`);
+            logger.debug(`[Claude] ✅ Resumed session ${resultSessionId}`);
           } else {
-            console.log(`[Claude] Session ${resultSessionId} initialized`);
+            logger.debug(`[Claude] Session ${resultSessionId} initialized`);
           }
         }
 
@@ -308,7 +309,7 @@ export class ClaudeClient {
             tokensUsed =
               Number(usage.input_tokens) + Number(usage.output_tokens);
             totalCost = Number(message.total_cost_usd);
-            console.log(
+            logger.debug(
               `[Claude] Success: ${tokensUsed} tokens, $${totalCost.toFixed(4)}`
             );
           } else if (message.subtype === 'error_max_turns') {
@@ -352,7 +353,7 @@ export class ClaudeClient {
       );
 
       const duration = Date.now() - startTime;
-      console.log(
+      logger.debug(
         `[Claude] Generation ${generationId} completed in ${duration}ms`
       );
 
@@ -519,33 +520,33 @@ Please generate the complete implementation following these guidelines.`;
     // PHASE 6: Skip markdown parsing in E2B mode
     // When using E2B sandbox, files are written directly via MCP tools
     if (sandboxId) {
-      console.log(
+      logger.debug(
         `[Claude] E2B mode: files written directly to sandbox via MCP tools`
       );
-      console.log(
+      logger.debug(
         `[Claude] Skipping markdown parsing - files already in sandbox ${sandboxId}`
       );
       files = [];
     } else {
       // Local mode: parse markdown code blocks from response text
-      console.log(
+      logger.debug(
         `[Claude] Local mode: parsing markdown code blocks from response`
       );
       files = CodeParser.parseClaudeResponse(responseText);
 
-      console.log(`[Claude] Parsed ${files.length} files from response`);
+      logger.debug(`[Claude] Parsed ${files.length} files from response`);
 
       if (files.length === 0) {
-        console.log(`[Claude] ⚠️ WARNING: No files parsed from response`);
-        console.log(`[Claude] This might indicate:`);
-        console.log(`[Claude]   1. Response format issue ❌`);
-        console.log(`[Claude]   2. Claude didn't generate any code ⚠️`);
-        console.log(
+        logger.debug(`[Claude] ⚠️ WARNING: No files parsed from response`);
+        logger.debug(`[Claude] This might indicate:`);
+        logger.debug(`[Claude]   1. Response format issue ❌`);
+        logger.debug(`[Claude]   2. Claude didn't generate any code ⚠️`);
+        logger.debug(
           `[Claude] Response preview (first 500 chars):`,
           responseText.substring(0, 500)
         );
       } else {
-        console.log(
+        logger.debug(
           `[Claude] ✅ Files parsed successfully:`,
           files.map((f) => f.path).join(', ')
         );
