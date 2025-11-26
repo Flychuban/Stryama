@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import { toast } from 'sonner';
 import { AppHeader } from '@/components/shared/AppHeader';
+import { UsageBanner } from '@/components/editor/UsageBanner';
 import AILoadingAnimation from '@/components/editor/AILoadingAnimation';
 import { useAIGenerationStream } from '@/hooks/useAIGenerationStream';
 import { api } from '@/trpc/react';
@@ -833,6 +834,7 @@ function EditorContent() {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background pt-16">
       <AppHeader />
+      <UsageBanner />
 
       {/* Desktop: Resizable panels, Mobile: Tab-based navigation */}
       {isMobile ? (
