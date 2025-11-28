@@ -56,14 +56,12 @@ export const metadata: Metadata = {
     description:
       'Build working React apps in under 2 minutes with AI. No coding required. Just describe your idea and get production-ready code. Powered by Claude AI.',
     siteName: 'Stryama',
-    // Note: images array removed - Next.js will auto-detect opengraph-image.tsx
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Stryama - AI-Powered App Builder | Build Apps in Minutes',
     description:
       'Build working React apps in under 2 minutes with AI. No coding required. Powered by Claude AI.',
-    // Note: images array removed - Next.js will auto-detect opengraph-image.tsx
     creator: '@stryama',
   },
   icons: {
