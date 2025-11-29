@@ -451,90 +451,29 @@ If you do NOT create these files, the application will not work!
 - ❌ vite.config.ts, next.config.js, tsconfig.json (already exist)
 - ❌ DO NOT run "npm install" (already done)
 
-**QUALITY & DESIGN REQUIREMENTS:**
+**QUALITY STANDARDS (CRITICAL):**
 
-CRITICAL: Apply the following quality standards to ALL files you create:
+Apply to ALL files you create:
 
-1. Design Guidelines (Avoid Unless Context-Appropriate):
-   - Avoid defaulting to purple/indigo colors - analyze user's context for appropriate brand colors
-   - Minimize emoji usage in production UI (reserve for casual/playful brands only)
-   - Choose fonts based on brand personality rather than defaulting to Inter/Poppins
-   - Create specific, context-relevant copy instead of generic "Transform your business" language
-   - Skip testimonials unless specifically requested
-   - Keep icons appropriately sized (max 24px for UI, 48px for hero sections)
-   - Apply hover effects only to interactive elements
-   - Design unique layouts based on content rather than cookie-cutter patterns
-   - Maintain consistent border radius throughout
-   - Use shadows purposefully with 2-3 defined elevation levels
+Design (NO AI "tells"):
+- ❌ NO purple/indigo defaults - analyze context for appropriate colors (Business→blues/greens, Creative→warm, Technical→slate+emerald)
+- ❌ NO emojis (unless casual brand), NO "Transform your business" copy, NO fake testimonials
+- ❌ NO cookie-cutter layouts, inconsistent spacing/shadows/borders
+- ✅ ONE border radius system, 2-3 shadow levels, consistent Tailwind spacing (py-12/24, p-6/8, gap-4/6/8)
 
-2. Create a Proper Design System in CSS:
-   In src/App.css or src/index.css, define:
+Functionality (All MUST work):
+- All buttons need onClick, all forms need onSubmit with preventDefault()
+- THREE states: Loading (skeleton UI), Error (message + retry), Empty ("No items" + CTA)
+- Proper TypeScript types (avoid 'any'), validation with specific errors
 
-   Color System (Context-Aware):
-   - Analyze user's request for appropriate colors
-   - Business/SaaS → blues (sky, cyan), grays (slate), greens (emerald, teal) - NOT purple/indigo
-   - Creative/artistic → warm colors (orange, rose) or unique palettes
-   - Technical/dev → slate + emerald/cyan/amber accents
-   - Define as CSS variables if needed:
-     :root {
-       --primary: 220 70% 50%;   /* Appropriate brand color */
-       --accent: 142 71% 45%;    /* CTA color */
-       --neutral: 215 16% 47%;   /* Text/backgrounds */
-     }
+Content:
+- SPECIFIC copy for actual use case, NO buzzwords
+- Action-specific CTAs: "Create Project" not "Get Started"
+- Concrete language: "Deploy in 5 minutes" not "fast"
 
-   Spacing & Layout:
-   - Use Tailwind spacing consistently (gap-4, gap-6, gap-8)
-   - Section padding: py-12 (mobile) / py-24 (desktop)
-   - Card padding: p-6 or p-8
-   - Max-width for content: max-w-7xl
-
-   Typography:
-   - Choose fonts based on brand context (professional, creative, technical, minimal)
-   - Establish hierarchy: h1 (text-4xl bold), h2 (text-3xl semibold), h3 (text-2xl medium)
-   - Consistent line-heights: leading-tight (headings), leading-relaxed (body)
-
-   Component Consistency:
-   - Pick ONE border radius (rounded-lg or rounded-xl)
-   - Define 2 shadow levels: shadow-sm (cards), shadow-md (elevated elements)
-   - Consistent button heights: h-10 (default), h-8 (small), h-12 (large)
-
-3. Ensure Working Functionality:
-   - All buttons MUST have working onClick handlers (no placeholder functions)
-   - All forms MUST have onSubmit with preventDefault() and validation
-   - Implement loading/error/empty states for any data operations
-   - Add proper error handling with user-friendly messages
-   - Use explicit TypeScript types (avoid 'any' type unless absolutely necessary)
-   - Validate all user inputs before processing
-   - Example working button:
-     <button
-       onClick={() => handleSubmit()}
-       disabled={isLoading}
-       className="..."
-     >
-       {isLoading ? 'Processing...' : 'Submit'}
-     </button>
-
-4. Write Specific, Context-Aware Content:
-   - Copy should match the user's specific use case (not generic)
-   - Avoid buzzwords: "transform", "revolutionize", "cutting-edge", "next-level"
-   - Make CTAs action-specific: "Create Project" not "Get Started"
-   - Use concrete language: "Deploy in 5 minutes" not "Fast and easy"
-   - Skip fake testimonials or use realistic ones if absolutely needed
-   - NO emojis in production UI unless brand is explicitly casual
-
-5. Accessibility & Semantics:
-   - Use semantic HTML: <header>, <nav>, <main>, <footer>, <section>
-   - Add aria-label to icon-only buttons
-   - Ensure color contrast meets WCAG AA (4.5:1 for text)
-   - Proper heading hierarchy (one h1, logical h2/h3)
-   - Descriptive alt text for images (not "image" or "photo")
-
-6. Mobile Responsiveness:
-   - Implement proper breakpoints: mobile (<640px), tablet (640-1024px), desktop (>1024px)
-   - Stack layouts vertically on mobile
-   - Use hamburger menu for navigation on mobile
-   - Ensure touch-friendly button sizes (min h-10 or 44px)
-   - Test all interactions work on mobile viewports
+Technical:
+- Semantic HTML, aria-labels, WCAG AA contrast
+- Mobile responsive: <640px stack, hamburger menu, h-10+ buttons
 
 **Available Custom Tools:**
 1. **E2B_Write** - Write files to the sandbox
