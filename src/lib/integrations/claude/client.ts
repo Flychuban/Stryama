@@ -428,6 +428,8 @@ The following files are ALREADY created and configured:
 - ✅ package.json (with all necessary dependencies)
 - ✅ vite.config.ts or next.config.js (properly configured for E2B)
 - ✅ tsconfig.json (TypeScript configuration)
+- ✅ components.json (Shadcn UI configuration)
+- ✅ src/lib/utils.ts (cn() utility for Shadcn components)
 - ✅ node_modules (npm install ALREADY COMPLETED)
 
 **YOUR RESPONSIBILITIES - Create ALL Application Files:**
@@ -475,6 +477,96 @@ Technical:
 - Semantic HTML, aria-labels, WCAG AA contrast
 - Mobile responsive: <640px stack, hamburger menu, h-10+ buttons
 
+**SHADCN UI COMPONENTS (Pre-configured & Ready to Use):**
+
+All Shadcn infrastructure is set up. Use Shadcn components for professional UI!
+
+SETUP COMPLETE:
+- ✅ components.json configured with proper aliases
+- ✅ src/lib/utils.ts with cn() utility function created
+- ✅ All @radix-ui packages installed (Dialog, Dropdown, Select, Tabs, etc.)
+- ✅ Tailwind configured for Shadcn
+
+HOW TO USE SHADCN COMPONENTS:
+1. Create component files in src/components/ui/ directory
+2. Import Radix UI primitives and use cn() for className merging
+3. Follow Shadcn patterns: CVA for variants, forwardRef, proper TypeScript types
+
+EXAMPLE - Button Component (src/components/ui/button.tsx):
+\`\`\`typescript
+import * as React from "react"
+import { Slot } from "@radix-ui/react-slot"
+import { cva, type VariantProps } from "class-variance-authority"
+import { cn } from "@/lib/utils"
+
+const buttonVariants = cva(
+  "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50",
+  {
+    variants: {
+      variant: {
+        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        ghost: "hover:bg-accent hover:text-accent-foreground",
+      },
+      size: {
+        default: "h-10 px-4 py-2",
+        sm: "h-9 rounded-md px-3",
+        lg: "h-11 rounded-md px-8",
+        icon: "h-10 w-10",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "default",
+    },
+  }
+)
+
+export interface ButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof buttonVariants> {
+  asChild?: boolean
+}
+
+const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant, size, asChild = false, ...props }, ref) => {
+    const Comp = asChild ? Slot : "button"
+    return (
+      <Comp
+        className={cn(buttonVariants({ variant, size, className }))}
+        ref={ref}
+        {...props}
+      />
+    )
+  }
+)
+Button.displayName = "Button"
+
+export { Button, buttonVariants }
+\`\`\`
+
+COMMONLY USED SHADCN COMPONENTS:
+- Button: Primary actions, secondary actions, destructive actions
+- Dialog: Modals, forms, confirmations
+- Card: Content containers, dashboard widgets
+- Table: Data tables with sorting and filtering
+- Form components: Input, Label, Select, Checkbox, Switch, Textarea
+- Dropdown Menu: User menus, action menus
+- Tabs: Tabbed interfaces
+- Tooltip: Hover information
+- Badge: Status indicators, tags
+- Alert: Success/error/warning messages
+
+IMPORTANT RULES:
+- ✅ ALWAYS use cn() utility for className props
+- ✅ Create components in src/components/ui/ directory
+- ✅ Import from "@/lib/utils" (alias is configured)
+- ✅ Use proper TypeScript types and forwardRef
+- ❌ DON'T create components.json or src/lib/utils.ts (already exist)
+- ❌ DON'T install Shadcn packages (already installed)
+
 **Available Custom Tools:**
 1. **E2B_Write** - Write files to the sandbox
    - Example: E2B_Write(sandbox_id="${sandboxId}", file_path="index.html", content="...")
@@ -491,11 +583,63 @@ Technical:
 4. **E2B_Read** - Read existing files if needed
 5. **E2B_List** - List files in a directory if needed
 
-**Correct Workflow:**
-1. Create ALL application files using E2B_Write (index.html, src/*, etc.)
-2. Start the dev server using E2B_Bash: "npm run dev"
-3. Get the preview URL using E2B_GetPreviewURL
-4. Return the preview URL to the user
+**VERIFICATION WORKFLOW (CRITICAL - MANDATORY STEPS):**
+
+After creating all files, you MUST verify the app builds successfully:
+
+STEP 1: CREATE ALL FILES
+- Use E2B_Write for index.html, src/*, components
+
+STEP 2: RUN BUILD CHECK (MANDATORY)
+- Command: E2B_Bash(sandbox_id="${sandboxId}", command="cd /project && npm run build 2>&1 | tail -50")
+- Wait for build to complete
+- Check for errors in output
+
+STEP 3: ANALYZE BUILD OUTPUT
+Look for these error patterns:
+- ❌ "The \`xxx\` class does not exist" → Tailwind config issue
+- ❌ "Cannot find module" → Missing import or dependency
+- ❌ "Type error" → TypeScript issue
+- ❌ "Unexpected token" → Syntax error
+- ✅ "built in XXXms" → Build successful
+
+STEP 4: FIX ERRORS IF FOUND
+If build fails:
+1. Read the error messages carefully
+2. Identify the root cause:
+   - Missing Tailwind class? Check if it's defined in tailwind.config.ts
+   - Missing import? Add the import statement
+   - Type error? Fix TypeScript types
+3. Fix the issue using E2B_Write
+4. Run build check again (STEP 2)
+5. ONE RETRY ONLY - if still failing, inform user with clear error message
+
+STEP 5: START DEV SERVER (Only if build succeeds)
+- Command: E2B_Bash(sandbox_id="${sandboxId}", command="npm run dev")
+- Wait for "ready" or "Local:" message
+
+STEP 6: GET PREVIEW URL
+- E2B_GetPreviewURL(sandbox_id="${sandboxId}", port=5173)
+- Return URL to user
+
+CRITICAL ERROR PATTERNS TO WATCH FOR:
+1. **Tailwind Class Not Found**:
+   - Error: "The \`bg-background\` class does not exist"
+   - Cause: Using classes not defined in tailwind.config.ts
+   - Fix: ONLY use classes that are defined (bg-primary, bg-secondary, etc.)
+
+2. **Missing Imports**:
+   - Error: "Cannot find module '@/lib/utils'"
+   - Cause: File doesn't exist or wrong path
+   - Fix: Verify file exists, correct import path
+
+3. **TypeScript Errors**:
+   - Error: "Type 'string' is not assignable to type 'number'"
+   - Cause: Type mismatch
+   - Fix: Correct types or add proper type assertions
+
+DO NOT SKIP BUILD CHECK! Always run npm run build BEFORE npm run dev.
+DO NOT return preview URL if build fails! Fix errors first or inform user.
 
 **CRITICAL REMINDERS:**
 - Always use sandbox_id="${sandboxId}" in all E2B tool calls
@@ -503,6 +647,7 @@ Technical:
 - Do NOT create package.json or config files (already exist)
 - Do NOT run npm install (already done)
 - Focus ONLY on creating application/source files
+- VERIFY compilation before declaring success
 
 Please generate the complete implementation and get it running in the sandbox!`;
     } else {

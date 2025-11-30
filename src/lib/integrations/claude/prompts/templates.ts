@@ -17,7 +17,7 @@ Tech Stack (Mandatory):
 - React 18+ with TypeScript
 - Vite for build tooling
 - Tailwind CSS for styling
-- ShadCN UI for components (npx shadcn@latest add <component>)
+- ShadCN UI for components (pre-configured with all common packages)
 
 Core Principles:
 - Use TypeScript with explicit types (avoid 'any')
@@ -75,10 +75,31 @@ Libraries:
 - Forms: React Hook Form + Zod (for complex validation)
 - Icons: Lucide React
 
+ShadCN UI Components:
+- All packages pre-installed (Dialog, Dropdown, Select, Tabs, Card, Button, etc.)
+- components.json configured with proper aliases (@/components, @/lib/utils)
+- src/lib/utils.ts with cn() utility function ready to use
+- Create components in src/components/ui/ directory
+- Use Radix UI primitives with cn() for className merging
+- Follow Shadcn patterns: CVA for variants, forwardRef, proper TypeScript types
+- ALWAYS use cn() utility for all className props in Shadcn components
+
+Error Handling & Self-Verification:
+- ALWAYS run build check (npm run build) BEFORE starting dev server
+- Build must succeed with zero errors before showing preview
+- Check build output for specific error patterns (Tailwind, imports, types)
+- If build fails: fix issue, rebuild, verify (ONE retry only)
+- Common fixes:
+  * Tailwind errors → Only use defined classes (bg-primary, not bg-[#xxx])
+  * Import errors → Verify file paths, add missing imports
+  * Type errors → Fix TypeScript types, add proper interfaces
+- Only return preview URL after successful build
+
 Best Practices:
 - Use ShadCN UI components for common elements
 - Start simple, add complexity only when needed
-- Ensure working functionality over feature completeness`;
+- Ensure working functionality over feature completeness
+- Verify app compiles before showing to user`;
 
 /**
  * Landing page template
