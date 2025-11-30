@@ -39,6 +39,19 @@ export function generatePackageJson(
     dependencies: {
       react: '^18.3.1',
       'react-dom': '^18.3.1',
+      // Essential UI packages (pre-installed for first-time compilation success)
+      // ShadCN UI core utilities (used in 90%+ of projects)
+      'lucide-react': '^0.460.0', // Icons - mentioned in base prompt
+      'class-variance-authority': '^0.7.1', // ShadCN component variants
+      clsx: '^2.1.1', // Conditional classnames utility
+      'tailwind-merge': '^2.6.0', // Merge Tailwind classes without conflicts
+      // Common ShadCN/Radix UI components (used in 50%+ of projects)
+      '@radix-ui/react-slot': '^1.1.0', // ShadCN base component
+      '@radix-ui/react-dialog': '^1.1.2', // Modals (CRUD, Dashboard)
+      '@radix-ui/react-dropdown-menu': '^2.1.2', // Dropdowns (Dashboard)
+      '@radix-ui/react-select': '^2.1.2', // Select inputs (CRUD, Dashboard)
+      // Routing (used in multi-page apps ~40% of projects)
+      'react-router-dom': '^6.28.0', // Multi-page navigation
       // Merge in any additional dependencies detected from code
       ...(config.additionalDependencies ?? {}),
     },
@@ -52,6 +65,10 @@ export function generatePackageJson(
       'eslint-plugin-react-refresh': '^0.4.16',
       typescript: '^5.7.3',
       'patch-package': '^8.0.0', // Required by rollup postinstall scripts
+      // Tailwind CSS and dependencies (matching main project versions)
+      tailwindcss: '^3.4.0',
+      autoprefixer: '^10.4.21',
+      postcss: '^8.5.6',
       // Merge in any additional dev dependencies
       ...(config.additionalDevDependencies ?? {}),
     },
@@ -107,14 +124,9 @@ function App() {
 export default App
 `,
 
-    'src/index.css': `body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
+    'src/index.css': `@tailwind base;
+@tailwind components;
+@tailwind utilities;
 `,
   };
 }
@@ -167,6 +179,28 @@ export default defineConfig({
   },
   "include": ["src"]
 }
+`,
+
+    'postcss.config.js': `export default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}
+`,
+
+    'tailwind.config.ts': `import type { Config } from 'tailwindcss'
+
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+} satisfies Config
 `,
   };
 }
