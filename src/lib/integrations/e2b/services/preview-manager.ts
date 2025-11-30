@@ -20,6 +20,7 @@ import {
 import {
   generatePackageJson,
   generateConfigFiles,
+  generateShadcnUtilities,
 } from '../utils/package-generator';
 import {
   detectDependencies,
@@ -443,6 +444,25 @@ export async function setupInfrastructure(
         await sandbox.files.write(`${workDir}/${filename}`, content);
       } else {
         console.log(`[Preview] ${filename} already exists, skipping`);
+      }
+    }
+
+    // Generate and write Shadcn utility files (lib/utils.ts)
+    // These are required for Shadcn components to work properly
+    console.log('[Preview] Setting up Shadcn utilities');
+    const shadcnUtils = generateShadcnUtilities();
+
+    for (const [filepath, content] of Object.entries(shadcnUtils)) {
+      const checkFile = await sandbox.commands.run(
+        `test -f ${workDir}/${filepath} && echo "exists" || echo "missing"`
+      );
+      const fileExists = checkFile.stdout.trim() === 'exists';
+
+      if (!fileExists) {
+        console.log(`[Preview] Creating ${filepath}`);
+        await sandbox.files.write(`${workDir}/${filepath}`, content);
+      } else {
+        console.log(`[Preview] ${filepath} already exists, skipping`);
       }
     }
 
