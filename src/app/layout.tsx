@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { GeistSans } from 'geist/font/sans';
 import { ClerkProvider } from '@clerk/nextjs';
 import { ThemeProvider } from '@/components/providers/theme-provider';
+import { PostHogProvider } from '@/components/providers/PostHogProvider';
 import { Toaster } from '@/components/ui/sonner';
 import { TRPCReactProvider } from '@/trpc/react';
 import {
@@ -109,22 +110,24 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <body>
-          <ThemeProvider
-            attribute="class"
-            defaultTheme="light"
-            enableSystem
-            disableTransitionOnChange
-          >
-            {/* Structured Data for SEO - JSON-LD scripts */}
-            <StructuredData data={getOrganizationSchema()} />
-            <StructuredData data={getSoftwareApplicationSchema()} />
-            <StructuredData data={getWebSiteSchema()} />
+          <PostHogProvider>
+            <ThemeProvider
+              attribute="class"
+              defaultTheme="light"
+              enableSystem
+              disableTransitionOnChange
+            >
+              {/* Structured Data for SEO - JSON-LD scripts */}
+              <StructuredData data={getOrganizationSchema()} />
+              <StructuredData data={getSoftwareApplicationSchema()} />
+              <StructuredData data={getWebSiteSchema()} />
 
-            <TRPCReactProvider>
-              {children}
-              <Toaster />
-            </TRPCReactProvider>
-          </ThemeProvider>
+              <TRPCReactProvider>
+                {children}
+                <Toaster />
+              </TRPCReactProvider>
+            </ThemeProvider>
+          </PostHogProvider>
         </body>
       </html>
     </ClerkProvider>
