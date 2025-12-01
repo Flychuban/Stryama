@@ -32,7 +32,6 @@ export function AuthEventTracker() {
 
       trackUserSignedOut({
         session_duration_minutes: sessionDurationMinutes,
-        user_id: previousUserId.current,
       });
 
       // Reset tracking state
