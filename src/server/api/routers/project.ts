@@ -2,6 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '~/server/api/trpc';
 import { UsageTrackingService } from '~/lib/services/usageTracking';
+import { trackProjectCreatedServer } from '~/lib/analytics/server-tracking';
 
 export const projectRouter = createTRPCRouter({
   // Get all projects for the authenticated user
@@ -67,6 +68,14 @@ export const projectRouter = createTRPCRouter({
           name: input.name,
           clerkUserId: ctx.auth.userId,
         },
+      });
+
+      // Track project creation event
+      trackProjectCreatedServer(ctx.auth.userId, {
+        project_id: project.id,
+        creation_source: 'dashboard', // Created from dashboard
+        has_initial_prompt: false, // No AI generation on creation
+        template_used: 'blank', // Default blank project
       });
 
       return project;

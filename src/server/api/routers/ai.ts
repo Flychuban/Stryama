@@ -28,6 +28,10 @@ import { getUserPlanFromClerk } from '~/lib/clerk/authorization';
 import { saveGeneratedFilesToDatabase } from '~/lib/integrations/e2b/utils/file-saver';
 import { saveSessionToDB } from '~/lib/integrations/claude/session-cache';
 import { logger } from '~/lib/utils/logger';
+import {
+  trackUsageLimitHitServer,
+  trackRateLimitHitServer,
+} from '~/lib/analytics/server-tracking';
 
 export const aiRouter = createTRPCRouter({
   /**
@@ -71,6 +75,15 @@ export const aiRouter = createTRPCRouter({
           await UsageTrackingService.checkGenerationLimit(ctx.auth.userId);
         } catch (error) {
           console.error(`[AI Router] ❌ Generation limit check failed:`, error);
+
+          // Track usage limit hit event
+          const userPlan = await getUserPlanFromClerk();
+          trackUsageLimitHitServer(ctx.auth.userId, {
+            plan_type: userPlan,
+            limit: 0, // TODO: Get actual limit from UsageTrackingService
+            attempted_action: 'ai_generation',
+          });
+
           throw new TRPCError({
             code: 'FORBIDDEN',
             message:
@@ -94,6 +107,17 @@ export const aiRouter = createTRPCRouter({
           console.warn(
             `[AI Router] ⚠️ Rate limit exceeded for user ${ctx.auth.userId}`
           );
+
+          // Track rate limit hit event
+          trackRateLimitHitServer(ctx.auth.userId, {
+            plan_type: userPlan,
+            requests_in_window: rateLimit.limit - rateLimit.remaining,
+            limit: rateLimit.limit,
+            retry_after_seconds: Math.ceil(
+              (rateLimit.resetAt.getTime() - Date.now()) / 1000
+            ),
+          });
+
           throw new TRPCError({
             code: 'TOO_MANY_REQUESTS',
             message: `Rate limit exceeded. You can make ${rateLimit.limit} requests per minute. Try again after ${rateLimit.resetAt.toISOString()}`,
@@ -183,6 +207,14 @@ export const aiRouter = createTRPCRouter({
       try {
         await UsageTrackingService.checkGenerationLimit(ctx.auth.userId);
       } catch (error) {
+        // Track usage limit hit event
+        const userPlan = await getUserPlanFromClerk();
+        trackUsageLimitHitServer(ctx.auth.userId, {
+          plan_type: userPlan,
+          limit: 0, // TODO: Get actual limit from UsageTrackingService
+          attempted_action: 'ai_generation',
+        });
+
         throw new TRPCError({
           code: 'FORBIDDEN',
           message:
@@ -206,6 +238,16 @@ export const aiRouter = createTRPCRouter({
       );
 
       if (!rateLimit.allowed) {
+        // Track rate limit hit event
+        trackRateLimitHitServer(ctx.auth.userId, {
+          plan_type: userPlan,
+          requests_in_window: rateLimit.limit - rateLimit.remaining,
+          limit: rateLimit.limit,
+          retry_after_seconds: Math.ceil(
+            (rateLimit.resetAt.getTime() - Date.now()) / 1000
+          ),
+        });
+
         throw new TRPCError({
           code: 'TOO_MANY_REQUESTS',
           message: `Rate limit exceeded. You can make ${rateLimit.limit} requests per minute. Try again after ${rateLimit.resetAt.toISOString()}`,
