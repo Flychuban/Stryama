@@ -75,7 +75,6 @@ export const projectRouter = createTRPCRouter({
         project_id: project.id,
         creation_source: 'dashboard', // Created from dashboard
         has_initial_prompt: false, // No AI generation on creation
-        template_used: 'blank', // Default blank project
       });
 
       return project;
