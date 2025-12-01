@@ -7,6 +7,7 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { api } from '~/trpc/react';
+import { useAnalytics } from './useAnalytics';
 import type { StreamEvent } from '~/lib/integrations/claude/types/stream-events';
 
 export interface StreamState {
@@ -109,6 +110,11 @@ export function useAIGenerationStream(
   options: UseAIGenerationStreamOptions = {}
 ) {
   const { projectId, useSandbox = true, onError } = options;
+  const { trackAIGenerationCompleted, trackAIGenerationFailed } =
+    useAnalytics();
+
+  // Track generation start time for duration calculation
+  const generationStartTime = useRef<number>(0);
 
   const [state, setState] = useState<StreamState>({
     status: 'idle',
@@ -220,120 +226,186 @@ export function useAIGenerationStream(
   );
 
   // Process stream events
-  const handleStreamEvent = useCallback((event: StreamEvent) => {
-    console.log('[Stream Event]', event);
+  const handleStreamEvent = useCallback(
+    (event: StreamEvent) => {
+      console.log('[Stream Event]', event);
 
-    setState((prev) => {
-      const newState = { ...prev };
+      setState((prev) => {
+        const newState = { ...prev };
 
-      switch (event.type) {
-        case 'session_init':
-          newState.sessionId = event.sessionId;
-          newState.model = event.model;
-          break;
+        switch (event.type) {
+          case 'session_init':
+            newState.sessionId = event.sessionId;
+            newState.model = event.model;
+            break;
 
-        case 'status':
-          newState.status = event.status;
-          newState.statusMessage = event.message;
-          break;
-
-        case 'sandbox':
-          newState.sandboxStatus = event.action;
-          if (event.sandboxId) {
-            newState.sandboxId = event.sandboxId;
-          }
-          if (event.message) {
+          case 'status':
+            newState.status = event.status;
             newState.statusMessage = event.message;
-          }
-          break;
+            break;
 
-        case 'preview_url_updated':
-          console.log('[Stream] Preview URL updated:', event.url);
-          console.log('[Stream] Skip reload:', event.skipReload ?? false);
-          newState.previewUrl = event.url;
-          newState.previewUpdateTimestamp = event.timestamp;
-          newState.skipPreviewReload = event.skipReload ?? false;
-          if (event.sandboxId) {
-            newState.sandboxId = event.sandboxId;
-          }
-          if (event.message) {
-            newState.statusMessage = event.message;
-          }
-          break;
+          case 'sandbox':
+            newState.sandboxStatus = event.action;
+            if (event.sandboxId) {
+              newState.sandboxId = event.sandboxId;
+            }
+            if (event.message) {
+              newState.statusMessage = event.message;
+            }
+            break;
 
-        case 'tool_use':
-          newState.currentTool = {
-            name: event.toolName,
-            id: event.toolUseId,
-            input: event.toolInput,
-          };
-          newState.status = 'tool_use';
-          newState.statusMessage = `Using tool: ${event.toolName}`;
-          break;
+          case 'preview_url_updated':
+            console.log('[Stream] Preview URL updated:', event.url);
+            console.log('[Stream] Skip reload:', event.skipReload ?? false);
+            newState.previewUrl = event.url;
+            newState.previewUpdateTimestamp = event.timestamp;
+            newState.skipPreviewReload = event.skipReload ?? false;
+            if (event.sandboxId) {
+              newState.sandboxId = event.sandboxId;
+            }
+            if (event.message) {
+              newState.statusMessage = event.message;
+            }
+            break;
 
-        case 'tool_result':
-          // Capture input before clearing currentTool
-          const toolInput =
-            newState.currentTool?.id === event.toolUseId
-              ? newState.currentTool.input
-              : {};
+          case 'tool_use':
+            newState.currentTool = {
+              name: event.toolName,
+              id: event.toolUseId,
+              input: event.toolInput,
+            };
+            newState.status = 'tool_use';
+            newState.statusMessage = `Using tool: ${event.toolName}`;
+            break;
 
-          if (newState.currentTool?.id === event.toolUseId) {
-            newState.currentTool = undefined;
-          }
-          newState.toolHistory.push({
-            name: event.toolName,
-            id: event.toolUseId,
-            input: toolInput,
-            result: event.content,
-            isError: event.isError,
-            timestamp: event.timestamp,
-          });
-          break;
+          case 'tool_result':
+            // Capture input before clearing currentTool
+            const toolInput =
+              newState.currentTool?.id === event.toolUseId
+                ? newState.currentTool.input
+                : {};
 
-        case 'content_delta':
-          newState.accumulatedContent += event.delta;
-          break;
+            if (newState.currentTool?.id === event.toolUseId) {
+              newState.currentTool = undefined;
+            }
+            newState.toolHistory.push({
+              name: event.toolName,
+              id: event.toolUseId,
+              input: toolInput,
+              result: event.content,
+              isError: event.isError,
+              timestamp: event.timestamp,
+            });
+            break;
 
-        case 'thinking_delta':
-          newState.thinking += event.delta;
-          break;
+          case 'content_delta':
+            newState.accumulatedContent += event.delta;
+            break;
 
-        case 'usage':
-          newState.inputTokens = event.inputTokens;
-          newState.outputTokens = event.outputTokens;
-          newState.tokensUsed = event.inputTokens + event.outputTokens;
-          break;
+          case 'thinking_delta':
+            newState.thinking += event.delta;
+            break;
 
-        case 'complete':
-          newState.status = 'completed';
-          newState.isComplete = true;
-          newState.isStreaming = false;
-          newState.result = event.result;
-          newState.tokensUsed = event.result.tokensUsed;
-          newState.totalCost = event.result.totalCost;
-          newState.completionTimestamp = event.timestamp;
-          break;
+          case 'usage':
+            newState.inputTokens = event.inputTokens;
+            newState.outputTokens = event.outputTokens;
+            newState.tokensUsed = event.inputTokens + event.outputTokens;
+            break;
 
-        case 'database_persisted':
-          console.log(
-            '[Stream] Database operations complete - safe to refetch'
-          );
-          newState.isDatabasePersisted = true;
-          newState.databasePersistedTimestamp = event.timestamp;
-          break;
+          case 'complete':
+            newState.status = 'completed';
+            newState.isComplete = true;
+            newState.isStreaming = false;
+            newState.result = event.result;
+            newState.tokensUsed = event.result.tokensUsed;
+            newState.totalCost = event.result.totalCost;
+            newState.completionTimestamp = event.timestamp;
 
-        case 'error':
-          newState.status = 'error';
-          newState.hasError = true;
-          newState.isStreaming = false;
-          newState.error = event.error;
-          break;
-      }
+            // Track AI generation completed event
+            if (projectId && event.result) {
+              const duration = Date.now() - generationStartTime.current;
+              const filesGenerated = event.result.files?.length ?? 0;
+              const totalFileSize =
+                event.result.files?.reduce(
+                  (sum, file) => sum + (file.content?.length ?? 0),
+                  0
+                ) ?? 0;
 
-      return newState;
-    });
-  }, []);
+              trackAIGenerationCompleted({
+                duration_ms: duration,
+                tokens_used: event.result.tokensUsed,
+                input_tokens: newState.inputTokens,
+                output_tokens: newState.outputTokens,
+                cost_usd: event.result.totalCost,
+                model_used: 'claude-sonnet-3.5', // TODO: Get from event if available
+                files_generated: filesGenerated,
+                total_file_size_bytes: totalFileSize,
+                sandbox_id: event.result.sandboxId,
+                session_id: event.result.sessionId,
+                generation_number: 1, // TODO: Track this per project if needed
+                project_id: projectId,
+              });
+            }
+            break;
+
+          case 'database_persisted':
+            console.log(
+              '[Stream] Database operations complete - safe to refetch'
+            );
+            newState.isDatabasePersisted = true;
+            newState.databasePersistedTimestamp = event.timestamp;
+            break;
+
+          case 'error':
+            newState.status = 'error';
+            newState.hasError = true;
+            newState.isStreaming = false;
+            newState.error = event.error;
+
+            // Track AI generation failed event
+            if (event.error) {
+              const duration = Date.now() - generationStartTime.current;
+
+              // Determine error type from error code
+              let errorType:
+                | 'initialization'
+                | 'streaming'
+                | 'preview'
+                | 'unknown' = 'unknown';
+              if (
+                event.error.code.includes('PREVIEW') ||
+                event.error.code.includes('SANDBOX')
+              ) {
+                errorType = 'preview';
+              } else if (
+                event.error.code.includes('VALIDATION') ||
+                event.error.code.includes('LIMIT')
+              ) {
+                errorType = 'initialization';
+              } else if (event.error.code.includes('STREAM')) {
+                errorType = 'streaming';
+              }
+
+              trackAIGenerationFailed({
+                error_code: event.error.code,
+                error_message: event.error.message,
+                error_type: errorType,
+                duration_ms: duration,
+                tokens_used:
+                  newState.tokensUsed > 0 ? newState.tokensUsed : undefined,
+                prompt_length: 0, // TODO: Store prompt length if needed
+                retry_count: undefined,
+                project_id: projectId,
+              });
+            }
+            break;
+        }
+
+        return newState;
+      });
+    },
+    [projectId, trackAIGenerationCompleted, trackAIGenerationFailed]
+  );
 
   // Start streaming (two-phase approach)
   const startStreaming = useCallback(
@@ -341,6 +413,9 @@ export function useAIGenerationStream(
       if (!prompt || state.isStreaming) {
         return;
       }
+
+      // Track generation start time for analytics
+      generationStartTime.current = Date.now();
 
       // Reset state for new generation
       setState({

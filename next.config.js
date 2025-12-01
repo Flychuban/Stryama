@@ -69,14 +69,14 @@ const config = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.clerk.accounts.dev https://*.stryama.app https://challenges.cloudflare.com https://*.e2b.dev https://*.e2b.app https://js.stripe.com https://*.js.stripe.com https://maps.googleapis.com", // Clerk JS SDK (dev + prod), Turnstile, E2B sandboxes, and Stripe billing
-              "style-src 'self' 'unsafe-inline' https://*.e2b.dev https://*.e2b.app", // Tailwind, CSS-in-JS, and E2B sandboxes
-              "img-src 'self' data: blob: https: https://img.clerk.com https://*.stryama.app https://*.stripe.com", // Clerk avatar images (dev + prod) and Stripe payment icons
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.clerk.accounts.dev https://*.stryama.app https://challenges.cloudflare.com https://*.e2b.dev https://*.e2b.app https://js.stripe.com https://*.js.stripe.com https://maps.googleapis.com https://eu-assets.i.posthog.com",
+              "style-src 'self' 'unsafe-inline' https://*.e2b.dev https://*.e2b.app",
+              "img-src 'self' data: blob: https: https://img.clerk.com https://*.stryama.app https://*.stripe.com https://eu-assets.i.posthog.com",
               "font-src 'self' data:",
-              "connect-src 'self' https://api.anthropic.com https://api.e2b.dev https://*.e2b.app wss://*.e2b.app https://*.clerk.accounts.dev https://*.stryama.app wss://*.stryama.app https://clerk.topical-mammoth-51.lcl.dev wss://*.clerk.accounts.dev https://api.stripe.com https://maps.googleapis.com",
+              "connect-src 'self' https://api.anthropic.com https://api.e2b.dev https://*.e2b.app wss://*.e2b.app https://*.clerk.accounts.dev https://*.stryama.app wss://*.stryama.app https://clerk.topical-mammoth-51.lcl.dev wss://*.clerk.accounts.dev https://api.stripe.com https://maps.googleapis.com https://eu.posthog.com https://eu.i.posthog.com https://eu-assets.i.posthog.com",
               "frame-src 'self' https://*.clerk.accounts.dev https://*.stryama.app https://challenges.cloudflare.com https://*.e2b.dev https://*.e2b.app https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com",
               "object-src 'none'",
-              "base-uri 'self' https://*.e2b.dev https://*.e2b.app", // Allow E2B sandbox URLs in iframe embeds
+              "base-uri 'self' https://*.e2b.dev https://*.e2b.app",
               "form-action 'self'",
               "frame-ancestors 'self'",
               'upgrade-insecure-requests',
@@ -86,6 +86,22 @@ const config = {
       },
     ];
   },
+
+  async rewrites() {
+    return [
+      {
+        source: '/ingest/static/:path*',
+        destination: 'https://eu-assets.i.posthog.com/static/:path*',
+      },
+      {
+        source: '/ingest/:path*',
+        destination: 'https://eu.i.posthog.com/:path*',
+      },
+    ];
+  },
+
+  // This is required to support PostHog trailing slash API requests
+  skipTrailingSlashRedirect: true,
 };
 
 export default config;

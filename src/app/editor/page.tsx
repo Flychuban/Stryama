@@ -8,6 +8,7 @@ import { AppHeader } from '@/components/shared/AppHeader';
 import { UsageBanner } from '@/components/editor/UsageBanner';
 import AILoadingAnimation from '@/components/editor/AILoadingAnimation';
 import { useAIGenerationStream } from '@/hooks/useAIGenerationStream';
+import { useAnalytics } from '@/hooks/useAnalytics';
 import { api } from '@/trpc/react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
@@ -83,6 +84,21 @@ function EditorContent() {
   // Get Clerk auth state to prevent race conditions
   const { isLoaded: isAuthLoaded } = useUser();
 
+  // Analytics hook for tracking events
+  const {
+    trackAIGenerationStarted,
+    trackProjectDownloaded,
+    trackProjectOpened,
+    trackPreviewRegenerated,
+    trackPreviewRestarted,
+  } = useAnalytics();
+
+  // Track session generation count for analytics
+  const sessionGenerationCount = useRef(0);
+
+  // Track if we've already tracked the project being opened
+  const hasTrackedProjectOpen = useRef(false);
+
   // Fetch project data if ID is provided - GUARD with auth state to prevent 401 race conditions
   const {
     data: project,
@@ -133,7 +149,6 @@ function EditorContent() {
   const previewIframeRef = useRef<HTMLIFrameElement>(null);
 
   // tRPC mutations for E2B sandbox operations
-  const startPreviewMutation = api.sandbox.startPreview.useMutation();
   const restartPreviewMutation = api.sandbox.restartPreview.useMutation();
   const regeneratePreviewMutation = api.sandbox.regeneratePreview.useMutation();
 
@@ -149,6 +164,39 @@ function EditorContent() {
     projectId: projectId ?? undefined,
     useSandbox: true,
   });
+
+  // Track project opened event when project loads successfully
+  useEffect(() => {
+    if (
+      !project ||
+      !projectId ||
+      hasTrackedProjectOpen.current ||
+      isLoadingProject
+    ) {
+      return;
+    }
+
+    // Calculate project metrics
+    const projectAgeDays = Math.floor(
+      (Date.now() - new Date(project.createdAt).getTime()) /
+        (1000 * 60 * 60 * 24)
+    );
+
+    const lastModifiedDays = Math.floor(
+      (Date.now() - new Date(project.updatedAt).getTime()) /
+        (1000 * 60 * 60 * 24)
+    );
+
+    // Track the event
+    trackProjectOpened({
+      project_id: projectId,
+      project_age_days: projectAgeDays,
+      generation_count: project.files?.length ?? 0, // Approximate by file count
+      last_modified_days_ago: lastModifiedDays,
+    });
+
+    hasTrackedProjectOpen.current = true;
+  }, [project, projectId, isLoadingProject, trackProjectOpened]);
 
   // Handle streaming completion - watch state directly
   useEffect(() => {
@@ -208,8 +256,6 @@ function EditorContent() {
     // Mark this persist event as handled
     handledDatabasePersistRef.current.add(timestamp);
     console.log('[Editor] 💾 Database persisted at:', timestamp);
-
-    const result = streamState.result; // Capture for type safety in async function
 
     const handleDatabasePersisted = async () => {
       try {
@@ -747,6 +793,21 @@ function EditorContent() {
     setInput('');
     setPreviewError(null);
 
+    // Track AI generation started event
+    sessionGenerationCount.current += 1;
+    trackAIGenerationStarted({
+      prompt_length: userPrompt.length,
+      is_first_generation: messages.length === 0,
+      has_project_context: (project?.files?.length ?? 0) > 0,
+      project_id: projectId,
+      project_age_minutes: project?.createdAt
+        ? Math.floor(
+            (Date.now() - new Date(project.createdAt).getTime()) / 60000
+          )
+        : undefined,
+      session_generation_count: sessionGenerationCount.current,
+    });
+
     // Start streaming generation
     startStreaming(userPrompt);
   };
@@ -764,6 +825,12 @@ function EditorContent() {
 
       setPreviewUrl(previewResult.url);
       setPreviewError(null);
+
+      // Track preview restarted event
+      trackPreviewRestarted({
+        sandbox_uptime_minutes: 0, // TODO: Calculate actual uptime if needed
+        project_id: projectId,
+      });
     } catch (error) {
       handlePreviewError(
         error,
@@ -790,6 +857,13 @@ function EditorContent() {
       setPreviewError(null);
       // Reset the flag so user can regenerate again if needed
       hasAttemptedRegeneration.current = false;
+
+      // Track preview regenerated event
+      trackPreviewRegenerated({
+        reason: 'user_initiated',
+        previous_error: previewError ?? undefined,
+        project_id: projectId,
+      });
     } catch (error) {
       handlePreviewError(
         error,
@@ -810,6 +884,29 @@ function EditorContent() {
     try {
       await downloadProjectAsZip(projectFiles, project?.name ?? 'project');
       toast.success('Code downloaded successfully');
+
+      // Track project downloaded event - KEY SUCCESS METRIC
+      if (project && projectId) {
+        const totalSize = projectFiles.reduce(
+          (sum, file) => sum + (file.content?.length ?? 0),
+          0
+        );
+        const projectAge = project.createdAt
+          ? Math.floor(
+              (Date.now() - new Date(project.createdAt).getTime()) / 60000
+            )
+          : 0;
+
+        trackProjectDownloaded({
+          project_id: projectId,
+          file_count: projectFiles.length,
+          total_size_kb: Math.round(totalSize / 1024),
+          project_age_minutes: projectAge,
+          generation_count: messages.filter((m) => m.role === 'assistant')
+            .length,
+          time_from_last_generation_seconds: 0, // TODO: Track this if needed
+        });
+      }
     } catch (error) {
       console.error('[Editor] Failed to download project:', error);
       const errorMessage =
