@@ -13,7 +13,8 @@ import { useAnalytics } from '@/hooks/useAnalytics';
 
 export function AuthEventTracker() {
   const { user, isLoaded } = useUser();
-  const { trackUserSignedIn, trackUserSignedOut } = useAnalytics();
+  const { trackUserSignedIn, trackUserSignedOut, trackUserSignedUp } =
+    useAnalytics();
   const hasTrackedSignIn = useRef(false);
   const previousUserId = useRef<string | null>(null);
   const signInTimestamp = useRef<number | null>(null);
@@ -41,21 +42,41 @@ export function AuthEventTracker() {
       return;
     }
 
-    // User signed in
+    // User signed in or signed up
     if (user) {
-      // Track sign in event if this is a new session or different user
+      // Track sign in/up event if this is a new session or different user
       if (!hasTrackedSignIn.current || previousUserId.current !== user.id) {
-        trackUserSignedIn({
-          login_method: 'email', // Clerk provides this but for now we default to email
-          user_id: user.id,
-        });
+        // Check if this is a new user (created within last 10 seconds)
+        const isNewUser =
+          user.createdAt &&
+          Date.now() - new Date(user.createdAt).getTime() < 10000;
+
+        if (isNewUser) {
+          // This is a sign-up (user just created)
+          trackUserSignedUp({
+            signup_method: 'email', // Clerk provides this but for now we default to email
+            user_id: user.id,
+          });
+        } else {
+          // This is a sign-in (existing user)
+          trackUserSignedIn({
+            login_method: 'email',
+            user_id: user.id,
+          });
+        }
 
         hasTrackedSignIn.current = true;
         previousUserId.current = user.id;
         signInTimestamp.current = Date.now();
       }
     }
-  }, [user, isLoaded, trackUserSignedIn, trackUserSignedOut]);
+  }, [
+    user,
+    isLoaded,
+    trackUserSignedIn,
+    trackUserSignedOut,
+    trackUserSignedUp,
+  ]);
 
   return null;
 }
