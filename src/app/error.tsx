@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
+import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,12 @@ export default function Error({
   useEffect(() => {
     // Log the error to an error reporting service
     console.error(error);
+
+    // Capture error in Sentry
+    Sentry.captureException(error, {
+      tags: { errorBoundary: 'route-error' },
+      contexts: { error: { digest: error.digest } },
+    });
   }, [error]);
 
   return (

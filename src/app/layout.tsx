@@ -5,6 +5,8 @@ import { ThemeProvider } from '@/components/providers/theme-provider';
 import { PostHogProvider } from '@/components/providers/PostHogProvider';
 import { PostHogIdentify } from '@/components/providers/PostHogIdentify';
 import { AuthEventTracker } from '@/components/analytics/AuthEventTracker';
+import { SentryInit } from '@/components/analytics/SentryInit';
+import { SentryIdentify } from '@/components/analytics/SentryIdentify';
 import { Toaster } from '@/components/ui/sonner';
 import { TRPCReactProvider } from '@/trpc/react';
 import {
@@ -112,9 +114,13 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <body>
+          {/* Initialize Sentry (must be first for Turbopack compatibility) */}
+          <SentryInit />
           <PostHogProvider>
             {/* Automatically identify users with PostHog when they sign in */}
             <PostHogIdentify />
+            {/* Automatically identify users with Sentry when they sign in */}
+            <SentryIdentify />
             {/* Track authentication events */}
             <AuthEventTracker />
             <ThemeProvider
