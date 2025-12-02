@@ -10,6 +10,7 @@ import { initTRPC, TRPCError } from '@trpc/server';
 import superjson from 'superjson';
 import { ZodError } from 'zod';
 import { auth } from '@clerk/nextjs/server';
+import * as Sentry from '@sentry/nextjs';
 
 import { db } from '~/server/db';
 import { isAdmin } from '~/lib/clerk/authorization';
@@ -105,7 +106,38 @@ const timingMiddleware = t.middleware(async ({ next, path }) => {
   return result;
 });
 
-export const publicProcedure = t.procedure.use(timingMiddleware);
+/**
+ * Sentry middleware for tRPC error tracking
+ */
+const sentryMiddleware = t.middleware(
+  Sentry.trpcMiddleware({
+    attachRpcInput: true,
+  })
+);
+
+/**
+ * Context enrichment middleware for Sentry
+ * Attaches user context to all errors
+ */
+const contextEnrichmentMiddleware = t.middleware(async ({ ctx, next }) => {
+  if (ctx.auth.userId) {
+    Sentry.setUser({ id: ctx.auth.userId });
+    Sentry.setContext('auth', {
+      sessionId: ctx.auth.sessionId,
+      orgId: ctx.auth.orgId,
+    });
+  }
+
+  try {
+    return await next();
+  } finally {
+    Sentry.setUser(null);
+  }
+});
+
+export const publicProcedure = t.procedure
+  .use(sentryMiddleware)
+  .use(timingMiddleware);
 
 const enforceUserIsAuthed = t.middleware(({ ctx, next }) => {
   if (!ctx.auth.userId) {
@@ -120,6 +152,8 @@ const enforceUserIsAuthed = t.middleware(({ ctx, next }) => {
 });
 
 export const protectedProcedure = t.procedure
+  .use(sentryMiddleware)
+  .use(contextEnrichmentMiddleware)
   .use(timingMiddleware)
   .use(enforceUserIsAuthed);
 
@@ -149,5 +183,7 @@ const enforceUserIsAdmin = t.middleware(async ({ ctx, next }) => {
 });
 
 export const adminProcedure = t.procedure
+  .use(sentryMiddleware)
+  .use(contextEnrichmentMiddleware)
   .use(timingMiddleware)
   .use(enforceUserIsAdmin);

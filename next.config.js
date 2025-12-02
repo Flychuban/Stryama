@@ -3,6 +3,7 @@
  * for Docker builds.
  */
 import './src/env.js';
+import { withSentryConfig } from '@sentry/nextjs';
 
 /** @type {import("next").NextConfig} */
 const config = {
@@ -20,7 +21,11 @@ const config = {
   },
 
   // Keep SDK as external package (don't bundle with webpack)
-  serverExternalPackages: ['@anthropic-ai/claude-agent-sdk'],
+  serverExternalPackages: [
+    '@anthropic-ai/claude-agent-sdk',
+    'import-in-the-middle',
+    'require-in-the-middle',
+  ],
 
   // Include CLI executable in Vercel deployment bundle
   outputFileTracingIncludes: {
@@ -69,11 +74,11 @@ const config = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.clerk.accounts.dev https://*.stryama.app https://challenges.cloudflare.com https://*.e2b.dev https://*.e2b.app https://js.stripe.com https://*.js.stripe.com https://maps.googleapis.com https://eu-assets.i.posthog.com",
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.clerk.accounts.dev https://*.stryama.app https://challenges.cloudflare.com https://*.e2b.dev https://*.e2b.app https://js.stripe.com https://*.js.stripe.com https://maps.googleapis.com https://eu-assets.i.posthog.com https://*.ingest.sentry.io",
               "style-src 'self' 'unsafe-inline' https://*.e2b.dev https://*.e2b.app",
               "img-src 'self' data: blob: https: https://img.clerk.com https://*.stryama.app https://*.stripe.com https://eu-assets.i.posthog.com",
               "font-src 'self' data:",
-              "connect-src 'self' https://api.anthropic.com https://api.e2b.dev https://*.e2b.app wss://*.e2b.app https://*.clerk.accounts.dev https://*.stryama.app wss://*.stryama.app https://clerk.topical-mammoth-51.lcl.dev wss://*.clerk.accounts.dev https://api.stripe.com https://maps.googleapis.com https://eu.posthog.com https://eu.i.posthog.com https://eu-assets.i.posthog.com",
+              "connect-src 'self' https://api.anthropic.com https://api.e2b.dev https://*.e2b.app wss://*.e2b.app https://*.clerk.accounts.dev https://*.stryama.app wss://*.stryama.app https://clerk.topical-mammoth-51.lcl.dev wss://*.clerk.accounts.dev https://api.stripe.com https://maps.googleapis.com https://eu.posthog.com https://eu.i.posthog.com https://eu-assets.i.posthog.com https://*.ingest.sentry.io",
               "frame-src 'self' https://*.clerk.accounts.dev https://*.stryama.app https://challenges.cloudflare.com https://*.e2b.dev https://*.e2b.app https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com",
               "object-src 'none'",
               "base-uri 'self' https://*.e2b.dev https://*.e2b.app",
@@ -89,6 +94,7 @@ const config = {
 
   async rewrites() {
     return [
+      // PostHog reverse proxy
       {
         source: '/ingest/static/:path*',
         destination: 'https://eu-assets.i.posthog.com/static/:path*',
@@ -97,6 +103,13 @@ const config = {
         source: '/ingest/:path*',
         destination: 'https://eu.i.posthog.com/:path*',
       },
+      // Sentry tunnel (bypass ad blockers)
+      // Replace with your actual Sentry DSN values
+      {
+        source: '/api/sentry',
+        destination:
+          'https://o0.ingest.sentry.io/api/4510461927555152/envelope/',
+      },
     ];
   },
 
@@ -104,4 +117,23 @@ const config = {
   skipTrailingSlashRedirect: true,
 };
 
-export default config;
+// Sentry webpack plugin configuration
+const sentryWebpackPluginOptions = {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+
+  silent: !process.env.CI,
+  widenClientFileUpload: true,
+  tunnelRoute: '/api/sentry',
+  hideSourceMaps: true,
+  disableLogger: true,
+
+  reactComponentAnnotation: {
+    enabled: true,
+  },
+
+  telemetry: false,
+};
+
+export default withSentryConfig(config, sentryWebpackPluginOptions);

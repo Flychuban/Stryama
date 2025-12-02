@@ -7,6 +7,7 @@
 import { TRPCError } from '@trpc/server';
 import { observable } from '@trpc/server/observable';
 import { z } from 'zod';
+import * as Sentry from '@sentry/nextjs';
 import { createTRPCRouter, protectedProcedure } from '~/server/api/trpc';
 import {
   claudeClient,
@@ -734,11 +735,22 @@ export const aiRouter = createTRPCRouter({
                 logger.debug(
                   `[AI Stream] 🔍 Calling sandboxManager.getOrCreateSandbox...`
                 );
-                const sandboxResult = await sandboxManager.getOrCreateSandbox(
-                  ctx.db,
-                  projectId,
-                  ctx.auth.userId,
-                  E2B_CONFIG.maxTimeoutMs
+                const sandboxResult = await Sentry.startSpan(
+                  {
+                    name: 'e2b.sandbox.getOrCreate',
+                    op: 'sandbox.create',
+                    attributes: {
+                      'sandbox.provider': 'e2b',
+                      'sandbox.project_id': projectId,
+                    },
+                  },
+                  async () =>
+                    await sandboxManager.getOrCreateSandbox(
+                      ctx.db,
+                      projectId,
+                      ctx.auth.userId,
+                      E2B_CONFIG.maxTimeoutMs
+                    )
                 );
                 const sandboxDuration = Date.now() - sandboxStartTime;
                 logger.debug(
@@ -875,14 +887,26 @@ export const aiRouter = createTRPCRouter({
               logger.debug(
                 `[AI Stream] 🔄 Calling claudeClient.generateCodeStreaming...`
               );
-              streamIterator = claudeClient.generateCodeStreaming(
+              streamIterator = await Sentry.startSpan(
                 {
-                  prompt: prompt,
-                  context,
-                  sessionId,
+                  name: 'claude.generateCodeStreaming',
+                  op: 'ai.chat',
+                  attributes: {
+                    'ai.model': selectedModel,
+                    'ai.provider': 'anthropic',
+                    'ai.prompt_length': prompt.length,
+                  },
                 },
-                ctx.db,
-                sandboxId
+                async () =>
+                  claudeClient.generateCodeStreaming(
+                    {
+                      prompt: prompt,
+                      context,
+                      sessionId,
+                    },
+                    ctx.db,
+                    sandboxId
+                  )
               );
               logger.debug(
                 `[AI Stream] ✅ Stream iterator created successfully`
@@ -1059,12 +1083,23 @@ export const aiRouter = createTRPCRouter({
                   `[AI Stream] Sandbox instance available: ${!!sandboxInstance}`
                 );
                 const filesStartTime = Date.now();
-                await saveGeneratedFilesToDatabase(
-                  ctx.db,
-                  projectId,
-                  sandboxInstance,
-                  [], // Empty array - will read from sandbox if needed
-                  '[AI Stream]'
+                await Sentry.startSpan(
+                  {
+                    name: 'database.saveGeneratedFiles',
+                    op: 'db.operation',
+                    attributes: {
+                      'db.operation': 'upsert',
+                      'project.id': projectId,
+                    },
+                  },
+                  async () =>
+                    await saveGeneratedFilesToDatabase(
+                      ctx.db,
+                      projectId,
+                      sandboxInstance,
+                      [], // Empty array - will read from sandbox if needed
+                      '[AI Stream]'
+                    )
                 );
                 const filesDuration = Date.now() - filesStartTime;
                 logger.debug(
