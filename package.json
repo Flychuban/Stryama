@@ -27,6 +27,7 @@
     "@clerk/nextjs": "^6.34.0",
     "@e2b/code-interpreter": "^2.1.0",
     "@hookform/resolvers": "^5.2.2",
+    "@octokit/rest": "^22.0.1",
     "@prisma/client": "^6.5.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",

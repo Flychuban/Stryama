@@ -14,8 +14,14 @@ import type {
   AIGenerationFailedProps,
   UsageLimitHitProps,
   RateLimitHitProps,
+  GitHubConnectedProps,
 } from './events';
-import { ProjectEvents, AIGenerationEvents, UsageLimitEvents } from './events';
+import {
+  ProjectEvents,
+  AIGenerationEvents,
+  UsageLimitEvents,
+  GitHubEvents,
+} from './events';
 
 /**
  * Identify a user on the server side
@@ -137,6 +143,21 @@ export function trackRateLimitHitServer(
   client.capture({
     distinctId: userId,
     event: UsageLimitEvents.RATE_LIMIT_HIT,
+    properties,
+  });
+}
+
+/**
+ * Track GitHub connected event (server-side)
+ */
+export function trackGitHubConnectedServer(
+  userId: string,
+  properties: GitHubConnectedProps
+) {
+  const client = PostHogClient();
+  client.capture({
+    distinctId: userId,
+    event: GitHubEvents.GITHUB_CONNECTED,
     properties,
   });
 }

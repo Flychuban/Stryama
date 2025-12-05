@@ -958,6 +958,8 @@ function EditorContent() {
           onDownload={handleDownload}
           iframeRef={previewIframeRef}
           iframeKey={iframeKey}
+          projectId={projectId ?? undefined}
+          projectName={project?.name ?? 'Untitled Project'}
         />
       ) : (
         <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
@@ -1007,6 +1009,8 @@ function EditorContent() {
                 previewError={previewError}
                 previewUrl={previewUrl}
                 hasFiles={projectFiles.length > 0}
+                projectId={projectId ?? undefined}
+                projectName={project?.name ?? 'Untitled Project'}
               />
               <div className="flex-1 overflow-auto p-8">
                 <PreviewCodePanel

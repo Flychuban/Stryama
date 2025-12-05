@@ -38,6 +38,10 @@ interface MobileEditorTabsProps {
   onDownload?: () => void;
   iframeRef?: RefObject<HTMLIFrameElement | null>;
   iframeKey?: number;
+
+  // Project props (for GitHub export)
+  projectId?: string;
+  projectName?: string;
 }
 
 type MobileTab = 'chat' | 'preview';
@@ -65,6 +69,8 @@ export function MobileEditorTabs({
   onDownload,
   iframeRef,
   iframeKey,
+  projectId,
+  projectName,
 }: MobileEditorTabsProps) {
   const [activeTab, setActiveTab] = useLocalStorage<MobileTab>(
     'stryama_mobile_active_tab',
@@ -136,6 +142,8 @@ export function MobileEditorTabs({
           previewError={previewError}
           previewUrl={previewUrl}
           hasFiles={projectFiles.length > 0}
+          projectId={projectId}
+          projectName={projectName}
         />
         <div className="flex-1 overflow-auto p-4 sm:p-8">
           <PreviewCodePanel
