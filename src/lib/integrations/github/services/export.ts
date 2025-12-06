@@ -6,6 +6,7 @@
 import type { Octokit } from '@octokit/rest';
 import type { ExportableFile, ExportResult, GitHubTreeEntry } from '../types';
 import { GitHubExportError, GitHubRateLimitError } from '../errors';
+import { validateFilePath } from '@/lib/security/oauth';
 import * as Sentry from '@sentry/nextjs';
 
 export class GitHubExportService {
@@ -128,6 +129,18 @@ export class GitHubExportService {
 
     for (const file of files) {
       try {
+        // Validate file path (prevents path traversal and malicious files)
+        if (!validateFilePath(file.path)) {
+          console.warn(
+            `[GitHub Export] Skipping invalid file path: ${file.path}`
+          );
+          Sentry.captureMessage('Invalid file path in export', {
+            level: 'warning',
+            extra: { filePath: file.path },
+          });
+          continue; // Skip this file
+        }
+
         // Create blob with base64 encoded content
         const { data: blob } = await octokit.git.createBlob({
           owner,

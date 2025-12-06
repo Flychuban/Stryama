@@ -33,6 +33,7 @@ export function GitHubConnectButton({
     setIsConnecting(true);
 
     // Preserve current URL for return after OAuth
+    // Use relative path (pathname + search) to pass security validation
     const currentUrl = window.location.href;
     const returnUrl = new URL(currentUrl);
     returnUrl.searchParams.set('github_connected', 'true');
@@ -40,7 +41,11 @@ export function GitHubConnectButton({
     // Redirect to server endpoint that initiates GitHub OAuth
     // This server-side approach bypasses Clerk's step-up authentication requirement
     const connectUrl = new URL('/api/github/connect', window.location.origin);
-    connectUrl.searchParams.set('return_url', returnUrl.toString());
+    // Use pathname + search (relative URL) instead of full URL to pass security validation
+    connectUrl.searchParams.set(
+      'return_url',
+      returnUrl.pathname + returnUrl.search
+    );
 
     window.location.href = connectUrl.toString();
 

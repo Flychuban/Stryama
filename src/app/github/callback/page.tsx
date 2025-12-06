@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { AuthenticateWithRedirectCallback } from '@clerk/nextjs';
 import { api } from '@/trpc/react';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
@@ -11,67 +10,58 @@ import { Loader2 } from 'lucide-react';
  * GitHub OAuth Callback Page
  *
  * Handles the return from GitHub OAuth authorization.
- * Uses Clerk's AuthenticateWithRedirectCallback to process the OAuth response,
- * then triggers a mutation to save GitHub connection metadata to database.
+ * The connection is already saved by the server-side /api/github/callback route.
+ * This page just triggers analytics tracking and redirects to the original page.
  */
 export default function GitHubCallbackPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const returnUrl = searchParams?.get('return_url') ?? '/dashboard';
-  const [hasTriggeredMutation, setHasTriggeredMutation] = useState(false);
+  const returnUrl = searchParams?.get('return_url') ?? '/editor';
+  const githubConnected = searchParams?.get('github_connected') === 'true';
+  const [hasTriggeredAnalytics, setHasTriggeredAnalytics] = useState(false);
 
   const connectMutation = api.github.connectAfterOAuth.useMutation({
     onSuccess: () => {
+      console.log('[GitHub Callback] Analytics tracked successfully');
       toast.success('GitHub connected successfully!');
-      // Small delay to let toast show before redirect
-      setTimeout(() => {
-        router.push(returnUrl);
-      }, 500);
+      // Redirect to the original page with success parameter
+      router.push(returnUrl);
     },
     onError: (error) => {
-      console.error('[GitHub Callback] Connection error:', error);
-      toast.error(`Failed to complete connection: ${error.message}`);
-      // Redirect back even on error
-      setTimeout(() => {
-        router.push(returnUrl);
-      }, 1000);
+      console.error('[GitHub Callback] Analytics error:', error);
+      // Still redirect even if analytics fails - connection is already saved
+      toast.success('GitHub connected successfully!');
+      router.push(returnUrl);
     },
   });
 
-  // Trigger connection save after Clerk OAuth processing completes
+  // Track analytics and redirect
   useEffect(() => {
     // Only trigger once per page load
-    if (hasTriggeredMutation) return;
+    if (hasTriggeredAnalytics) return;
 
-    // Small delay to ensure Clerk has processed the OAuth callback
-    const timeoutId = setTimeout(() => {
-      setHasTriggeredMutation(true);
+    if (githubConnected) {
+      setHasTriggeredAnalytics(true);
+      // Trigger analytics mutation (non-blocking)
       connectMutation.mutate();
-    }, 1000);
-
-    return () => clearTimeout(timeoutId);
+    } else {
+      // No github_connected param, just redirect
+      router.push(returnUrl);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasTriggeredMutation]);
+  }, [hasTriggeredAnalytics, githubConnected]);
 
   return (
-    <>
-      <AuthenticateWithRedirectCallback
-        afterSignInUrl={returnUrl}
-        afterSignUpUrl={returnUrl}
-        signInUrl="/sign-in"
-        signUpUrl="/sign-up"
-      />
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="text-center">
-          <Loader2 className="mx-auto mb-4 h-8 w-8 animate-spin text-primary" />
-          <p className="text-lg font-medium text-foreground">
-            Connecting to GitHub...
-          </p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Please wait while we complete the connection
-          </p>
-        </div>
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="text-center">
+        <Loader2 className="mx-auto mb-4 h-8 w-8 animate-spin text-primary" />
+        <p className="text-lg font-medium text-foreground">
+          Connecting to GitHub...
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Redirecting you back...
+        </p>
       </div>
-    </>
+    </div>
   );
 }

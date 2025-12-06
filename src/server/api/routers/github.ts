@@ -13,6 +13,7 @@ import {
 } from '~/lib/integrations/github/errors';
 import * as Sentry from '@sentry/nextjs';
 import { trackGitHubConnectedServer } from '~/lib/analytics/server-tracking';
+import { validateRepositoryName } from '@/lib/security/oauth';
 import type { db as DbType } from '~/server/db';
 
 /**
@@ -251,7 +252,14 @@ export const githubRouter = createTRPCRouter({
   createRepository: protectedProcedure
     .input(
       z.object({
-        name: z.string().min(1).max(100),
+        name: z
+          .string()
+          .min(1, 'Repository name is required')
+          .max(100, 'Repository name must be 100 characters or less')
+          .refine(
+            (name) => validateRepositoryName(name),
+            'Invalid repository name. Must be alphanumeric with hyphens, underscores, or dots only. Cannot start with . or - and cannot contain ..'
+          ),
         isPrivate: z.boolean().default(false),
       })
     )
@@ -298,7 +306,14 @@ export const githubRouter = createTRPCRouter({
       z.object({
         projectId: z.string(),
         repoOwner: z.string(),
-        repoName: z.string(),
+        repoName: z
+          .string()
+          .min(1, 'Repository name is required')
+          .max(100, 'Repository name must be 100 characters or less')
+          .refine(
+            (name) => validateRepositoryName(name),
+            'Invalid repository name. Must be alphanumeric with hyphens, underscores, or dots only. Cannot start with . or - and cannot contain ..'
+          ),
         branch: z.string().default('main'),
         commitMessage: z.string().optional(),
         createNewRepo: z.boolean().default(false),
