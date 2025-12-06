@@ -80,6 +80,7 @@ function EditorContent() {
   const searchParams = useSearchParams();
   const projectId = searchParams?.get('id') ?? null;
   const autoStart = searchParams?.get('autoStart') === 'true';
+  const githubConnected = searchParams?.get('github_connected');
 
   // Get Clerk auth state to prevent race conditions
   const { isLoaded: isAuthLoaded } = useUser();
@@ -122,6 +123,7 @@ function EditorContent() {
   const [isWaitingForVite, setIsWaitingForVite] = useState(false);
   const [isExpectingPreviewUpdate, setIsExpectingPreviewUpdate] =
     useState(false);
+  const [githubConnectionSuccess, setGithubConnectionSuccess] = useState(false);
 
   // Persist chat panel width in localStorage
   const [chatPanelSize, setChatPanelSize] = useLocalStorage<number>(
@@ -197,6 +199,24 @@ function EditorContent() {
 
     hasTrackedProjectOpen.current = true;
   }, [project, projectId, isLoadingProject, trackProjectOpened]);
+
+  // Detect GitHub connection success from OAuth return
+  useEffect(() => {
+    if (githubConnected === 'true') {
+      console.log('[Editor] GitHub connection success detected');
+      setGithubConnectionSuccess(true);
+
+      // Clean URL to prevent re-triggering on refresh
+      const url = new URL(window.location.href);
+      url.searchParams.delete('github_connected');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, [githubConnected]);
+
+  // Reset flag after it's consumed
+  const handleGithubConnectionConsumed = () => {
+    setGithubConnectionSuccess(false);
+  };
 
   // Handle streaming completion - watch state directly
   useEffect(() => {
@@ -960,6 +980,8 @@ function EditorContent() {
           iframeKey={iframeKey}
           projectId={projectId ?? undefined}
           projectName={project?.name ?? 'Untitled Project'}
+          githubConnectionSuccess={githubConnectionSuccess}
+          onGithubConnectionConsumed={handleGithubConnectionConsumed}
         />
       ) : (
         <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
@@ -1011,6 +1033,8 @@ function EditorContent() {
                 hasFiles={projectFiles.length > 0}
                 projectId={projectId ?? undefined}
                 projectName={project?.name ?? 'Untitled Project'}
+                githubConnectionSuccess={githubConnectionSuccess}
+                onGithubConnectionConsumed={handleGithubConnectionConsumed}
               />
               <div className="flex-1 overflow-auto p-8">
                 <PreviewCodePanel

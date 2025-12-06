@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -36,6 +36,8 @@ interface ControlBarProps {
   hasFiles?: boolean;
   projectId?: string;
   projectName?: string;
+  githubConnectionSuccess?: boolean;
+  onGithubConnectionConsumed?: () => void;
 }
 
 export function ControlBar({
@@ -53,8 +55,21 @@ export function ControlBar({
   hasFiles = false,
   projectId,
   projectName,
+  githubConnectionSuccess,
+  onGithubConnectionConsumed,
 }: ControlBarProps) {
   const [showGitHubDialog, setShowGitHubDialog] = useState(false);
+
+  // Auto-open dialog when GitHub connection succeeds
+  useEffect(() => {
+    if (githubConnectionSuccess) {
+      console.log(
+        '[ControlBar] Opening GitHub dialog after successful connection'
+      );
+      setShowGitHubDialog(true);
+      onGithubConnectionConsumed?.();
+    }
+  }, [githubConnectionSuccess, onGithubConnectionConsumed]);
 
   const showRegenerateButton =
     (previewError?.includes('not found') ?? false) ||
@@ -215,6 +230,7 @@ export function ControlBar({
           projectName={projectName}
           open={showGitHubDialog}
           onOpenChange={setShowGitHubDialog}
+          initialConnectionSuccess={githubConnectionSuccess}
         />
       )}
     </div>
