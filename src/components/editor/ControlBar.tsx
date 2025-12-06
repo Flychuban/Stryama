@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -12,8 +13,10 @@ import {
   Eye,
   RefreshCw,
   Download,
+  Github,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { GitHubExportDialog } from '@/components/github/GitHubExportDialog';
 
 export type ViewMode = 'preview' | 'code';
 export type DeviceMode = 'desktop' | 'mobile';
@@ -31,6 +34,10 @@ interface ControlBarProps {
   previewError?: string | null;
   previewUrl?: string | null;
   hasFiles?: boolean;
+  projectId?: string;
+  projectName?: string;
+  githubConnectionSuccess?: boolean;
+  onGithubConnectionConsumed?: () => void;
 }
 
 export function ControlBar({
@@ -46,7 +53,24 @@ export function ControlBar({
   previewError,
   previewUrl,
   hasFiles = false,
+  projectId,
+  projectName,
+  githubConnectionSuccess,
+  onGithubConnectionConsumed,
 }: ControlBarProps) {
+  const [showGitHubDialog, setShowGitHubDialog] = useState(false);
+
+  // Auto-open dialog when GitHub connection succeeds
+  useEffect(() => {
+    if (githubConnectionSuccess) {
+      console.log(
+        '[ControlBar] Opening GitHub dialog after successful connection'
+      );
+      setShowGitHubDialog(true);
+      onGithubConnectionConsumed?.();
+    }
+  }, [githubConnectionSuccess, onGithubConnectionConsumed]);
+
   const showRegenerateButton =
     (previewError?.includes('not found') ?? false) ||
     (previewError?.includes('Sandbox Not Found') ?? false);
@@ -96,11 +120,24 @@ export function ControlBar({
             variant="outline"
             size="sm"
             onClick={onDownload}
-            className="h-auto min-h-[44px] rounded-lg border-border/50 px-3 py-2 text-xs transition-all duration-200 hover:border-primary/30 hover:bg-primary/5 sm:h-9 sm:px-3 sm:text-sm"
+            className="h-auto min-h-[44px] rounded-lg px-3 py-2 text-xs sm:h-9 sm:px-3 sm:text-sm"
             title="Download code"
           >
             <Download className="h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
             <span className="hidden sm:inline">Download</span>
+          </Button>
+        )}
+
+        {hasFiles && projectId && projectName && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowGitHubDialog(true)}
+            className="h-auto min-h-[44px] rounded-lg px-3 py-2 text-xs sm:h-9 sm:px-3 sm:text-sm"
+            title="Export to GitHub"
+          >
+            <Github className="h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
+            <span className="hidden sm:inline">GitHub</span>
           </Button>
         )}
 
@@ -112,7 +149,7 @@ export function ControlBar({
                 size="sm"
                 onClick={onRegeneratePreview}
                 disabled={isRegeneratingPreview}
-                className="h-auto min-h-[44px] rounded-lg border-border/50 px-3 py-2 text-xs transition-all duration-200 hover:border-primary/30 hover:bg-primary/5 sm:h-9 sm:px-3 sm:text-sm"
+                className="h-auto min-h-[44px] rounded-lg px-3 py-2 text-xs sm:h-9 sm:px-3 sm:text-sm"
                 title="Regenerate preview"
               >
                 <RefreshCw
@@ -131,7 +168,7 @@ export function ControlBar({
                   size="sm"
                   onClick={onRestartPreview}
                   disabled={isGeneratingPreview}
-                  className="h-auto min-h-[44px] rounded-lg border-border/50 px-3 py-2 text-xs transition-all duration-200 hover:border-primary/30 hover:bg-primary/5 sm:h-9 sm:px-3 sm:text-sm"
+                  className="h-auto min-h-[44px] rounded-lg px-3 py-2 text-xs sm:h-9 sm:px-3 sm:text-sm"
                   title="Restart preview"
                 >
                   <RefreshCw
@@ -152,7 +189,7 @@ export function ControlBar({
             <Button
               variant="outline"
               size="sm"
-              className="h-auto min-h-[44px] rounded-lg border-border/50 px-3 py-2 text-xs transition-all duration-200 hover:border-primary/30 hover:bg-primary/5 sm:h-9 sm:px-3 sm:text-sm"
+              className="h-auto min-h-[44px] rounded-lg px-3 py-2 text-xs sm:h-9 sm:px-3 sm:text-sm"
             >
               {deviceMode === 'desktop' ? (
                 <>
@@ -185,6 +222,17 @@ export function ControlBar({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {/* GitHub Export Dialog */}
+      {projectId && projectName && (
+        <GitHubExportDialog
+          projectId={projectId}
+          projectName={projectName}
+          open={showGitHubDialog}
+          onOpenChange={setShowGitHubDialog}
+          initialConnectionSuccess={githubConnectionSuccess}
+        />
+      )}
     </div>
   );
 }

@@ -108,6 +108,45 @@ export interface ProjectDownloadedProps {
   time_from_last_generation_seconds: number;
 }
 
+/**
+ * GitHub Integration Events
+ */
+export const GitHubEvents = {
+  GITHUB_CONNECTED: 'github_connected',
+  GITHUB_DISCONNECTED: 'github_disconnected',
+  GITHUB_EXPORT_STARTED: 'github_export_started',
+  GITHUB_EXPORT_COMPLETED: 'github_export_completed',
+  GITHUB_EXPORT_FAILED: 'github_export_failed',
+} as const;
+
+export interface GitHubConnectedProps {
+  github_username: string;
+  github_user_id: string;
+}
+
+export interface GitHubExportStartedProps {
+  project_id: string;
+  repo_full_name: string;
+  created_new_repo: boolean;
+  file_count: number;
+}
+
+export interface GitHubExportCompletedProps {
+  project_id: string;
+  repo_full_name: string;
+  files_exported: number;
+  created_new_repo: boolean;
+  commit_sha: string;
+  is_first_export: boolean;
+}
+
+export interface GitHubExportFailedProps {
+  project_id: string;
+  error_message: string;
+  error_type: string;
+  repo_full_name?: string;
+}
+
 // ============================================================================
 // P1 Events - Important Product Insights
 // ============================================================================
@@ -263,6 +302,7 @@ export const P0Events = {
   ...AuthEvents,
   ...AIGenerationEvents,
   ...ProjectEvents,
+  ...GitHubEvents,
 } as const;
 
 export const P1Events = {

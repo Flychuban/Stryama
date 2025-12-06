@@ -5,6 +5,7 @@ import { sandboxRouter } from '~/server/api/routers/sandbox';
 import { usageRouter } from '~/server/api/routers/usage';
 import { subscriptionRouter } from '~/server/api/routers/subscription';
 import { feedbackRouter } from '~/server/api/routers/feedback';
+import { githubRouter } from '~/server/api/routers/github';
 
 export const appRouter = createTRPCRouter({
   project: projectRouter,
@@ -13,6 +14,7 @@ export const appRouter = createTRPCRouter({
   usage: usageRouter,
   subscription: subscriptionRouter,
   feedback: feedbackRouter,
+  github: githubRouter,
 });
 
 // export type definition of API

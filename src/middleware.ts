@@ -6,6 +6,7 @@ const isPublicRoute = createRouteMatcher([
   '/',
   '/sign-in(.*)',
   '/sign-up(.*)',
+  '/github/callback(.*)', // Allow GitHub OAuth callback
   '/opengraph-image(.*)', // Allow OG image for social media previews
   '/twitter-image(.*)', // Allow Twitter card images
   '/icon(.*)', // Allow favicon generation

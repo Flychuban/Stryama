@@ -28,6 +28,7 @@ model Project {
     files         File[]
     sandboxes     Sandbox[]
     aiGenerations AIGeneration[]
+    githubExports GitHubExport[]
 
     @@index([clerkUserId])
 }
@@ -160,4 +161,78 @@ model Feedback {
     @@index([status])
     @@index([type])
     @@index([createdAt(sort: Desc)])
+}
+
+// GitHub connection tracking
+model GitHubConnection {
+    id                String   @id @default(cuid())
+    clerkUserId       String   @unique // One GitHub connection per user
+
+    // GitHub User Info (cached for display)
+    githubUsername    String
+    githubUserId      String // GitHub's user ID
+
+    // GitHub OAuth token (encrypted, for API access)
+    // Stored here instead of Clerk since we're using custom OAuth flow
+    accessToken       String   @db.Text
+
+    // Connection metadata
+    connectedAt       DateTime @default(now())
+    lastSyncAt        DateTime?
+
+    // Preferences
+    defaultBranch     String   @default("main")
+
+    createdAt         DateTime @default(now())
+    updatedAt         DateTime @updatedAt
+
+    // Relations
+    exports           GitHubExport[]
+
+    @@index([clerkUserId])
+    @@index([githubUserId])
+}
+
+// Export history tracking
+model GitHubExport {
+    id           String       @id @default(cuid())
+    projectId    String
+    connectionId String
+
+    // Repository Info
+    repoOwner    String // GitHub username
+    repoName     String
+    repoFullName String // "owner/repo"
+    repoUrl      String // Full GitHub URL
+    branch       String       @default("main")
+
+    // Export Metadata
+    commitSha    String?      // Last commit SHA
+    commitMessage String      @db.Text
+    filesExported Int         @default(0)
+    status       ExportStatus @default(PENDING)
+    errorMessage String?      @db.Text
+
+    // Timing
+    startedAt    DateTime     @default(now())
+    completedAt  DateTime?
+
+    createdAt    DateTime     @default(now())
+    updatedAt    DateTime     @updatedAt
+
+    // Relations
+    project      Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+    connection   GitHubConnection  @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+    @@index([projectId])
+    @@index([connectionId])
+    @@index([status])
+    @@index([createdAt(sort: Desc)])
+}
+
+enum ExportStatus {
+    PENDING
+    IN_PROGRESS
+    COMPLETED
+    FAILED
 }
