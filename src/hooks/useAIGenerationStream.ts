@@ -480,6 +480,29 @@ export function useAIGenerationStream(
     }
   }, [state.hasError, state.error, onError]);
 
+  // Warn user before refresh/close during generation
+  useEffect(() => {
+    // Only show warning when actively streaming
+    if (!state.isStreaming) return;
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // This prevents the page from closing/refreshing
+      e.preventDefault();
+
+      // Modern browsers ignore custom messages and show their own generic warning
+      // But we still need to set returnValue for the dialog to appear
+      e.returnValue = '';
+    };
+
+    // Add event listener
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    // Cleanup: remove listener when component unmounts or streaming stops
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [state.isStreaming]); // Re-run when streaming status changes
+
   // Cancel streaming
   const cancel = useCallback(() => {
     if (subscriptionRef.current) {
