@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GitHubExportDialog } from '@/components/github/GitHubExportDialog';
+import { logger } from '@/lib/utils/logger';
 
 export type ViewMode = 'preview' | 'code';
 export type DeviceMode = 'desktop' | 'mobile';
@@ -63,7 +64,7 @@ export function ControlBar({
   // Auto-open dialog when GitHub connection succeeds
   useEffect(() => {
     if (githubConnectionSuccess) {
-      console.log(
+      logger.debug(
         '[ControlBar] Opening GitHub dialog after successful connection'
       );
       setShowGitHubDialog(true);

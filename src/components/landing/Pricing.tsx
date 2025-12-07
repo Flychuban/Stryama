@@ -28,6 +28,7 @@ const tiers: PricingTier[] = [
       'Fast AI model (Haiku)',
       'E2B sandbox (10min timeout)',
       'Community support',
+      'GitHub export',
     ],
     cta: 'Start Free',
   },
@@ -45,7 +46,6 @@ const tiers: PricingTier[] = [
       'Smart AI (Haiku + Sonnet)',
       'E2B sandbox (30min timeout)',
       'Email support (48hr)',
-      'Private projects',
       'GitHub export',
     ],
     cta: 'Start Building',
@@ -206,9 +206,6 @@ export function Pricing() {
 
         {/* Trust Signals */}
         <div className="text-center">
-          <p className="mb-4 text-sm text-muted-foreground">
-            Trusted by 10,000+ creators worldwide
-          </p>
           <div className="flex flex-wrap items-center justify-center gap-8 opacity-60">
             <div className="text-xs font-medium">🔒 Secure Payments</div>
             <div className="text-xs font-medium">💳 Cancel Anytime</div>
