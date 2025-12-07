@@ -178,7 +178,7 @@ export function StreamingIndicator({
             </p>
 
             {/* Token usage */}
-            {state.tokensUsed > 0 && (
+            {process.env.NODE_ENV === 'development' && state.tokensUsed > 0 && (
               <div className="mt-1 text-xs text-gray-500 dark:text-gray-500">
                 {state.tokensUsed.toLocaleString()} tokens
                 {state.totalCost > 0 && ` • $${state.totalCost.toFixed(4)}`}

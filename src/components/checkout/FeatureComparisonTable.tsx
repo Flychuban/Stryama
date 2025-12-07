@@ -34,7 +34,6 @@ const features: Feature[] = [
 
   { category: 'Projects', name: '', starter: '', builder: '', pro: '' },
   { name: 'Active projects', starter: '1', builder: '5', pro: '20' },
-  { name: 'Private projects', starter: false, builder: true, pro: true },
 
   { category: 'Features', name: '', starter: '', builder: '', pro: '' },
   {
@@ -43,7 +42,7 @@ const features: Feature[] = [
     builder: '30min timeout',
     pro: '2hr timeout',
   },
-  { name: 'GitHub export', starter: false, builder: true, pro: true },
+  { name: 'GitHub export', starter: true, builder: true, pro: true },
   {
     name: 'Custom domains',
     starter: false,

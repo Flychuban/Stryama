@@ -9,6 +9,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { api } from '~/trpc/react';
 import { useAnalytics } from './useAnalytics';
 import type { StreamEvent } from '~/lib/integrations/claude/types/stream-events';
+import { logger } from '~/lib/utils/logger';
 
 export interface StreamState {
   // Current status
@@ -140,7 +141,7 @@ export function useAIGenerationStream(
   // Initialize generation mutation (Phase 1: Store prompt in database)
   const initializeGenerationMutation = api.ai.initializeGeneration.useMutation({
     onSuccess: (data) => {
-      console.log('[Stream] Generation initialized:', data.generationId);
+      logger.debug('[Stream] Generation initialized:', data.generationId);
       setGenerationId(data.generationId);
     },
     onError: (error) => {
@@ -228,7 +229,7 @@ export function useAIGenerationStream(
   // Process stream events
   const handleStreamEvent = useCallback(
     (event: StreamEvent) => {
-      console.log('[Stream Event]', event);
+      logger.debug('[Stream Event]', event);
 
       setState((prev) => {
         const newState = { ...prev };
@@ -255,8 +256,8 @@ export function useAIGenerationStream(
             break;
 
           case 'preview_url_updated':
-            console.log('[Stream] Preview URL updated:', event.url);
-            console.log('[Stream] Skip reload:', event.skipReload ?? false);
+            logger.debug('[Stream] Preview URL updated:', event.url);
+            logger.debug('[Stream] Skip reload:', event.skipReload ?? false);
             newState.previewUrl = event.url;
             newState.previewUpdateTimestamp = event.timestamp;
             newState.skipPreviewReload = event.skipReload ?? false;
@@ -349,7 +350,7 @@ export function useAIGenerationStream(
             break;
 
           case 'database_persisted':
-            console.log(
+            logger.debug(
               '[Stream] Database operations complete - safe to refetch'
             );
             newState.isDatabasePersisted = true;

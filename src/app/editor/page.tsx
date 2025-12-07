@@ -23,6 +23,7 @@ import { PreviewCodePanel } from '@/components/editor/PreviewCodePanel';
 import { MobileEditorTabs } from '@/components/editor/MobileEditorTabs';
 import { downloadProjectAsZip } from '@/lib/utils/download-project';
 import { FeedbackButton } from '@/components/feedback/FeedbackButton';
+import { logger } from '@/lib/utils/logger';
 
 /**
  * Check if preview server is healthy AND serving actual Vite content
@@ -56,7 +57,7 @@ const checkPreviewHealth = async (url: string): Promise<boolean> => {
       html.includes('Connection refused on port');
 
     if (isE2BError) {
-      console.log('[Preview Health] E2B error page detected - Vite not ready');
+      logger.debug('[Preview Health] E2B error page detected - Vite not ready');
       return false;
     }
 
@@ -66,7 +67,7 @@ const checkPreviewHealth = async (url: string): Promise<boolean> => {
     const isViteContent = hasRootDiv && hasModuleScript;
 
     if (!isViteContent) {
-      console.log('[Preview Health] Not valid Vite content yet');
+      logger.debug('[Preview Health] Not valid Vite content yet');
       return false;
     }
 
@@ -203,7 +204,7 @@ function EditorContent() {
   // Detect GitHub connection success from OAuth return
   useEffect(() => {
     if (githubConnected === 'true') {
-      console.log('[Editor] GitHub connection success detected');
+      logger.debug('[Editor] GitHub connection success detected');
       setGithubConnectionSuccess(true);
 
       // Clean URL to prevent re-triggering on refresh
@@ -236,7 +237,7 @@ function EditorContent() {
     const result = streamState.result; // Store in const for type safety
 
     const handleCompletion = async () => {
-      console.log('[Editor] 🎯 Handling completion at:', timestamp);
+      logger.debug('[Editor] 🎯 Handling completion at:', timestamp);
 
       // Add AI message to chat
       const aiMessage: Message = {
@@ -248,7 +249,9 @@ function EditorContent() {
 
       // NOTE: Refetch and invalidation now happens in separate effect
       // that waits for isDatabasePersisted flag to prevent race condition
-      console.log('[Editor] ⏳ Waiting for database operations to complete...');
+      logger.debug(
+        '[Editor] ⏳ Waiting for database operations to complete...'
+      );
     };
 
     void handleCompletion();
@@ -275,12 +278,12 @@ function EditorContent() {
 
     // Mark this persist event as handled
     handledDatabasePersistRef.current.add(timestamp);
-    console.log('[Editor] 💾 Database persisted at:', timestamp);
+    logger.debug('[Editor] 💾 Database persisted at:', timestamp);
 
     const handleDatabasePersisted = async () => {
       try {
         // CRITICAL: Now that database operations are complete, refetch project data
-        console.log(
+        logger.debug(
           '[Editor] 🔄 Refetching project with fresh data from DB...'
         );
         await refetchProject();
@@ -289,7 +292,7 @@ function EditorContent() {
         // NOTE: We DON'T invalidate project.getById here to avoid race condition
         // where invalidation triggers project loading effect before messages state updates
         await utils.ai.getHistory.invalidate({ projectId });
-        console.log(
+        logger.debug(
           '[Editor] ✅ Project refetched and chat history invalidated'
         );
 
@@ -298,7 +301,7 @@ function EditorContent() {
         // This causes "Closed Port Error" on subsequent prompts
         // Instead, ONLY set preview URL when we receive preview_url_updated event from server
         // The server validates Vite is ready before emitting that event
-        console.log(
+        logger.debug(
           '[Editor] ⏳ Waiting for server preview_url_updated event before loading preview...'
         );
       } catch (error) {
@@ -349,9 +352,9 @@ function EditorContent() {
     setIsExpectingPreviewUpdate(false);
     setIsWaitingForVite(false);
 
-    console.log('[Editor] 🔔 Server emitted preview_url_updated event');
-    console.log('[Editor] Preview URL:', streamState.previewUrl);
-    console.log(
+    logger.debug('[Editor] 🔔 Server emitted preview_url_updated event');
+    logger.debug('[Editor] Preview URL:', streamState.previewUrl);
+    logger.debug(
       '[Editor] Skip reload:',
       streamState.skipPreviewReload ?? false
     );
@@ -360,7 +363,7 @@ function EditorContent() {
 
     // SIMPLIFIED: Trust the server's health check - it already verified preview is ready
     // No redundant client-side polling needed (server validates before emitting event)
-    console.log(
+    logger.debug(
       '[Editor] ✅ Setting preview URL (server verified healthy):',
       streamState.previewUrl
     );
@@ -375,14 +378,14 @@ function EditorContent() {
 
     // Check if we should skip iframe reload (subsequent prompts with Vite HMR)
     if (streamState.skipPreviewReload) {
-      console.log(
+      logger.debug(
         '[Editor] ⚡ Skipping iframe reload - Vite HMR will handle updates automatically'
       );
       return;
     }
 
     // Reload iframe to show the preview (cache-busted via iframeKey)
-    console.log('[Editor] ✨ Reloading iframe with fresh preview...');
+    logger.debug('[Editor] ✨ Reloading iframe with fresh preview...');
     setIframeKey((prev) => prev + 1);
   }, [
     streamState.previewUpdateTimestamp,
@@ -423,7 +426,7 @@ function EditorContent() {
           if (isCancelled) return;
 
           try {
-            console.log(`[Editor] 📊 Fallback poll attempt ${attempt}/5...`);
+            logger.debug(`[Editor] 📊 Fallback poll attempt ${attempt}/5...`);
 
             const previewData = await utils.sandbox.getPreviewUrl.fetch({
               projectId,
@@ -433,7 +436,7 @@ function EditorContent() {
 
             if (previewData.url) {
               // SIMPLIFIED: Trust the database - server already verified health before saving
-              console.log(
+              logger.debug(
                 '[Editor] ✅ Found preview URL via fallback:',
                 previewData.url
               );
@@ -487,7 +490,7 @@ function EditorContent() {
 
     // CRITICAL FIX: Set expectation flag for ALL prompts (first and subsequent)
     // This ensures the fallback polling and timeout logic works correctly
-    console.log(
+    logger.debug(
       '[Editor] 🔄 Streaming started - expecting preview update event'
     );
     setIsExpectingPreviewUpdate(true);
@@ -495,7 +498,7 @@ function EditorContent() {
     // Only show loading overlay if there's already a preview loaded (2nd+ generation)
     // First generation has no preview to cover with an overlay
     if (previewUrl) {
-      console.log(
+      logger.debug(
         '[Editor] 🔄 Showing loading overlay to cover existing preview during update'
       );
       setIsWaitingForVite(true);
@@ -511,7 +514,7 @@ function EditorContent() {
 
     const maxWaitTime = 45000; // 45 seconds maximum
 
-    console.log('[Editor] ⏰ Setting overlay auto-reset timer for 45s...');
+    logger.debug('[Editor] ⏰ Setting overlay auto-reset timer for 45s...');
 
     const timeoutId = setTimeout(() => {
       console.warn(
@@ -547,7 +550,7 @@ function EditorContent() {
 
     // If streaming is done and overlay is still showing, reset it
     if (isWaitingForVite && (streamState.isComplete || streamState.hasError)) {
-      console.log(
+      logger.debug(
         '[Editor] ✅ Streaming finished, checking if overlay should reset'
       );
 
@@ -557,13 +560,13 @@ function EditorContent() {
         // This prevents flickering: overlay disappears at T+2s, reappears at T+10s when fallback starts
         // Instead, keep overlay visible if expecting update - let fallback polling or timeout handle it
         if (isExpectingPreviewUpdate) {
-          console.log(
+          logger.debug(
             '[Editor] ⏳ Still expecting preview update, keeping overlay visible for fallback polling'
           );
           return;
         }
 
-        console.log(
+        logger.debug(
           '[Editor] ✅ Preview received or not expected, resetting overlay'
         );
         setIsWaitingForVite(false);
@@ -608,13 +611,13 @@ function EditorContent() {
 
     if (isPreviewError) {
       // Preview-specific error - show in preview panel, not in chat
-      console.log(
+      logger.debug(
         '[Editor] 📺 Preview error detected, setting preview error state (not adding to chat)'
       );
       setPreviewError(streamState.error.message);
     } else {
       // Actual generation error - add to chat as AI message
-      console.log('[Editor] 🤖 Generation error detected, adding to chat');
+      logger.debug('[Editor] 🤖 Generation error detected, adding to chat');
       const errorMessage: Message = {
         role: 'assistant',
         content: `Sorry, I encountered an error: ${streamState.error.message}`,
@@ -692,7 +695,7 @@ function EditorContent() {
         });
 
         if (previewData.url) {
-          console.log(
+          logger.debug(
             '[Editor] Found preview URL for project:',
             previewData.url
           );
@@ -710,7 +713,7 @@ function EditorContent() {
 
         if (sandboxStatus.isExpired || !sandboxStatus.hasActiveSandbox) {
           // No active sandbox or expired - need to regenerate
-          console.log(
+          logger.debug(
             '[Editor] Sandbox expired or not active, may need regeneration'
           );
           shouldRegenerate = true;
@@ -721,18 +724,18 @@ function EditorContent() {
 
             if (isHealthy) {
               // Preview server is running and healthy
-              console.log('[Editor] Preview server is healthy');
+              logger.debug('[Editor] Preview server is healthy');
               shouldRegenerate = false;
             } else {
               // Preview server is dead, need to regenerate
-              console.log(
+              logger.debug(
                 '[Editor] Preview server not responding, need regeneration'
               );
               shouldRegenerate = true;
             }
           } else {
             // No preview URL found, need to regenerate
-            console.log('[Editor] No preview URL found, need regeneration');
+            logger.debug('[Editor] No preview URL found, need regeneration');
             shouldRegenerate = true;
           }
         }
