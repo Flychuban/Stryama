@@ -236,3 +236,18 @@ enum ExportStatus {
     COMPLETED
     FAILED
 }
+
+// OAuth state storage for CSRF protection
+// Replaces in-memory Map to support serverless/multi-instance deployments
+model OAuthState {
+    id        String   @id @default(cuid())
+    nonce     String   @unique // Random nonce for state token
+    userId    String   // Clerk user ID
+    returnUrl String   // Validated return URL
+    expiresAt DateTime // State expiration (10 minutes)
+    createdAt DateTime @default(now())
+
+    @@index([nonce])
+    @@index([expiresAt])
+    @@index([userId])
+}

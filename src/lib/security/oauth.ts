@@ -8,6 +8,7 @@
  */
 
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import { db } from '~/server/db';
 
 /**
  * Allowed return URLs for OAuth redirect
@@ -111,41 +112,14 @@ interface OAuthState {
 }
 
 /**
- * OAuth state storage (in-memory for MVP)
+ * OAuth state storage using database
  *
- * PRODUCTION NOTE: For multi-instance deployments, replace with Redis
- * This is similar to the rate limiter pattern - acceptable for MVP
+ * PRODUCTION: Uses Prisma database to store state tokens
+ * This ensures state is shared across serverless function instances in Vercel
  *
- * DEVELOPMENT NOTE: Using globalThis to persist across Next.js hot reloads
- * Without this, the Map would be reset during development, causing OAuth to fail
+ * CLEANUP: Expired states are cleaned up during validation
+ * For additional cleanup, consider a cron job to delete old states periodically
  */
-const getStateStore = () => {
-  const globalKey = Symbol.for('stryama.oauth.stateStore');
-
-  if (!(globalThis as Record<symbol, unknown>)[globalKey]) {
-    (globalThis as Record<symbol, unknown>)[globalKey] = new Map<
-      string,
-      { userId: string; createdAt: number; exp: number }
-    >();
-  }
-
-  return (globalThis as Record<symbol, unknown>)[globalKey] as Map<
-    string,
-    { userId: string; createdAt: number; exp: number }
-  >;
-};
-
-const stateStore = getStateStore();
-
-// Clean up expired states every 15 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [nonce, data] of stateStore.entries()) {
-    if (data.exp < now) {
-      stateStore.delete(nonce);
-    }
-  }
-}, 900000); // 15 minutes
 
 /**
  * Creates a cryptographically secure OAuth state token
@@ -160,9 +134,13 @@ setInterval(() => {
  * @param returnUrl - The validated return URL
  * @returns Base64-encoded signed state token
  */
-export function createOAuthState(userId: string, returnUrl: string): string {
+export async function createOAuthState(
+  userId: string,
+  returnUrl: string
+): Promise<string> {
   const nonce = randomBytes(32).toString('hex');
   const exp = Date.now() + 600000; // 10 minutes
+  const expiresAt = new Date(exp);
 
   const stateData: OAuthState = {
     userId,
@@ -171,11 +149,14 @@ export function createOAuthState(userId: string, returnUrl: string): string {
     exp,
   };
 
-  // Store nonce in memory to prevent replay
-  stateStore.set(nonce, {
-    userId,
-    createdAt: Date.now(),
-    exp,
+  // Store nonce in database to prevent replay (supports serverless)
+  await db.oAuthState.create({
+    data: {
+      nonce,
+      userId,
+      returnUrl,
+      expiresAt,
+    },
   });
 
   // Sign the state with HMAC
@@ -207,7 +188,9 @@ export function createOAuthState(userId: string, returnUrl: string): string {
  * @param stateToken - The base64-encoded state token
  * @returns Validated state data or null if invalid
  */
-export function validateOAuthState(stateToken: string): OAuthState | null {
+export async function validateOAuthState(
+  stateToken: string
+): Promise<OAuthState | null> {
   try {
     // Decode base64
     const decoded = JSON.parse(
@@ -237,18 +220,20 @@ export function validateOAuthState(stateToken: string): OAuthState | null {
     // Check expiration
     if (Date.now() > data.exp) {
       console.warn('[OAuth Security] State token expired');
-      // Clean up expired nonce
-      stateStore.delete(data.nonce);
+      // Clean up expired nonce from database
+      await db.oAuthState.deleteMany({
+        where: { nonce: data.nonce },
+      });
       return null;
     }
 
-    // Verify nonce hasn't been used (prevents replay attacks)
-    const storedData = stateStore.get(data.nonce);
-    if (!storedData) {
-      console.warn(
-        '[OAuth Security] Nonce not found in store - possible server restart or hot reload'
-      );
-      console.warn('[OAuth Security] Store size:', stateStore.size);
+    // Verify nonce exists in database (prevents replay attacks)
+    const storedState = await db.oAuthState.findUnique({
+      where: { nonce: data.nonce },
+    });
+
+    if (!storedState) {
+      console.warn('[OAuth Security] Nonce not found in database');
       console.warn(
         '[OAuth Security] Requested nonce:',
         data.nonce.substring(0, 16) + '...'
@@ -256,15 +241,26 @@ export function validateOAuthState(stateToken: string): OAuthState | null {
       return null;
     }
 
-    if (storedData.userId !== data.userId) {
+    if (storedState.userId !== data.userId) {
       console.warn('[OAuth Security] Nonce userId mismatch');
       console.warn('[OAuth Security] Expected userId:', data.userId);
-      console.warn('[OAuth Security] Stored userId:', storedData.userId);
+      console.warn('[OAuth Security] Stored userId:', storedState.userId);
       return null;
     }
 
-    // Delete nonce to prevent reuse
-    stateStore.delete(data.nonce);
+    // Delete nonce from database to prevent reuse
+    await db.oAuthState.delete({
+      where: { nonce: data.nonce },
+    });
+
+    // Clean up any other expired states opportunistically
+    await db.oAuthState.deleteMany({
+      where: {
+        expiresAt: {
+          lt: new Date(),
+        },
+      },
+    });
 
     // Re-validate returnUrl (defense in depth)
     data.returnUrl = validateReturnUrl(data.returnUrl);

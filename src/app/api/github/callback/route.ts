@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Validate and decode state token (CSRF protection)
-    const validatedState = validateOAuthState(state);
+    const validatedState = await validateOAuthState(state);
 
     if (!validatedState) {
       Sentry.captureMessage('Invalid OAuth state token', {

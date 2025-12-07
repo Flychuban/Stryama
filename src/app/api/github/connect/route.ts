@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
 
     // Create cryptographically secure state token
     // This prevents CSRF attacks with HMAC signing and nonce validation
-    const state = createOAuthState(userId, returnUrl);
+    const state = await createOAuthState(userId, returnUrl);
 
     // Construct GitHub OAuth URL with required scopes
     const githubOAuthUrl = new URL('https://github.com/login/oauth/authorize');
