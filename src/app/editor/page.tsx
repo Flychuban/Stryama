@@ -25,58 +25,6 @@ import { downloadProjectAsZip } from '@/lib/utils/download-project';
 import { FeedbackButton } from '@/components/feedback/FeedbackButton';
 import { logger } from '@/lib/utils/logger';
 
-/**
- * Check if preview server is healthy AND serving actual Vite content
- * This prevents false positives where port is open but Vite is still compiling
- */
-const checkPreviewHealth = async (url: string): Promise<boolean> => {
-  try {
-    // Use GET instead of HEAD to verify actual content is being served
-    const response = await fetch(url, {
-      method: 'GET',
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (!response.ok) {
-      return false;
-    }
-
-    // Verify we're getting HTML content
-    const contentType = response.headers.get('content-type');
-    if (!contentType?.includes('text/html')) {
-      return false;
-    }
-
-    // Read HTML to verify it's Vite content (not E2B error page)
-    const html = await response.text();
-
-    // Check for E2B error page markers
-    const isE2BError =
-      html.includes('Closed Port Error') ||
-      html.includes('no service running on port') ||
-      html.includes('Connection refused on port');
-
-    if (isE2BError) {
-      logger.debug('[Preview Health] E2B error page detected - Vite not ready');
-      return false;
-    }
-
-    // Verify Vite-specific markers are present
-    const hasRootDiv = html.includes('<div id="root">');
-    const hasModuleScript = html.includes('type="module"');
-    const isViteContent = hasRootDiv && hasModuleScript;
-
-    if (!isViteContent) {
-      logger.debug('[Preview Health] Not valid Vite content yet');
-      return false;
-    }
-
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 function EditorContent() {
   const searchParams = useSearchParams();
   const projectId = searchParams?.get('id') ?? null;
@@ -154,6 +102,12 @@ function EditorContent() {
   // tRPC mutations for E2B sandbox operations
   const restartPreviewMutation = api.sandbox.restartPreview.useMutation();
   const regeneratePreviewMutation = api.sandbox.regeneratePreview.useMutation();
+  const reconnectPreviewMutation = api.sandbox.reconnectPreview.useMutation({
+    onError: (error) => {
+      logger.error('[Editor] Reconnect preview failed:', error);
+      // Error handled by try/catch in useEffect
+    },
+  });
 
   // Refetch project files after AI generation
   const utils = api.useUtils();
@@ -708,66 +662,84 @@ function EditorContent() {
           projectId,
         });
 
-        // Determine if we need to regenerate the preview
+        // Determine if we should try reconnecting to warm sandbox or regenerate fresh
+        let shouldReconnect = false;
         let shouldRegenerate = false;
 
         if (sandboxStatus.isExpired || !sandboxStatus.hasActiveSandbox) {
-          // No active sandbox or expired - need to regenerate
-          logger.debug(
-            '[Editor] Sandbox expired or not active, may need regeneration'
-          );
+          // No active sandbox or expired - need full regeneration
+          logger.debug('[Editor] Sandbox expired or not active, regenerating');
           shouldRegenerate = true;
+        } else if (!previewData.url) {
+          // Has active sandbox but no preview URL - try reconnect first
+          logger.debug('[Editor] No preview URL, will try reconnecting');
+          shouldReconnect = true;
         } else {
-          // Sandbox is active, check if preview URL is healthy
-          if (previewData.url) {
-            const isHealthy = await checkPreviewHealth(previewData.url);
-
-            if (isHealthy) {
-              // Preview server is running and healthy
-              logger.debug('[Editor] Preview server is healthy');
-              shouldRegenerate = false;
-            } else {
-              // Preview server is dead, need to regenerate
-              logger.debug(
-                '[Editor] Preview server not responding, need regeneration'
-              );
-              shouldRegenerate = true;
-            }
-          } else {
-            // No preview URL found, need to regenerate
-            logger.debug('[Editor] No preview URL found, need regeneration');
-            shouldRegenerate = true;
-          }
+          // Has active sandbox and preview URL - try warm reconnect
+          logger.debug(
+            '[Editor] Active sandbox with URL, will try reconnecting'
+          );
+          shouldReconnect = true;
         }
 
-        // Perform regeneration if needed
-        if (shouldRegenerate) {
-          // Only regenerate if project has files AND we haven't attempted yet
-          if (project.files?.length && !hasAttemptedRegeneration.current) {
-            setIsRegeneratingPreview(true);
+        // Only attempt if project has files AND we haven't attempted yet
+        if (project.files?.length && !hasAttemptedRegeneration.current) {
+          setIsRegeneratingPreview(true);
 
-            try {
+          try {
+            if (shouldReconnect) {
+              // Try warm reconnect first (reuses existing sandbox)
+              logger.debug('[Editor] Attempting warm sandbox reconnect...');
+
+              try {
+                const reconnectResult =
+                  await reconnectPreviewMutation.mutateAsync({
+                    projectId,
+                  });
+
+                setPreviewUrl(reconnectResult.url);
+                setPreviewError(null);
+                hasAttemptedRegeneration.current = true;
+
+                logger.debug('[Editor] ✅ Warm reconnect successful:', {
+                  reconnected: reconnectResult.reconnected,
+                  url: reconnectResult.url,
+                });
+              } catch (reconnectError) {
+                // Reconnect failed - fall back to full regeneration
+                logger.warn(
+                  '[Editor] ⚠️ Reconnect failed, falling back to regeneration:',
+                  reconnectError
+                );
+                shouldRegenerate = true;
+              }
+            }
+
+            if (shouldRegenerate) {
+              // Full regeneration (destroys old sandbox, creates fresh one)
+              logger.debug('[Editor] Performing full sandbox regeneration...');
+
               const regenerateResult =
                 await regeneratePreviewMutation.mutateAsync({
                   projectId,
                 });
 
               setPreviewUrl(regenerateResult.url);
+              // Note: Don't set isWaitingForVite here - causes 45s timeout overlay
+              // isIframeLoading in PreviewCodePanel handles the loading state
               setPreviewError(null);
-
-              // Only set flag on successful regeneration
               hasAttemptedRegeneration.current = true;
-            } catch (error) {
-              console.error('[Editor] Failed to regenerate preview:', error);
-              handlePreviewError(
-                error,
-                'Failed to regenerate preview',
-                'Click "Regenerate" to try again.'
-              );
-              // Flag NOT set - allows user to retry manually or on refresh
-            } finally {
-              setIsRegeneratingPreview(false);
             }
+          } catch (error) {
+            console.error('[Editor] Failed to load preview:', error);
+            handlePreviewError(
+              error,
+              'Failed to load preview',
+              'Click "Regenerate" to try again.'
+            );
+            // Flag NOT set - allows user to retry manually or on refresh
+          } finally {
+            setIsRegeneratingPreview(false);
           }
         }
 
@@ -847,6 +819,8 @@ function EditorContent() {
       });
 
       setPreviewUrl(previewResult.url);
+      // Note: Don't set isWaitingForVite here - causes 45s timeout overlay
+      // isIframeLoading in PreviewCodePanel handles the loading state
       setPreviewError(null);
 
       // Track preview restarted event
@@ -877,6 +851,8 @@ function EditorContent() {
       });
 
       setPreviewUrl(regenerateResult.url);
+      // Note: Don't set isWaitingForVite here - causes 45s timeout overlay
+      // isIframeLoading in PreviewCodePanel handles the loading state
       setPreviewError(null);
       // Reset the flag so user can regenerate again if needed
       hasAttemptedRegeneration.current = false;

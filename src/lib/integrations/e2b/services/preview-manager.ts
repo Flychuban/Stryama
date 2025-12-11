@@ -28,9 +28,10 @@ import {
 } from '../utils/dependency-detector';
 
 const HEALTH_CHECK_CONFIG = {
-  INTERVAL_MS: 2000,
-  MAX_TIMEOUT_MS: 20000, // 10 attempts × 2000ms = 20 seconds max (sufficient for Vite compilation)
-  MAX_ATTEMPTS: 10, // Reduced timeout for faster failure detection while still giving Vite enough time
+  INTERVAL_MS: 1500, // Reduced from 2000ms for faster health checks
+  MAX_TIMEOUT_MS: 12000, // 8 attempts × 1500ms = 12 seconds max (optimized for older projects)
+  MAX_ATTEMPTS: 8, // Reduced from 10 for faster failure detection
+  HTTP_TIMEOUT_MS: 5000, // Explicit HTTP timeout (reduced from 8000ms)
 } as const;
 
 /**
@@ -98,6 +99,39 @@ function cleanupStaleProcesses(): void {
 }
 
 /**
+ * Quickly check if a port is free without performing cleanup
+ * This is a fast pre-check to avoid unnecessary cleanup operations
+ *
+ * @param sandbox - E2B sandbox instance
+ * @param port - Port number to check
+ * @returns true if port is free, false if in use or check fails
+ */
+async function isPortFree(sandbox: Sandbox, port: number): Promise<boolean> {
+  try {
+    // Run lsof directly to check exit codes (0=in use, 1=free, 127=not found)
+    const result = await sandbox.commands.run(`lsof -ti:${port}`, {
+      timeoutMs: 2000,
+    });
+
+    // Exit code 0 means processes were found (port in use)
+    if (result.exitCode === 0) {
+      return false;
+    }
+
+    // Exit code 1 means no processes were found (port free)
+    if (result.exitCode === 1) {
+      return true;
+    }
+
+    // Any other exit code (e.g. 127) means check failed
+    // Return false as safe default to force cleanup
+    return false;
+  } catch {
+    return false; // Assume not free on error (safe default)
+  }
+}
+
+/**
  * Robust port cleanup with verification
  * Kills any process on the specified port and verifies it's truly free
  *
@@ -112,6 +146,13 @@ async function cleanupPortWithVerification(
   maxWaitMs = 5000
 ): Promise<boolean> {
   const startTime = Date.now();
+
+  // Quick check first - skip cleanup if port is already free
+  if (await isPortFree(sandbox, port)) {
+    console.log(`[Preview] ✅ Port ${port} already free, skipping cleanup`);
+    return true;
+  }
+
   console.log(`[Preview] 🧹 Starting robust port ${port} cleanup...`);
 
   // Step 1: Kill any processes using the port with multiple methods
@@ -217,7 +258,7 @@ export async function isPreviewHealthy(url: string): Promise<boolean> {
     // Use GET instead of HEAD to verify actual content is being served
     const response = await fetch(url, {
       method: 'GET',
-      signal: AbortSignal.timeout(8000), // 8 second timeout per request (increased from 5s for slower compilation)
+      signal: AbortSignal.timeout(HEALTH_CHECK_CONFIG.HTTP_TIMEOUT_MS), // Optimized timeout for faster checks
     });
 
     // Check if response is successful
@@ -689,9 +730,9 @@ export async function startPreviewServer(
       console.log(`[Preview] Port: ${port}`);
 
       // Try HTTP health check with multiple retries (Claude might have just started the server)
-      // Wait up to 15 seconds for server to become responsive
+      // Wait up to 8 seconds for server to become responsive (optimized for older projects)
       const maxRetries = 5;
-      const delays = [2000, 3000, 3000, 4000, 3000]; // Total: 15 seconds
+      const delays = [1000, 1500, 2000, 2000, 1500]; // Total: 8 seconds (reduced from 15s)
       console.log(
         `[Preview] Will perform ${maxRetries} health checks over ${delays.reduce((a, b) => a + b, 0) / 1000}s`
       );
@@ -996,49 +1037,57 @@ export async function startPreviewServer(
       );
     }
 
-    // CRITICAL: Validate E2B sandbox is accessible before generating preview URL
-    console.log(`[Preview] 🔍 ========== VALIDATING SANDBOX ==========`);
-    console.log(`[Preview] Checking E2B sandbox accessibility...`);
-    const sandboxCheckStartTime = Date.now();
+    // CRITICAL: Validate E2B sandbox is accessible and files exist before generating preview URL
+    // Run these validations in parallel for faster execution
+    console.log(
+      `[Preview] 🔍 ========== VALIDATING SANDBOX & FILES ==========`
+    );
+    console.log(
+      `[Preview] Running parallel checks: sandbox accessibility + file existence`
+    );
+    const validationStartTime = Date.now();
+
+    let sandboxInfo;
+    let indexHtmlExists: boolean;
+
     try {
-      const sandboxInfo = await sandbox.getInfo();
-      const sandboxCheckDuration = Date.now() - sandboxCheckStartTime;
+      // Parallelize independent validation operations
+      const [sandboxInfoResult, fileCheckResult] = await Promise.all([
+        // Sandbox validation
+        sandbox.getInfo(),
+        // File validation
+        sandbox.commands.run(
+          `test -f ${workDir}/index.html && echo "exists" || echo "missing"`,
+          { timeoutMs: 5000 }
+        ),
+      ]);
+
+      sandboxInfo = sandboxInfoResult;
+      indexHtmlExists = fileCheckResult.stdout.trim() === 'exists';
+
+      const validationDuration = Date.now() - validationStartTime;
       console.log(
-        `[Preview] ✅ Sandbox validated in ${sandboxCheckDuration}ms`
+        `[Preview] ✅ Parallel validation completed in ${validationDuration}ms`
       );
-      console.log(`[Preview] E2B ID: ${sandboxInfo.sandboxId}`);
-      console.log(`[Preview] Status: running`);
+      console.log(`[Preview] Sandbox - E2B ID: ${sandboxInfo.sandboxId}`);
+      console.log(`[Preview] Sandbox - Status: running`);
+      console.log(
+        `[Preview] Files - index.html: ${indexHtmlExists ? '✅ EXISTS' : '❌ MISSING'}`
+      );
     } catch (error) {
-      const sandboxCheckDuration = Date.now() - sandboxCheckStartTime;
+      const validationDuration = Date.now() - validationStartTime;
       console.error(
-        `[Preview] ❌ Sandbox validation failed after ${sandboxCheckDuration}ms`
+        `[Preview] ❌ Validation failed after ${validationDuration}ms`
       );
       console.error(`[Preview] Error:`, error);
       throw new PreviewServerStartError(
-        `E2B sandbox is not accessible. The sandbox may have been destroyed or expired. Please try regenerating your code.\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        `Sandbox validation failed. The sandbox may have been destroyed or expired. Please try regenerating your code.\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
         { sandboxId: sandbox.sandboxId, projectId, error }
       );
     }
 
     // Note: host and previewUrl already declared at the top for HTTP checks
     console.log(`[Preview] 🌐 Preview URL: ${previewUrl}`);
-
-    // Validate that essential application files exist before running health check
-    // This prevents waiting 30s for health check when files are clearly missing
-    console.log(
-      `[Preview] 🔍 Validating application files exist in sandbox...`
-    );
-    const fileCheckStartTime = Date.now();
-    const checkIndexHtml = await sandbox.commands.run(
-      `test -f ${workDir}/index.html && echo "exists" || echo "missing"`,
-      { timeoutMs: 5000 }
-    );
-    const fileCheckDuration = Date.now() - fileCheckStartTime;
-    const indexHtmlExists = checkIndexHtml.stdout.trim() === 'exists';
-
-    console.log(
-      `[Preview] File check (${fileCheckDuration}ms): index.html ${indexHtmlExists ? '✅ EXISTS' : '❌ MISSING'}`
-    );
 
     if (!indexHtmlExists) {
       console.error(

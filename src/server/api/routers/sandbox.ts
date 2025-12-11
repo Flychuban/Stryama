@@ -9,6 +9,7 @@ import {
   startPreviewServer,
   getPreviewLogs,
   restartPreviewServer,
+  isPreviewHealthy,
 } from '~/lib/integrations/e2b/services/preview-manager';
 import { logStreamer } from '~/lib/integrations/e2b/services/log-streamer';
 
@@ -695,11 +696,14 @@ export const sandboxRouter = createTRPCRouter({
         console.log(`[Sandbox Router] 🚀 Starting preview server...`);
 
         // Pass sandboxId to enable DB metadata checking for dev server coordination
+        // CRITICAL: Pass forceRestart=true since this is a FRESH sandbox with no existing server
+        // This skips the health check on old URLs and saves ~18 seconds
         const previewResult = await startPreviewServer(
           sandbox,
           input.projectId,
           project.files,
-          sandboxId
+          sandboxId,
+          true // forceRestart - skip health check for fresh sandbox
         );
 
         if (!previewResult.success || !previewResult.data) {
@@ -802,6 +806,186 @@ export const sandboxRouter = createTRPCRouter({
             error instanceof Error
               ? error.message
               : 'Unknown error occurred during preview regeneration',
+        });
+      }
+    }),
+
+  /**
+   * Reconnect to warm sandbox and reuse preview if healthy
+   * Falls back to creating new sandbox if reconnection fails
+   */
+  reconnectPreview: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string().min(1, 'Project ID is required'),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const startTime = Date.now();
+      console.log(
+        `[Sandbox Router] 🔄 Attempting to reconnect to warm sandbox for project: ${input.projectId}`
+      );
+
+      try {
+        // Step 1: Verify project ownership and get files
+        const project = await ctx.db.project.findUnique({
+          where: {
+            id: input.projectId,
+            clerkUserId: ctx.auth.userId,
+          },
+          include: {
+            files: true,
+          },
+        });
+
+        if (!project) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Project not found or access denied',
+          });
+        }
+
+        if (project.files.length === 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'No files found for this project. Please generate code first.',
+          });
+        }
+
+        console.log(
+          `[Sandbox Router] Found ${project.files.length} files for project`
+        );
+
+        // Step 2: Try to get or reconnect to existing sandbox (uses warm resume logic!)
+        console.log(
+          `[Sandbox Router] Attempting to reconnect to existing sandbox...`
+        );
+        const sandboxResult = await sandboxManager.getOrCreateSandbox(
+          ctx.db,
+          input.projectId,
+          ctx.auth.userId,
+          E2B_CONFIG.maxTimeoutMs
+        );
+
+        if (!sandboxResult.success || !sandboxResult.data) {
+          console.error(
+            `[Sandbox Router] Failed to get/create sandbox:`,
+            sandboxResult.error
+          );
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message:
+              sandboxResult.error ?? 'Failed to connect to sandbox environment',
+          });
+        }
+
+        const sandbox = sandboxResult.data.instance;
+        const sandboxId = sandboxResult.data.id;
+        console.log(
+          `[Sandbox Router] Successfully connected to sandbox: ${sandboxId}`
+        );
+
+        // Step 3: Check if preview server is still running (HTTP health check)
+        const existingPreview = await ctx.db.sandbox.findUnique({
+          where: { id: sandboxId },
+          select: { previewUrl: true, metadata: true },
+        });
+
+        if (existingPreview?.previewUrl) {
+          console.log(
+            `[Sandbox Router] 🔍 Found existing preview URL, validating health...`
+          );
+          console.log(
+            `[Sandbox Router] Preview URL: ${existingPreview.previewUrl}`
+          );
+
+          // Try HTTP health check (with retries built into isPreviewHealthy)
+          const healthStartTime = Date.now();
+          const isHealthy = await isPreviewHealthy(existingPreview.previewUrl);
+          const healthDuration = Date.now() - healthStartTime;
+
+          if (isHealthy) {
+            const totalDuration = Date.now() - startTime;
+            console.log(
+              `[Sandbox Router] ✅ Warm sandbox reconnected successfully! (health check: ${healthDuration}ms, total: ${totalDuration}ms)`
+            );
+            return {
+              url: existingPreview.previewUrl,
+              sandboxId,
+              reconnected: true, // Flag to indicate warm reuse
+            };
+          }
+
+          console.log(
+            `[Sandbox Router] ❌ Preview server not responding (checked in ${healthDuration}ms), needs restart`
+          );
+        } else {
+          console.log(
+            `[Sandbox Router] No existing preview URL found, starting new server`
+          );
+        }
+
+        // Step 4: No preview URL or health check failed - start preview server
+        console.log(
+          `[Sandbox Router] 🚀 Starting preview server on reconnected sandbox...`
+        );
+
+        const previewResult = await startPreviewServer(
+          sandbox,
+          input.projectId,
+          project.files,
+          sandboxId,
+          false // Don't force restart - allow health check first
+        );
+
+        if (!previewResult.success || !previewResult.data) {
+          console.error(
+            `[Sandbox Router] Failed to start preview server:`,
+            previewResult.error
+          );
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: previewResult.error ?? 'Failed to start preview server',
+          });
+        }
+
+        // Update preview URL in database
+        await ctx.db.sandbox.update({
+          where: { id: sandboxId },
+          data: { previewUrl: previewResult.data.url },
+        });
+
+        const totalDuration = Date.now() - startTime;
+        console.log(
+          `[Sandbox Router] ✅ Preview server started on reconnected sandbox (${totalDuration}ms)`
+        );
+        console.log(`[Sandbox Router] Preview URL: ${previewResult.data.url}`);
+
+        return {
+          url: previewResult.data.url,
+          sandboxId,
+          reconnected: false, // New server started (not warm reuse)
+        };
+      } catch (error) {
+        const totalDuration = Date.now() - startTime;
+        console.error(
+          `[Sandbox Router] ❌ Reconnect preview failed after ${totalDuration}ms:`,
+          error
+        );
+
+        // Re-throw TRPC errors as-is
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
+        // Generic error
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Unknown error occurred during preview reconnection',
         });
       }
     }),
