@@ -25,58 +25,6 @@ import { downloadProjectAsZip } from '@/lib/utils/download-project';
 import { FeedbackButton } from '@/components/feedback/FeedbackButton';
 import { logger } from '@/lib/utils/logger';
 
-/**
- * Check if preview server is healthy AND serving actual Vite content
- * This prevents false positives where port is open but Vite is still compiling
- */
-const checkPreviewHealth = async (url: string): Promise<boolean> => {
-  try {
-    // Use GET instead of HEAD to verify actual content is being served
-    const response = await fetch(url, {
-      method: 'GET',
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (!response.ok) {
-      return false;
-    }
-
-    // Verify we're getting HTML content
-    const contentType = response.headers.get('content-type');
-    if (!contentType?.includes('text/html')) {
-      return false;
-    }
-
-    // Read HTML to verify it's Vite content (not E2B error page)
-    const html = await response.text();
-
-    // Check for E2B error page markers
-    const isE2BError =
-      html.includes('Closed Port Error') ||
-      html.includes('no service running on port') ||
-      html.includes('Connection refused on port');
-
-    if (isE2BError) {
-      logger.debug('[Preview Health] E2B error page detected - Vite not ready');
-      return false;
-    }
-
-    // Verify Vite-specific markers are present
-    const hasRootDiv = html.includes('<div id="root">');
-    const hasModuleScript = html.includes('type="module"');
-    const isViteContent = hasRootDiv && hasModuleScript;
-
-    if (!isViteContent) {
-      logger.debug('[Preview Health] Not valid Vite content yet');
-      return false;
-    }
-
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 function EditorContent() {
   const searchParams = useSearchParams();
   const projectId = searchParams?.get('id') ?? null;
@@ -713,31 +661,19 @@ function EditorContent() {
 
         if (sandboxStatus.isExpired || !sandboxStatus.hasActiveSandbox) {
           // No active sandbox or expired - need to regenerate
-          logger.debug(
-            '[Editor] Sandbox expired or not active, may need regeneration'
-          );
+          logger.debug('[Editor] Sandbox expired or not active, regenerating');
+          shouldRegenerate = true;
+        } else if (!previewData.url) {
+          // No preview URL found, need to regenerate
+          logger.debug('[Editor] No preview URL found, regenerating');
           shouldRegenerate = true;
         } else {
-          // Sandbox is active, check if preview URL is healthy
-          if (previewData.url) {
-            const isHealthy = await checkPreviewHealth(previewData.url);
-
-            if (isHealthy) {
-              // Preview server is running and healthy
-              logger.debug('[Editor] Preview server is healthy');
-              shouldRegenerate = false;
-            } else {
-              // Preview server is dead, need to regenerate
-              logger.debug(
-                '[Editor] Preview server not responding, need regeneration'
-              );
-              shouldRegenerate = true;
-            }
-          } else {
-            // No preview URL found, need to regenerate
-            logger.debug('[Editor] No preview URL found, need regeneration');
-            shouldRegenerate = true;
-          }
+          // Has active sandbox and preview URL - trust server to validate health
+          // Server's regeneratePreview endpoint performs health checking
+          logger.debug(
+            '[Editor] Active sandbox with URL, will regenerate to ensure health'
+          );
+          shouldRegenerate = true; // Always regenerate on load for safety
         }
 
         // Perform regeneration if needed
@@ -753,6 +689,8 @@ function EditorContent() {
                 });
 
               setPreviewUrl(regenerateResult.url);
+              // Note: Don't set isWaitingForVite here - causes 45s timeout overlay
+              // isIframeLoading in PreviewCodePanel handles the loading state
               setPreviewError(null);
 
               // Only set flag on successful regeneration
@@ -847,6 +785,8 @@ function EditorContent() {
       });
 
       setPreviewUrl(previewResult.url);
+      // Note: Don't set isWaitingForVite here - causes 45s timeout overlay
+      // isIframeLoading in PreviewCodePanel handles the loading state
       setPreviewError(null);
 
       // Track preview restarted event
@@ -877,6 +817,8 @@ function EditorContent() {
       });
 
       setPreviewUrl(regenerateResult.url);
+      // Note: Don't set isWaitingForVite here - causes 45s timeout overlay
+      // isIframeLoading in PreviewCodePanel handles the loading state
       setPreviewError(null);
       // Reset the flag so user can regenerate again if needed
       hasAttemptedRegeneration.current = false;

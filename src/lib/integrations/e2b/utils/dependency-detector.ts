@@ -159,6 +159,12 @@ function isNpmPackage(importPath: string): boolean {
     return false;
   }
 
+  // Path aliases (e.g., @/lib, @/components from tsconfig paths)
+  // These start with @ followed by / (not to be confused with @org/package scoped packages)
+  if (importPath.startsWith('@/')) {
+    return false;
+  }
+
   // Built-in Node.js modules with node: prefix
   if (importPath.startsWith('node:')) {
     return false;

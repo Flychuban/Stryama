@@ -695,11 +695,14 @@ export const sandboxRouter = createTRPCRouter({
         console.log(`[Sandbox Router] 🚀 Starting preview server...`);
 
         // Pass sandboxId to enable DB metadata checking for dev server coordination
+        // CRITICAL: Pass forceRestart=true since this is a FRESH sandbox with no existing server
+        // This skips the health check on old URLs and saves ~18 seconds
         const previewResult = await startPreviewServer(
           sandbox,
           input.projectId,
           project.files,
-          sandboxId
+          sandboxId,
+          true // forceRestart - skip health check for fresh sandbox
         );
 
         if (!previewResult.success || !previewResult.data) {
