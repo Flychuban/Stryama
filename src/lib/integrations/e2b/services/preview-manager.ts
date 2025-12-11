@@ -108,11 +108,24 @@ function cleanupStaleProcesses(): void {
  */
 async function isPortFree(sandbox: Sandbox, port: number): Promise<boolean> {
   try {
-    const result = await sandbox.commands.run(
-      `lsof -ti:${port} 2>/dev/null || echo "FREE"`,
-      { timeoutMs: 2000 }
-    );
-    return result.stdout.trim() === 'FREE' || result.stdout.trim() === '';
+    // Run lsof directly to check exit codes (0=in use, 1=free, 127=not found)
+    const result = await sandbox.commands.run(`lsof -ti:${port}`, {
+      timeoutMs: 2000,
+    });
+
+    // Exit code 0 means processes were found (port in use)
+    if (result.exitCode === 0) {
+      return false;
+    }
+
+    // Exit code 1 means no processes were found (port free)
+    if (result.exitCode === 1) {
+      return true;
+    }
+
+    // Any other exit code (e.g. 127) means check failed
+    // Return false as safe default to force cleanup
+    return false;
   } catch {
     return false; // Assume not free on error (safe default)
   }
