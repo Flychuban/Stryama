@@ -11,6 +11,7 @@
 import type { Sandbox as E2BSandbox } from '@e2b/code-interpreter';
 import { NETLIFY_CONFIG } from '../config';
 import {
+  NetlifyError,
   NetlifyDeployError,
   NetlifyDeployTimeoutError,
   NetlifySiteNotFoundError,
@@ -226,12 +227,13 @@ export class NetlifyDeployService {
         error
       );
 
-      // Re-throw known errors
-      if (error instanceof NetlifyDeployError) {
+      // Re-throw ALL NetlifyError subclasses without wrapping
+      // This preserves error type for router to properly classify
+      if (error instanceof NetlifyError) {
         throw error;
       }
 
-      // Wrap unknown errors
+      // Wrap only unknown errors (database, network, etc.)
       throw new NetlifyDeployError(
         `Deployment failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         { error }

@@ -91,15 +91,33 @@ class NetlifyClient {
       if (response.status === 422) {
         const errorMessage = error.message ?? '';
 
-        // Check for site name conflict pattern
-        // Netlify returns: "A site with name [name] already exists. Please try a different slug"
-        const nameConflictRegex = /site with name ([\w-]+) already exists/i;
-        const nameConflictMatch = nameConflictRegex.exec(errorMessage);
+        // Log error details for debugging
+        console.log('[Netlify Client] API Error:', {
+          status: response.status,
+          url,
+          method: options.method ?? 'GET',
+          message: errorMessage,
+          fullError: error,
+        });
 
-        if (nameConflictMatch?.[1]) {
-          const conflictedName = nameConflictMatch[1];
+        // Check for domain conflict indicators (more permissive matching)
+        const isDomainConflict =
+          /(already exists|already taken|not available|is unavailable|conflict|duplicate)/i.test(
+            errorMessage
+          );
+
+        // For site update/create operations, assume 422 = domain conflict
+        const isSiteOperation = url.includes('/sites/');
+
+        if (isDomainConflict || isSiteOperation) {
+          // Try to extract subdomain from error message
+          const subdomainRegex =
+            /(?:name|subdomain|site)\s+['"]?([\w-]+)['"]?/i;
+          const match = subdomainRegex.exec(errorMessage);
+          const subdomain = match?.[1] ?? '';
+
           throw new NetlifySiteConflictError(
-            conflictedName,
+            subdomain,
             undefined, // No suggestion - will be handled at service layer
             { status: 422, error }
           );

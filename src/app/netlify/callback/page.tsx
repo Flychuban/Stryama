@@ -18,19 +18,39 @@ export default function NetlifyCallbackPage() {
   const router = useRouter();
   const returnUrl = searchParams?.get('return_url') ?? '/editor';
   const netlifyConnected = searchParams?.get('netlify_connected') === 'true';
+  const switched = searchParams?.get('switched') === 'true';
+  const fromAccount = searchParams?.get('from');
+  const toAccount = searchParams?.get('to');
   const [hasTriggeredConnection, setHasTriggeredConnection] = useState(false);
 
   const connectMutation = api.netlify.connectAfterOAuth.useMutation({
     onSuccess: () => {
       console.log('[Netlify Callback] Connection verified successfully');
-      toast.success('Netlify connected successfully!');
+
+      // Show different message if account was switched
+      if (switched && fromAccount && toAccount) {
+        toast.info('Account Switched', {
+          description: `Changed from ${fromAccount} to ${toAccount}`,
+        });
+      } else {
+        toast.success('Netlify connected successfully!');
+      }
+
       // Redirect to the original page with success parameter
       router.push(returnUrl);
     },
     onError: (error) => {
       console.error('[Netlify Callback] Connection verification error:', error);
+
       // Still redirect even if verification fails - connection is already saved
-      toast.success('Netlify connected successfully!');
+      if (switched && fromAccount && toAccount) {
+        toast.info('Account Switched', {
+          description: `Changed from ${fromAccount} to ${toAccount}`,
+        });
+      } else {
+        toast.success('Netlify connected successfully!');
+      }
+
       router.push(returnUrl);
     },
   });

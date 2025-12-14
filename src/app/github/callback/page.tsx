@@ -18,19 +18,39 @@ export default function GitHubCallbackPage() {
   const router = useRouter();
   const returnUrl = searchParams?.get('return_url') ?? '/editor';
   const githubConnected = searchParams?.get('github_connected') === 'true';
+  const switched = searchParams?.get('switched') === 'true';
+  const fromAccount = searchParams?.get('from');
+  const toAccount = searchParams?.get('to');
   const [hasTriggeredAnalytics, setHasTriggeredAnalytics] = useState(false);
 
   const connectMutation = api.github.connectAfterOAuth.useMutation({
     onSuccess: () => {
       console.log('[GitHub Callback] Analytics tracked successfully');
-      toast.success('GitHub connected successfully!');
+
+      // Show different message if account was switched
+      if (switched && fromAccount && toAccount) {
+        toast.info('Account Switched', {
+          description: `Changed from @${fromAccount} to @${toAccount}`,
+        });
+      } else {
+        toast.success('GitHub connected successfully!');
+      }
+
       // Redirect to the original page with success parameter
       router.push(returnUrl);
     },
     onError: (error) => {
       console.error('[GitHub Callback] Analytics error:', error);
+
       // Still redirect even if analytics fails - connection is already saved
-      toast.success('GitHub connected successfully!');
+      if (switched && fromAccount && toAccount) {
+        toast.info('Account Switched', {
+          description: `Changed from @${fromAccount} to @${toAccount}`,
+        });
+      } else {
+        toast.success('GitHub connected successfully!');
+      }
+
       router.push(returnUrl);
     },
   });

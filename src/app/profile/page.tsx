@@ -16,9 +16,10 @@ import {
 } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { Camera } from 'lucide-react';
+import { Camera, Github, Cloud } from 'lucide-react';
 import { UsageDashboard } from '@/components/dashboard/UsageDashboard';
 import { SubscriptionManager } from '@/components/subscription/SubscriptionManager';
+import { IntegrationCard } from '@/components/integrations/IntegrationCard';
 
 export default function ProfilePage() {
   const { user, isLoaded } = useUser();
@@ -237,6 +238,32 @@ export default function ProfilePage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Integrations */}
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold">Integrations</h2>
+              <p className="text-muted-foreground">
+                Manage your connected GitHub and Netlify accounts
+              </p>
+            </div>
+
+            {/* GitHub Integration Card */}
+            <IntegrationCard
+              name="GitHub"
+              description="Export projects to GitHub repositories"
+              icon={<Github className="h-5 w-5" />}
+              type="github"
+            />
+
+            {/* Netlify Integration Card */}
+            <IntegrationCard
+              name="Netlify"
+              description="Deploy projects with one click"
+              icon={<Cloud className="h-5 w-5" />}
+              type="netlify"
+            />
+          </div>
         </div>
       </main>
 

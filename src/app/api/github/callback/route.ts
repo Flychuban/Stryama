@@ -114,6 +114,16 @@ export async function GET(request: NextRequest) {
     const octokit = new Octokit({ auth: accessToken });
     const { data: githubUser } = await octokit.users.getAuthenticated();
 
+    // Check if user already has a connection (for account switching detection)
+    const existingConnection = await db.gitHubConnection.findUnique({
+      where: { clerkUserId: userId },
+    });
+
+    // If connecting different account, store flag for frontend
+    const isSwitchingAccount =
+      existingConnection &&
+      existingConnection.githubUserId !== String(githubUser.id);
+
     // Save connection to database
     // Store the access token securely (should be encrypted in production)
     await db.gitHubConnection.upsert({
@@ -136,6 +146,13 @@ export async function GET(request: NextRequest) {
     const callbackUrl = new URL('/github/callback', request.url);
     callbackUrl.searchParams.set('return_url', returnUrl);
     callbackUrl.searchParams.set('github_connected', 'true');
+
+    // Add account switching info if applicable
+    if (isSwitchingAccount && existingConnection) {
+      callbackUrl.searchParams.set('switched', 'true');
+      callbackUrl.searchParams.set('from', existingConnection.githubUsername);
+      callbackUrl.searchParams.set('to', githubUser.login);
+    }
 
     return NextResponse.redirect(callbackUrl.toString());
   } catch (error) {

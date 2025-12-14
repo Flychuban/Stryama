@@ -54,6 +54,8 @@ export function NetlifyDeployDialog({
     filesDeployed?: number;
   } | null>(null);
 
+  const utils = api.useUtils();
+
   const { data: connection, isLoading: connectionLoading } =
     api.netlify.getConnection.useQuery(undefined, {
       enabled: open,
@@ -112,7 +114,7 @@ export function NetlifyDeployDialog({
     });
 
   const deployMutation = api.netlify.deployProject.useMutation({
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       setDeploymentSuccess({
         siteUrl: data.siteUrl,
         deployUrl: data.deployUrl ?? data.siteUrl,
@@ -123,17 +125,34 @@ export function NetlifyDeployDialog({
       toast.success('Deployment successful!', {
         description: 'Your site is now live on Netlify.',
       });
+
+      // Invalidate queries to refresh UI
+      await utils.netlify.getProjectDeployments.invalidate({ projectId });
+      await utils.netlify.getConnection.invalidate();
+      await utils.netlify.listSites.invalidate();
     },
     onError: (error) => {
-      // Check for domain conflict error
+      // Primary: Check TRPC error code
+      if (error.data?.code === 'CONFLICT') {
+        setSubdomainError(
+          'This subdomain is already taken. Please choose another.'
+        );
+        return; // Don't show toast for domain conflicts
+      }
+
+      // Fallback: Check message string
       if (
         error.message.includes('already exists') ||
-        error.message.includes('already taken')
+        error.message.includes('already taken') ||
+        error.message.toLowerCase().includes('conflict')
       ) {
         setSubdomainError(
           'This subdomain is already taken. Please choose another.'
         );
+        return;
       }
+
+      // All other errors show toast
       toast.error('Deployment failed', {
         description: error.message,
       });
@@ -589,6 +608,27 @@ export function NetlifyDeployDialog({
               <p className="text-xs text-muted-foreground">
                 Leave empty for auto-generated subdomain
               </p>
+
+              {/* Domain conflict error banner */}
+              {subdomainError && customSubdomain && (
+                <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 duration-300 animate-in fade-in-50">
+                  <div className="flex items-start gap-2">
+                    <Info className="h-5 w-5 flex-shrink-0 text-red-600 dark:text-red-400" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-red-900 dark:text-red-100">
+                        Subdomain unavailable
+                      </p>
+                      <p className="mt-1 text-xs text-red-700 dark:text-red-300">
+                        {subdomainError}
+                      </p>
+                      <p className="mt-1 text-xs text-red-700 dark:text-red-300">
+                        Please choose a different subdomain or leave blank for
+                        auto-generation.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

@@ -115,6 +115,15 @@ export async function GET(request: NextRequest) {
     const client = netlifyClient.getClient(accessToken);
     const netlifyUser = await client.getUser();
 
+    // Check if user already has a connection (for account switching detection)
+    const existingConnection = await db.netlifyConnection.findUnique({
+      where: { clerkUserId: userId },
+    });
+
+    // If connecting different account, store flag for frontend
+    const isSwitchingAccount =
+      existingConnection && existingConnection.netlifyUserId !== netlifyUser.id;
+
     // Save connection to database
     await db.netlifyConnection.upsert({
       where: { clerkUserId: userId },
@@ -138,6 +147,13 @@ export async function GET(request: NextRequest) {
     const callbackUrl = new URL('/netlify/callback', request.url);
     callbackUrl.searchParams.set('return_url', returnUrl);
     callbackUrl.searchParams.set('netlify_connected', 'true');
+
+    // Add account switching info if applicable
+    if (isSwitchingAccount && existingConnection) {
+      callbackUrl.searchParams.set('switched', 'true');
+      callbackUrl.searchParams.set('from', existingConnection.netlifyEmail);
+      callbackUrl.searchParams.set('to', netlifyUser.email);
+    }
 
     return NextResponse.redirect(callbackUrl.toString());
   } catch (error) {

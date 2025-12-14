@@ -74,6 +74,8 @@ export function ControlBar({
   const [showNetlifyDialog, setShowNetlifyDialog] = useState(false);
   const [showChangeDomainDialog, setShowChangeDomainDialog] = useState(false);
 
+  const utils = api.useUtils();
+
   // Query recent deployments for this project
   const { data: recentDeployments } =
     api.netlify.getProjectDeployments.useQuery(
@@ -87,10 +89,17 @@ export function ControlBar({
 
   // Redeploy mutation for one-click redeploy
   const redeployMutation = api.netlify.deployProject.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success('Redeployment started!', {
         description: 'Your site is being updated...',
       });
+
+      // Invalidate queries to refresh UI
+      if (projectId) {
+        await utils.netlify.getProjectDeployments.invalidate({ projectId });
+        await utils.netlify.getConnection.invalidate();
+        await utils.netlify.listSites.invalidate();
+      }
     },
     onError: (error) => {
       toast.error('Redeployment failed', {
@@ -405,8 +414,9 @@ export function ControlBar({
       )}
 
       {/* Netlify Change Domain Dialog */}
-      {lastSuccessfulDeployment && (
+      {lastSuccessfulDeployment && projectId && (
         <NetlifyChangeDomainDialog
+          projectId={projectId}
           open={showChangeDomainDialog}
           onOpenChange={setShowChangeDomainDialog}
           deployment={lastSuccessfulDeployment}
