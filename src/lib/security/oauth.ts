@@ -23,12 +23,17 @@ const ALLOWED_RETURN_PATHS = [
 
 /**
  * Allowed redirect URIs for OAuth callback
- * Must match GitHub OAuth App configuration
+ * Must match GitHub/Netlify OAuth App configuration
  */
 const ALLOWED_REDIRECT_URIS = [
+  // GitHub OAuth
   'http://localhost:3000/api/github/callback',
   'https://stryama.app/api/github/callback',
   `${process.env.NEXT_PUBLIC_APP_URL}/api/github/callback`,
+  // Netlify OAuth
+  'http://localhost:3000/api/netlify/callback',
+  'https://stryama.app/api/netlify/callback',
+  `${process.env.NEXT_PUBLIC_APP_URL}/api/netlify/callback`,
 ] as const;
 
 /**

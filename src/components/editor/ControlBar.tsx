@@ -5,6 +5,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import {
   Monitor,
@@ -14,10 +15,14 @@ import {
   RefreshCw,
   Download,
   Github,
+  Cloud,
+  ExternalLink,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GitHubExportDialog } from '@/components/github/GitHubExportDialog';
+import { NetlifyDeployDialog } from '@/components/netlify/NetlifyDeployDialog';
 import { logger } from '@/lib/utils/logger';
+import { api } from '@/trpc/react';
 
 export type ViewMode = 'preview' | 'code';
 export type DeviceMode = 'desktop' | 'mobile';
@@ -39,6 +44,8 @@ interface ControlBarProps {
   projectName?: string;
   githubConnectionSuccess?: boolean;
   onGithubConnectionConsumed?: () => void;
+  netlifyConnectionSuccess?: boolean;
+  onNetlifyConnectionConsumed?: () => void;
 }
 
 export function ControlBar({
@@ -58,8 +65,22 @@ export function ControlBar({
   projectName,
   githubConnectionSuccess,
   onGithubConnectionConsumed,
+  netlifyConnectionSuccess,
+  onNetlifyConnectionConsumed,
 }: ControlBarProps) {
   const [showGitHubDialog, setShowGitHubDialog] = useState(false);
+  const [showNetlifyDialog, setShowNetlifyDialog] = useState(false);
+
+  // Query recent deployments for this project
+  const { data: recentDeployments } =
+    api.netlify.getProjectDeployments.useQuery(
+      { projectId: projectId ?? '' },
+      { enabled: !!projectId }
+    );
+
+  const lastSuccessfulDeployment = recentDeployments?.find(
+    (d) => d.status === 'COMPLETED'
+  );
 
   // Auto-open dialog when GitHub connection succeeds
   useEffect(() => {
@@ -71,6 +92,17 @@ export function ControlBar({
       onGithubConnectionConsumed?.();
     }
   }, [githubConnectionSuccess, onGithubConnectionConsumed]);
+
+  // Auto-open dialog when Netlify connection succeeds
+  useEffect(() => {
+    if (netlifyConnectionSuccess) {
+      logger.debug(
+        '[ControlBar] Opening Netlify dialog after successful connection'
+      );
+      setShowNetlifyDialog(true);
+      onNetlifyConnectionConsumed?.();
+    }
+  }, [netlifyConnectionSuccess, onNetlifyConnectionConsumed]);
 
   const showRegenerateButton =
     (previewError?.includes('not found') ?? false) ||
@@ -140,6 +172,59 @@ export function ControlBar({
             <Github className="h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
             <span className="hidden sm:inline">GitHub</span>
           </Button>
+        )}
+
+        {hasFiles && projectId && projectName && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="relative h-auto min-h-[44px] rounded-lg px-3 py-2 text-xs sm:h-9 sm:px-3 sm:text-sm"
+                title="Deploy to Netlify"
+              >
+                <Cloud className="h-3.5 w-3.5 sm:mr-2 sm:h-4 sm:w-4" />
+                <span className="hidden sm:inline">Deploy</span>
+                {lastSuccessfulDeployment && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-3 w-3">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                    <span className="relative inline-flex h-3 w-3 rounded-full bg-green-500" />
+                  </span>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56 rounded-lg">
+              <DropdownMenuItem
+                onClick={() => setShowNetlifyDialog(true)}
+                className="rounded-md"
+              >
+                <Cloud className="mr-2 h-4 w-4" />
+                Deploy to Netlify
+              </DropdownMenuItem>
+              {lastSuccessfulDeployment && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() =>
+                      window.open(
+                        lastSuccessfulDeployment.siteUrl ?? '',
+                        '_blank'
+                      )
+                    }
+                    className="rounded-md"
+                  >
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    <div className="flex flex-1 flex-col">
+                      <span>View Last Deployment</span>
+                      <span className="text-xs text-muted-foreground">
+                        {lastSuccessfulDeployment.siteName}
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
 
         {viewMode === 'preview' && hasFiles && (
@@ -232,6 +317,17 @@ export function ControlBar({
           open={showGitHubDialog}
           onOpenChange={setShowGitHubDialog}
           initialConnectionSuccess={githubConnectionSuccess}
+        />
+      )}
+
+      {/* Netlify Deploy Dialog */}
+      {projectId && projectName && (
+        <NetlifyDeployDialog
+          projectId={projectId}
+          projectName={projectName}
+          open={showNetlifyDialog}
+          onOpenChange={setShowNetlifyDialog}
+          initialConnectionSuccess={netlifyConnectionSuccess}
         />
       )}
     </div>

@@ -30,6 +30,7 @@ function EditorContent() {
   const projectId = searchParams?.get('id') ?? null;
   const autoStart = searchParams?.get('autoStart') === 'true';
   const githubConnected = searchParams?.get('github_connected');
+  const netlifyConnected = searchParams?.get('netlify_connected');
 
   // Get Clerk auth state to prevent race conditions
   const { isLoaded: isAuthLoaded } = useUser();
@@ -73,6 +74,8 @@ function EditorContent() {
   const [isExpectingPreviewUpdate, setIsExpectingPreviewUpdate] =
     useState(false);
   const [githubConnectionSuccess, setGithubConnectionSuccess] = useState(false);
+  const [netlifyConnectionSuccess, setNetlifyConnectionSuccess] =
+    useState(false);
 
   // Persist chat panel width in localStorage
   const [chatPanelSize, setChatPanelSize] = useLocalStorage<number>(
@@ -171,6 +174,24 @@ function EditorContent() {
   // Reset flag after it's consumed
   const handleGithubConnectionConsumed = () => {
     setGithubConnectionSuccess(false);
+  };
+
+  // Detect Netlify connection success from OAuth return
+  useEffect(() => {
+    if (netlifyConnected === 'true') {
+      logger.debug('[Editor] Netlify connection success detected');
+      setNetlifyConnectionSuccess(true);
+
+      // Clean URL to prevent re-triggering on refresh
+      const url = new URL(window.location.href);
+      url.searchParams.delete('netlify_connected');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, [netlifyConnected]);
+
+  // Reset flag after it's consumed
+  const handleNetlifyConnectionConsumed = () => {
+    setNetlifyConnectionSuccess(false);
   };
 
   // Handle streaming completion - watch state directly
@@ -961,6 +982,8 @@ function EditorContent() {
           projectName={project?.name ?? 'Untitled Project'}
           githubConnectionSuccess={githubConnectionSuccess}
           onGithubConnectionConsumed={handleGithubConnectionConsumed}
+          netlifyConnectionSuccess={netlifyConnectionSuccess}
+          onNetlifyConnectionConsumed={handleNetlifyConnectionConsumed}
         />
       ) : (
         <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
@@ -1014,6 +1037,8 @@ function EditorContent() {
                 projectName={project?.name ?? 'Untitled Project'}
                 githubConnectionSuccess={githubConnectionSuccess}
                 onGithubConnectionConsumed={handleGithubConnectionConsumed}
+                netlifyConnectionSuccess={netlifyConnectionSuccess}
+                onNetlifyConnectionConsumed={handleNetlifyConnectionConsumed}
               />
               <div className="flex-1 overflow-auto p-8">
                 <PreviewCodePanel
