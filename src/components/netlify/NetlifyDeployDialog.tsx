@@ -605,9 +605,21 @@ export function NetlifyDeployDialog({
                   <strong>{customSubdomain}.netlify.app</strong>
                 </p>
               )}
-              <p className="text-xs text-muted-foreground">
-                Leave empty for auto-generated subdomain
-              </p>
+              {!subdomainError && !customSubdomain && (
+                <p className="text-xs text-muted-foreground">
+                  Leave empty for auto-generated subdomain
+                </p>
+              )}
+              {customSubdomain && !subdomainError && (
+                <div className="flex items-start gap-2 rounded-md border border-blue-500/20 bg-blue-500/10 p-2">
+                  <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-600 dark:text-blue-400" />
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    This subdomain might already be taken globally. If
+                    deployment fails, try a different name or leave blank for
+                    auto-generation.
+                  </p>
+                </div>
+              )}
 
               {/* Domain conflict error banner */}
               {subdomainError && customSubdomain && (
