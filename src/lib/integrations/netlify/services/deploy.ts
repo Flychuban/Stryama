@@ -48,6 +48,12 @@ export interface DeployOptions {
    * Existing site ID (for updates) or null to create new site
    */
   existingSiteId?: string | null;
+
+  /**
+   * Custom subdomain for new sites (optional)
+   * If provided, will use this instead of auto-generated name
+   */
+  customSubdomain?: string | null;
 }
 
 /**
@@ -68,8 +74,14 @@ export class NetlifyDeployService {
    * @returns Deployment result with site URL and metadata
    */
   static async deployProject(options: DeployOptions): Promise<DeployResult> {
-    const { accessToken, sandbox, projectId, projectName, existingSiteId } =
-      options;
+    const {
+      accessToken,
+      sandbox,
+      projectId,
+      projectName,
+      existingSiteId,
+      customSubdomain,
+    } = options;
 
     console.log(
       `[Netlify Deploy] Starting deployment for project ${projectId}...`
@@ -100,6 +112,7 @@ export class NetlifyDeployService {
       let siteId: string;
       let siteName: string;
       let siteUrl: string;
+      let adminUrl: string;
 
       if (existingSiteId) {
         // Use existing site
@@ -108,6 +121,7 @@ export class NetlifyDeployService {
           siteId = site.id;
           siteName = site.name;
           siteUrl = site.ssl_url || site.url;
+          adminUrl = site.admin_url;
           console.log(
             `[Netlify Deploy] Using existing site: ${siteName} (${siteId})`
           );
@@ -119,36 +133,48 @@ export class NetlifyDeployService {
           throw new NetlifySiteNotFoundError(existingSiteId, { error });
         }
       } else {
-        // Create new site with unique name to avoid conflicts
-        const sanitizedName = this.sanitizeSiteName(projectName);
-        const uniqueName = this.createUniqueSiteName(sanitizedName);
+        // Create new site - use custom subdomain if provided, otherwise auto-generate
+        const baseName = customSubdomain
+          ? this.sanitizeSiteName(customSubdomain)
+          : this.createUniqueSiteName(this.sanitizeSiteName(projectName));
 
         try {
-          console.log(
-            `[Netlify Deploy] Creating site with name: ${uniqueName}`
-          );
-          const site = await client.createSite(uniqueName);
+          console.log(`[Netlify Deploy] Creating site with name: ${baseName}`);
+          const site = await client.createSite(baseName);
           siteId = site.id;
           siteName = site.name;
           siteUrl = site.ssl_url || site.url;
+          adminUrl = site.admin_url;
           console.log(
             `[Netlify Deploy] Created new site: ${siteName} (${siteId})`
           );
         } catch (error) {
-          // Fallback if we still get a conflict (extremely rare)
+          // Handle conflicts differently for custom vs auto-generated names
           if (error instanceof NetlifySiteConflictError) {
-            console.warn(
-              `[Netlify Deploy] Name conflict even with suffix: ${uniqueName}, retrying without name...`
-            );
-
-            // Let Netlify auto-generate a completely random name
-            const site = await client.createSite(); // No name parameter
-            siteId = site.id;
-            siteName = site.name;
-            siteUrl = site.ssl_url || site.url;
-            console.log(
-              `[Netlify Deploy] Created site with auto-generated name: ${siteName} (${siteId})`
-            );
+            if (customSubdomain) {
+              // Custom subdomain taken - throw error without fallback
+              console.error(
+                `[Netlify Deploy] Custom subdomain '${baseName}' is already taken`
+              );
+              throw new NetlifySiteConflictError(
+                baseName,
+                undefined, // No suggestion for custom subdomains
+                { error }
+              );
+            } else {
+              // Auto-generated conflict (rare) - let Netlify generate random name
+              console.warn(
+                `[Netlify Deploy] Name conflict even with suffix: ${baseName}, retrying without name...`
+              );
+              const site = await client.createSite(); // No name parameter
+              siteId = site.id;
+              siteName = site.name;
+              siteUrl = site.ssl_url || site.url;
+              adminUrl = site.admin_url;
+              console.log(
+                `[Netlify Deploy] Created site with auto-generated name: ${siteName} (${siteId})`
+              );
+            }
           } else {
             // Re-throw other errors (auth, network, etc.)
             throw error;
@@ -187,6 +213,7 @@ export class NetlifyDeployService {
         siteName,
         siteUrl,
         deployUrl: finalDeployment.deploy_ssl_url || finalDeployment.deploy_url,
+        adminUrl,
         deployId: deployment.id,
         filesDeployed: artifacts.fileCount,
         buildSize: artifacts.totalSize,

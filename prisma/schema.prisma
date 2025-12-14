@@ -295,6 +295,7 @@ model NetlifyDeployment {
     siteUrl       String
     deployUrl     String?
     deployId      String?
+    adminUrl      String? // Netlify dashboard URL for site management
 
     // Build metadata
     buildSize     Int?

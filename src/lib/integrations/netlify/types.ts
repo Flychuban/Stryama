@@ -103,6 +103,11 @@ export interface DeployResult {
   deployUrl?: string;
 
   /**
+   * Netlify admin dashboard URL for site management
+   */
+  adminUrl: string;
+
+  /**
    * Netlify deployment ID
    */
   deployId?: string;

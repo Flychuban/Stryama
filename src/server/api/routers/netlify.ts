@@ -204,6 +204,7 @@ export const netlifyRouter = createTRPCRouter({
         projectId: z.string(),
         projectName: z.string(),
         existingSiteId: z.string().optional().nullable(),
+        customSubdomain: z.string().optional().nullable(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -301,6 +302,7 @@ export const netlifyRouter = createTRPCRouter({
             projectId: input.projectId,
             projectName: input.projectName,
             existingSiteId: input.existingSiteId,
+            customSubdomain: input.customSubdomain,
           });
 
           // 8. Update deployment record with success
@@ -312,6 +314,7 @@ export const netlifyRouter = createTRPCRouter({
               siteUrl: result.siteUrl,
               deployUrl: result.deployUrl,
               deployId: result.deployId,
+              adminUrl: result.adminUrl,
               buildSize: result.buildSize,
               filesDeployed: result.filesDeployed,
               buildTime: result.buildTime,
@@ -333,6 +336,7 @@ export const netlifyRouter = createTRPCRouter({
             deploymentId: deploymentRecord.id,
             siteUrl: result.siteUrl,
             deployUrl: result.deployUrl,
+            adminUrl: result.adminUrl,
             siteName: result.siteName,
             filesDeployed: result.filesDeployed,
           };
@@ -431,6 +435,92 @@ export const netlifyRouter = createTRPCRouter({
         });
       } finally {
         // Sandbox remains managed by SandboxManager - no cleanup needed
+      }
+    }),
+
+  /**
+   * Update an existing Netlify site's subdomain
+   */
+  updateSiteName: protectedProcedure
+    .input(
+      z.object({
+        siteId: z.string(),
+        newSubdomain: z.string().min(1).max(63),
+        deploymentId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        // 1. Get Netlify token
+        const token = await getNetlifyToken(ctx.auth.userId, ctx.db);
+        const client = netlifyClient.getClient(token);
+
+        // 2. Sanitize subdomain (same logic as deploy service)
+        const sanitized = input.newSubdomain
+          .toLowerCase()
+          .replace(/[\s_]+/g, '-')
+          .replace(/[^a-z0-9-]/g, '')
+          .replace(/-+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .substring(0, 63);
+
+        if (!sanitized) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Invalid subdomain format',
+          });
+        }
+
+        // 3. Update site via Netlify API
+        const updatedSite = await client.updateSite(input.siteId, {
+          name: sanitized,
+        });
+
+        // 4. Update our database record
+        await ctx.db.netlifyDeployment.update({
+          where: { id: input.deploymentId },
+          data: {
+            siteName: updatedSite.name,
+            siteUrl: updatedSite.ssl_url || updatedSite.url,
+          },
+        });
+
+        return {
+          siteName: updatedSite.name,
+          siteUrl: updatedSite.ssl_url || updatedSite.url,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
+        if (error instanceof NetlifySiteConflictError) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: 'This subdomain is already taken. Please choose another.',
+          });
+        }
+
+        if (error instanceof NetlifyAuthError) {
+          throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Please reconnect your Netlify account.',
+          });
+        }
+
+        Sentry.captureException(error, {
+          tags: { feature: 'netlify_update_site_name' },
+          extra: {
+            siteId: input.siteId,
+            newSubdomain: input.newSubdomain,
+          },
+        });
+
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to update site subdomain',
+          cause: error,
+        });
       }
     }),
 

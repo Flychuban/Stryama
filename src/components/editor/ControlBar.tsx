@@ -21,8 +21,10 @@ import {
 import { cn } from '@/lib/utils';
 import { GitHubExportDialog } from '@/components/github/GitHubExportDialog';
 import { NetlifyDeployDialog } from '@/components/netlify/NetlifyDeployDialog';
+import { NetlifyChangeDomainDialog } from '@/components/netlify/NetlifyChangeDomainDialog';
 import { logger } from '@/lib/utils/logger';
 import { api } from '@/trpc/react';
+import { toast } from 'sonner';
 
 export type ViewMode = 'preview' | 'code';
 export type DeviceMode = 'desktop' | 'mobile';
@@ -70,6 +72,7 @@ export function ControlBar({
 }: ControlBarProps) {
   const [showGitHubDialog, setShowGitHubDialog] = useState(false);
   const [showNetlifyDialog, setShowNetlifyDialog] = useState(false);
+  const [showChangeDomainDialog, setShowChangeDomainDialog] = useState(false);
 
   // Query recent deployments for this project
   const { data: recentDeployments } =
@@ -81,6 +84,31 @@ export function ControlBar({
   const lastSuccessfulDeployment = recentDeployments?.find(
     (d) => d.status === 'COMPLETED'
   );
+
+  // Redeploy mutation for one-click redeploy
+  const redeployMutation = api.netlify.deployProject.useMutation({
+    onSuccess: () => {
+      toast.success('Redeployment started!', {
+        description: 'Your site is being updated...',
+      });
+    },
+    onError: (error) => {
+      toast.error('Redeployment failed', {
+        description: error.message,
+      });
+    },
+  });
+
+  const handleQuickRedeploy = () => {
+    if (!lastSuccessfulDeployment || !projectId || !projectName) return;
+
+    redeployMutation.mutate({
+      projectId,
+      projectName,
+      existingSiteId: lastSuccessfulDeployment.siteId,
+      customSubdomain: null,
+    });
+  };
 
   // Auto-open dialog when GitHub connection succeeds
   useEffect(() => {
@@ -194,6 +222,7 @@ export function ControlBar({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56 rounded-lg">
+              {/* Primary action */}
               <DropdownMenuItem
                 onClick={() => setShowNetlifyDialog(true)}
                 className="rounded-md"
@@ -201,9 +230,34 @@ export function ControlBar({
                 <Cloud className="mr-2 h-4 w-4" />
                 Deploy to Netlify
               </DropdownMenuItem>
+
               {lastSuccessfulDeployment && (
                 <>
                   <DropdownMenuSeparator />
+
+                  {/* One-click redeploy */}
+                  <DropdownMenuItem
+                    onClick={handleQuickRedeploy}
+                    disabled={redeployMutation.isPending}
+                    className="rounded-md"
+                  >
+                    <RefreshCw
+                      className={cn(
+                        'mr-2 h-4 w-4',
+                        redeployMutation.isPending && 'animate-spin'
+                      )}
+                    />
+                    <div className="flex flex-1 flex-col">
+                      <span>
+                        Redeploy to {lastSuccessfulDeployment.siteName}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        Quick update
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+
+                  {/* View live site */}
                   <DropdownMenuItem
                     onClick={() =>
                       window.open(
@@ -214,12 +268,31 @@ export function ControlBar({
                     className="rounded-md"
                   >
                     <ExternalLink className="mr-2 h-4 w-4" />
-                    <div className="flex flex-1 flex-col">
-                      <span>View Last Deployment</span>
-                      <span className="text-xs text-muted-foreground">
-                        {lastSuccessfulDeployment.siteName}
-                      </span>
-                    </div>
+                    View Live Site
+                  </DropdownMenuItem>
+
+                  {/* View Netlify dashboard */}
+                  <DropdownMenuItem
+                    onClick={() =>
+                      window.open(
+                        lastSuccessfulDeployment.adminUrl ?? '',
+                        '_blank'
+                      )
+                    }
+                    disabled={!lastSuccessfulDeployment.adminUrl}
+                    className="rounded-md"
+                  >
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    View in Netlify Dashboard
+                  </DropdownMenuItem>
+
+                  {/* Change domain */}
+                  <DropdownMenuItem
+                    onClick={() => setShowChangeDomainDialog(true)}
+                    className="rounded-md"
+                  >
+                    <Cloud className="mr-2 h-4 w-4" />
+                    Change Domain
                   </DropdownMenuItem>
                 </>
               )}
@@ -328,6 +401,15 @@ export function ControlBar({
           open={showNetlifyDialog}
           onOpenChange={setShowNetlifyDialog}
           initialConnectionSuccess={netlifyConnectionSuccess}
+        />
+      )}
+
+      {/* Netlify Change Domain Dialog */}
+      {lastSuccessfulDeployment && (
+        <NetlifyChangeDomainDialog
+          open={showChangeDomainDialog}
+          onOpenChange={setShowChangeDomainDialog}
+          deployment={lastSuccessfulDeployment}
         />
       )}
     </div>

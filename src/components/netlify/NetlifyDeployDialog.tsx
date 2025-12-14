@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Cloud, Loader2, CheckCircle2, Info, ExternalLink } from 'lucide-react';
@@ -43,9 +44,12 @@ export function NetlifyDeployDialog({
   const [deployMode, setDeployMode] = useState<'new' | 'existing'>('new');
   const [selectedSiteId, setSelectedSiteId] = useState<string>('');
   const [showSuccessBanner, setShowSuccessBanner] = useState(false);
+  const [customSubdomain, setCustomSubdomain] = useState<string>('');
+  const [subdomainError, setSubdomainError] = useState<string>('');
   const [deploymentSuccess, setDeploymentSuccess] = useState<{
     siteUrl: string;
     deployUrl: string;
+    adminUrl: string;
     siteName: string;
     filesDeployed?: number;
   } | null>(null);
@@ -54,6 +58,13 @@ export function NetlifyDeployDialog({
     api.netlify.getConnection.useQuery(undefined, {
       enabled: open,
     });
+
+  // Query recent deployments for smart defaults
+  const { data: recentDeployments } =
+    api.netlify.getProjectDeployments.useQuery(
+      { projectId },
+      { enabled: open && !!projectId }
+    );
 
   // Handle success banner display when connection succeeds
   useEffect(() => {
@@ -69,10 +80,29 @@ export function NetlifyDeployDialog({
     }
   }, [initialConnectionSuccess, open, connection]);
 
+  // Smart defaults: Auto-select existing site if previous deployment exists
+  useEffect(() => {
+    if (open && recentDeployments?.length) {
+      const lastSuccessful = recentDeployments.find(
+        (d: { status: string }) => d.status === 'COMPLETED'
+      );
+      if (lastSuccessful) {
+        setDeployMode('existing');
+        setSelectedSiteId(lastSuccessful.siteId);
+      }
+    } else if (open) {
+      // Reset to defaults when opening without previous deployments
+      setDeployMode('new');
+      setSelectedSiteId('');
+    }
+  }, [open, recentDeployments]);
+
   // Reset deployment success state when dialog closes
   useEffect(() => {
     if (!open) {
       setDeploymentSuccess(null);
+      setCustomSubdomain('');
+      setSubdomainError('');
     }
   }, [open]);
 
@@ -86,6 +116,7 @@ export function NetlifyDeployDialog({
       setDeploymentSuccess({
         siteUrl: data.siteUrl,
         deployUrl: data.deployUrl ?? data.siteUrl,
+        adminUrl: data.adminUrl,
         siteName: data.siteName,
         filesDeployed: data.filesDeployed,
       });
@@ -94,6 +125,15 @@ export function NetlifyDeployDialog({
       });
     },
     onError: (error) => {
+      // Check for domain conflict error
+      if (
+        error.message.includes('already exists') ||
+        error.message.includes('already taken')
+      ) {
+        setSubdomainError(
+          'This subdomain is already taken. Please choose another.'
+        );
+      }
       toast.error('Deployment failed', {
         description: error.message,
       });
@@ -108,10 +148,18 @@ export function NetlifyDeployDialog({
       return;
     }
 
+    // Check for subdomain validation errors
+    if (deployMode === 'new' && customSubdomain && subdomainError) {
+      toast.error('Please fix subdomain errors before deploying');
+      return;
+    }
+
     deployMutation.mutate({
       projectId,
       projectName,
       existingSiteId: deployMode === 'existing' ? selectedSiteId : null,
+      customSubdomain:
+        deployMode === 'new' && customSubdomain ? customSubdomain : null,
     });
   };
 
@@ -207,13 +255,13 @@ export function NetlifyDeployDialog({
               </Button>
               <Button
                 onClick={() =>
-                  window.open(deploymentSuccess.deployUrl, '_blank')
+                  window.open(deploymentSuccess.adminUrl, '_blank')
                 }
                 variant="outline"
                 className="h-11 flex-1 gap-2 sm:h-10"
               >
                 <ExternalLink className="h-4 w-4" />
-                View Deploy Details
+                View in Netlify Dashboard
               </Button>
             </div>
 
@@ -383,6 +431,33 @@ export function NetlifyDeployDialog({
           </div>
         )}
 
+        {/* Smart defaults info banner */}
+        {recentDeployments &&
+          recentDeployments.length > 0 &&
+          deployMode === 'existing' &&
+          selectedSiteId && (
+            <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-3 duration-300 animate-in fade-in-50 sm:p-4">
+              <div className="flex items-start gap-2 sm:gap-3">
+                <Info className="h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                    Updating existing site
+                  </p>
+                  <p className="mt-1 text-xs text-blue-700 dark:text-blue-300">
+                    Changes will deploy to:{' '}
+                    <strong>
+                      {
+                        sites?.find(
+                          (s: { id: string }) => s.id === selectedSiteId
+                        )?.name
+                      }
+                    </strong>
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
         <div className="space-y-4 py-3 sm:space-y-5 sm:py-4">
           {/* Card-style deploy options */}
           <div className="space-y-3">
@@ -458,6 +533,64 @@ export function NetlifyDeployDialog({
               </div>
             </RadioGroup>
           </div>
+
+          {/* Custom subdomain input for new sites */}
+          {deployMode === 'new' && (
+            <div className="space-y-2 duration-300 animate-in fade-in-50 slide-in-from-top-1">
+              <Label htmlFor="subdomain" className="text-sm font-medium">
+                Custom subdomain (optional)
+              </Label>
+              <div className="relative">
+                <Input
+                  id="subdomain"
+                  type="text"
+                  value={customSubdomain}
+                  onChange={(e) => {
+                    const val = e.target.value.toLowerCase();
+                    setCustomSubdomain(val);
+
+                    // Client-side validation
+                    if (!val) {
+                      setSubdomainError('');
+                    } else if (!/^[a-z0-9-]+$/.test(val)) {
+                      setSubdomainError(
+                        'Only lowercase letters, numbers, and hyphens'
+                      );
+                    } else if (val.length > 63) {
+                      setSubdomainError('Max 63 characters');
+                    } else if (val.startsWith('-') || val.endsWith('-')) {
+                      setSubdomainError('Cannot start or end with hyphen');
+                    } else if (val.includes('--')) {
+                      setSubdomainError('Cannot have consecutive hyphens');
+                    } else {
+                      setSubdomainError('');
+                    }
+                  }}
+                  placeholder="my-awesome-site"
+                  className={cn(
+                    'h-11 pr-32',
+                    subdomainError &&
+                      'border-red-500 focus-visible:ring-red-500'
+                  )}
+                />
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                  .netlify.app
+                </div>
+              </div>
+              {subdomainError && (
+                <p className="text-xs text-red-500">{subdomainError}</p>
+              )}
+              {!subdomainError && customSubdomain && (
+                <p className="text-xs text-green-600 dark:text-green-400">
+                  Your site will be:{' '}
+                  <strong>{customSubdomain}.netlify.app</strong>
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Leave empty for auto-generated subdomain
+              </p>
+            </div>
+          )}
 
           {/* Existing site selector */}
           {deployMode === 'existing' && (
