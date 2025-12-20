@@ -6,6 +6,7 @@ import { usageRouter } from '~/server/api/routers/usage';
 import { subscriptionRouter } from '~/server/api/routers/subscription';
 import { feedbackRouter } from '~/server/api/routers/feedback';
 import { githubRouter } from '~/server/api/routers/github';
+import { netlifyRouter } from '~/server/api/routers/netlify';
 
 export const appRouter = createTRPCRouter({
   project: projectRouter,
@@ -15,6 +16,7 @@ export const appRouter = createTRPCRouter({
   subscription: subscriptionRouter,
   feedback: feedbackRouter,
   github: githubRouter,
+  netlify: netlifyRouter,
 });
 
 // export type definition of API

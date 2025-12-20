@@ -39,11 +39,13 @@ interface MobileEditorTabsProps {
   iframeRef?: RefObject<HTMLIFrameElement | null>;
   iframeKey?: number;
 
-  // Project props (for GitHub export)
+  // Project props (for GitHub export and Netlify deployment)
   projectId?: string;
   projectName?: string;
   githubConnectionSuccess?: boolean;
   onGithubConnectionConsumed?: () => void;
+  netlifyConnectionSuccess?: boolean;
+  onNetlifyConnectionConsumed?: () => void;
 }
 
 type MobileTab = 'chat' | 'preview';
@@ -75,6 +77,8 @@ export function MobileEditorTabs({
   projectName,
   githubConnectionSuccess,
   onGithubConnectionConsumed,
+  netlifyConnectionSuccess,
+  onNetlifyConnectionConsumed,
 }: MobileEditorTabsProps) {
   const [activeTab, setActiveTab] = useLocalStorage<MobileTab>(
     'stryama_mobile_active_tab',
@@ -150,6 +154,8 @@ export function MobileEditorTabs({
           projectName={projectName}
           githubConnectionSuccess={githubConnectionSuccess}
           onGithubConnectionConsumed={onGithubConnectionConsumed}
+          netlifyConnectionSuccess={netlifyConnectionSuccess}
+          onNetlifyConnectionConsumed={onNetlifyConnectionConsumed}
         />
         <div className="flex-1 overflow-auto p-4 sm:p-8">
           <PreviewCodePanel

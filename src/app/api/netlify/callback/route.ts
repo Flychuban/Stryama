@@ -1,25 +1,25 @@
 import { type NextRequest, NextResponse } from 'next/server';
-import { Octokit } from '@octokit/rest';
 import * as Sentry from '@sentry/nextjs';
 import { db } from '~/server/db';
 import { validateOAuthState } from '@/lib/security/oauth';
 import { checkOAuthRateLimit } from '@/lib/security/oauth-rate-limiter';
+import { netlifyClient } from '@/lib/integrations/netlify/client';
 
 /**
- * GitHub OAuth token response type
+ * Netlify OAuth token response type
  */
-interface GitHubTokenResponse {
+interface NetlifyTokenResponse {
   access_token?: string;
+  token_type?: string;
   error?: string;
   error_description?: string;
 }
 
 /**
- * GitHub OAuth Callback Endpoint
+ * Netlify OAuth Callback Endpoint
  *
- * Handles the OAuth callback from GitHub, exchanges the code for an access token,
+ * Handles the OAuth callback from Netlify, exchanges the code for an access token,
  * and saves the connection to the database.
- * This server-side custom OAuth flow bypasses Clerk's step-up authentication requirements.
  *
  * Security features:
  * - Rate limiting (10 requests per 15 minutes per user)
@@ -36,13 +36,13 @@ export async function GET(request: NextRequest) {
 
     // Handle user denial
     if (error === 'access_denied') {
-      const returnUrl = '/editor?github_error=denied';
+      const returnUrl = '/editor?netlify_error=denied';
       return NextResponse.redirect(new URL(returnUrl, request.url));
     }
 
     if (!code || !state) {
       return NextResponse.redirect(
-        new URL('/editor?github_error=invalid_callback', request.url)
+        new URL('/editor?netlify_error=invalid_callback', request.url)
       );
     }
 
@@ -50,12 +50,12 @@ export async function GET(request: NextRequest) {
     const validatedState = await validateOAuthState(state);
 
     if (!validatedState) {
-      Sentry.captureMessage('Invalid OAuth state token', {
+      Sentry.captureMessage('Invalid OAuth state token (Netlify)', {
         level: 'warning',
         extra: { hasCode: !!code, hasState: !!state },
       });
       return NextResponse.redirect(
-        new URL('/editor?github_error=invalid_state', request.url)
+        new URL('/editor?netlify_error=invalid_state', request.url)
       );
     }
 
@@ -64,39 +64,40 @@ export async function GET(request: NextRequest) {
     // Check rate limit (prevents callback abuse)
     const rateLimit = checkOAuthRateLimit(userId, 'callback');
     if (!rateLimit.allowed) {
-      Sentry.captureMessage('OAuth callback rate limit exceeded', {
+      Sentry.captureMessage('OAuth callback rate limit exceeded (Netlify)', {
         level: 'warning',
         extra: { userId },
       });
       return NextResponse.redirect(
         new URL(
-          `/editor?github_error=rate_limited&retry_after=${rateLimit.retryAfter}`,
+          `/editor?netlify_error=rate_limited&retry_after=${rateLimit.retryAfter}`,
           request.url
         )
       );
     }
 
     // Exchange code for access token
-    const tokenResponse = await fetch(
-      'https://github.com/login/oauth/access_token',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          client_id: process.env.GITHUB_CLIENT_ID,
-          client_secret: process.env.GITHUB_CLIENT_SECRET,
-          code,
-        }),
-      }
-    );
+    // CRITICAL: redirect_uri must match exactly what was used in authorization request
+    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/netlify/callback`;
 
-    const tokenData = (await tokenResponse.json()) as GitHubTokenResponse;
+    const tokenResponse = await fetch('https://api.netlify.com/oauth/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        client_id: process.env.NETLIFY_CLIENT_ID,
+        client_secret: process.env.NETLIFY_CLIENT_SECRET,
+        code,
+        grant_type: 'authorization_code',
+        redirect_uri: redirectUri,
+      }),
+    });
+
+    const tokenData = (await tokenResponse.json()) as NetlifyTokenResponse;
 
     if (tokenData.error || !tokenData.access_token) {
-      Sentry.captureMessage('GitHub OAuth token exchange failed', {
+      Sentry.captureMessage('Netlify OAuth token exchange failed', {
         level: 'error',
         extra: {
           error: tokenData.error,
@@ -104,65 +105,65 @@ export async function GET(request: NextRequest) {
         },
       });
       return NextResponse.redirect(
-        new URL('/editor?github_error=token_exchange_failed', request.url)
+        new URL('/editor?netlify_error=token_exchange_failed', request.url)
       );
     }
 
     const accessToken: string = tokenData.access_token;
 
-    // Get GitHub user info
-    const octokit = new Octokit({ auth: accessToken });
-    const { data: githubUser } = await octokit.users.getAuthenticated();
+    // Get Netlify user info using the client
+    const client = netlifyClient.getClient(accessToken);
+    const netlifyUser = await client.getUser();
 
     // Check if user already has a connection (for account switching detection)
-    const existingConnection = await db.gitHubConnection.findUnique({
+    const existingConnection = await db.netlifyConnection.findUnique({
       where: { clerkUserId: userId },
     });
 
     // If connecting different account, store flag for frontend
     const isSwitchingAccount =
-      existingConnection &&
-      existingConnection.githubUserId !== String(githubUser.id);
+      existingConnection && existingConnection.netlifyUserId !== netlifyUser.id;
 
     // Save connection to database
-    // Store the access token securely (should be encrypted in production)
-    await db.gitHubConnection.upsert({
+    await db.netlifyConnection.upsert({
       where: { clerkUserId: userId },
       create: {
         clerkUserId: userId,
-        githubUsername: githubUser.login,
-        githubUserId: String(githubUser.id),
+        netlifyEmail: netlifyUser.email,
+        netlifyUserId: netlifyUser.id,
+        netlifyFullName: netlifyUser.full_name,
         accessToken,
       },
       update: {
-        githubUsername: githubUser.login,
-        githubUserId: String(githubUser.id),
+        netlifyEmail: netlifyUser.email,
+        netlifyUserId: netlifyUser.id,
+        netlifyFullName: netlifyUser.full_name,
         accessToken,
-        lastSyncAt: new Date(),
+        lastDeployAt: new Date(),
       },
     });
 
     // Redirect to our internal callback page to trigger success message
-    const callbackUrl = new URL('/github/callback', request.url);
+    const callbackUrl = new URL('/netlify/callback', request.url);
     callbackUrl.searchParams.set('return_url', returnUrl);
-    callbackUrl.searchParams.set('github_connected', 'true');
+    callbackUrl.searchParams.set('netlify_connected', 'true');
 
     // Add account switching info if applicable
     if (isSwitchingAccount && existingConnection) {
       callbackUrl.searchParams.set('switched', 'true');
-      callbackUrl.searchParams.set('from', existingConnection.githubUsername);
-      callbackUrl.searchParams.set('to', githubUser.login);
+      callbackUrl.searchParams.set('from', existingConnection.netlifyEmail);
+      callbackUrl.searchParams.set('to', netlifyUser.email);
     }
 
     return NextResponse.redirect(callbackUrl.toString());
   } catch (error) {
-    console.error('[GitHub Callback] Error:', error);
+    console.error('[Netlify Callback] Error:', error);
     Sentry.captureException(error, {
-      tags: { feature: 'github_oauth_callback' },
+      tags: { feature: 'netlify_oauth_callback' },
     });
 
     return NextResponse.redirect(
-      new URL('/editor?github_error=internal_error', request.url)
+      new URL('/editor?netlify_error=internal_error', request.url)
     );
   }
 }

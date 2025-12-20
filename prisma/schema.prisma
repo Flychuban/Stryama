@@ -25,10 +25,11 @@ model Project {
     updatedAt     DateTime  @updatedAt
 
     // Relations
-    files         File[]
-    sandboxes     Sandbox[]
-    aiGenerations AIGeneration[]
-    githubExports GitHubExport[]
+    files              File[]
+    sandboxes          Sandbox[]
+    aiGenerations      AIGeneration[]
+    githubExports      GitHubExport[]
+    netlifyDeployments NetlifyDeployment[]
 
     @@index([clerkUserId])
 }
@@ -250,4 +251,80 @@ model OAuthState {
     @@index([nonce])
     @@index([expiresAt])
     @@index([userId])
+}
+
+// ============================================================================
+// NETLIFY INTEGRATION MODELS
+// ============================================================================
+
+// Netlify OAuth connection (one per user)
+model NetlifyConnection {
+    id              String              @id @default(cuid())
+    clerkUserId     String              @unique
+
+    // Netlify user info
+    netlifyEmail    String
+    netlifyUserId   String
+    netlifyFullName String?
+
+    // OAuth token (encrypted at rest via Prisma)
+    accessToken     String              @db.Text
+
+    // Timestamps
+    connectedAt     DateTime            @default(now())
+    lastDeployAt    DateTime?
+    createdAt       DateTime            @default(now())
+    updatedAt       DateTime            @updatedAt
+
+    // Relations
+    deployments     NetlifyDeployment[]
+
+    @@index([clerkUserId])
+    @@index([netlifyUserId])
+}
+
+// Netlify deployment history
+model NetlifyDeployment {
+    id            String           @id @default(cuid())
+    projectId     String
+    connectionId  String
+
+    // Site info
+    siteId        String
+    siteName      String
+    siteUrl       String
+    deployUrl     String?
+    deployId      String?
+    adminUrl      String? // Netlify dashboard URL for site management
+
+    // Build metadata
+    buildSize     Int?
+    filesDeployed Int              @default(0)
+    buildTime     Int?
+
+    // Status tracking
+    status        DeploymentStatus @default(PENDING)
+    errorMessage  String?          @db.Text
+
+    // Timestamps
+    startedAt     DateTime         @default(now())
+    completedAt   DateTime?
+    createdAt     DateTime         @default(now())
+    updatedAt     DateTime         @updatedAt
+
+    // Relations
+    project       Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+    connection    NetlifyConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+    @@index([projectId])
+    @@index([connectionId])
+    @@index([status])
+}
+
+enum DeploymentStatus {
+    PENDING
+    BUILDING
+    DEPLOYING
+    COMPLETED
+    FAILED
 }
