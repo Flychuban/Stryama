@@ -120,7 +120,7 @@ interface OAuthState {
  * OAuth state storage using database
  *
  * PRODUCTION: Uses Prisma database to store state tokens
- * This ensures state is shared across serverless function instances in Vercel
+ * This ensures state is shared across serverless function instances in clustered deployments
  *
  * CLEANUP: Expired states are cleaned up during validation
  * For additional cleanup, consider a cron job to delete old states periodically

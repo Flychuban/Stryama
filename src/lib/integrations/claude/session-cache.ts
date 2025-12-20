@@ -1,11 +1,11 @@
 /**
  * Claude Session Cache
  *
- * Manages Claude Agent SDK session file persistence in serverless environments.
+ * Manages Claude Agent SDK session file persistence in ephemeral environments.
  *
- * The Claude SDK stores conversation state in ~/.claude/ filesystem. In Vercel:
+ * The Claude SDK stores conversation state in ~/.claude/ filesystem. In serverless/container environments:
  * - HOME is set to /tmp (for write access)
- * - /tmp is wiped between serverless function invocations
+ * - /tmp is wiped between invocations
  * - This causes "No conversation found" errors on subsequent prompts
  *
  * Solution: Store session files in Postgres database between invocations.
@@ -23,7 +23,7 @@ const MAX_SESSION_FILE_SIZE = 10 * 1024 * 1024; // 10MB limit
  * This matches the Claude SDK's internal algorithm for project isolation.
  *
  * Examples:
- * - /var/task → -var-task (Vercel)
+ * - /var/task → -var-task (AWS Lambda/Serverless)
  * - /Users/name/Desktop/Project → -Users-name-Desktop-Project (local)
  */
 function getProjectDirName(): string {

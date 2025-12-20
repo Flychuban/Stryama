@@ -28,7 +28,7 @@ import { type UserPlan } from '@prisma/client';
  * Example: "user_2NNEqL2nrIRdJ194ndJqAHtrx:BUILDER,user_2XYZ789abc:PRO"
  *
  * To add/remove beta testers:
- * 1. Update BETA_TESTERS env var in Vercel dashboard or .env file
+ * 1. Update BETA_TESTERS env var in your hosting dashboard or .env file
  * 2. Redeploy (env var changes require deployment)
  *
  * To get userId: Clerk Dashboard → Users → Select user → Copy User ID
