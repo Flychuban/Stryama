@@ -61,8 +61,9 @@
 
 ### Deployment
 
-- **Main App**: Vercel.
+- **Main App**: Vercel
 - **User Apps**: Previewed in E2B, deployed to Netlify.
+- **Rate Limiting**: In-memory (MVP) or Redis (Production).
 
 ## Epic List
 

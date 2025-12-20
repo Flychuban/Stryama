@@ -278,6 +278,6 @@ The frontend is built using **Next.js App Router** and **ShadCN/UI**.
 ## Security and Performance
 
 - **OAuth Tokens**: Stored encrypted in the database (GitHub/Netlify tokens).
-- **Rate Limiting**: Implemented via Upstash Redis (or in-memory fallback for dev) to prevent abuse.
+- **Rate Limiting**: Implemented via in-memory Map storage for MVP simplicity. (Note: This resets on deployment/restart and is per-instance).
 - **Sandboxing**: All user code runs in isolated E2B sandboxes, never on the main server.
 - **CSP**: Content Security Policy configured to allow necessary iframe previews while blocking malicious scripts.

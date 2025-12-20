@@ -1,6 +1,6 @@
 /**
  * Resolves the path to the Claude Agent SDK CLI executable.
- * Tries standard path first (Vercel), then pnpm structure (local dev).
+ * Tries standard path first (Production), then pnpm structure (local dev).
  *
  * @throws Error if CLI not found
  */

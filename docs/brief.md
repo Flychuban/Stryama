@@ -78,7 +78,7 @@
 
 - **Web Only:** Focus on web applications (no mobile native).
 - **Stack:** Generated apps are exclusively Next.js/Tailwind/TypeScript.
-- **Limits:** Rate limiting applied based on user tiers.
+- **Limits:** Rate limiting applied based on user tiers (MVP uses in-memory limits).
 
 ## Risks & Mitigations
 

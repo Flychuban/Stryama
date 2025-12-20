@@ -27,7 +27,7 @@ const config = {
     'require-in-the-middle',
   ],
 
-  // Include CLI executable in Vercel deployment bundle
+  // Include CLI executable in deployment bundle
   outputFileTracingIncludes: {
     '/api/trpc/**/*': [
       './node_modules/.pnpm/@anthropic-ai+claude-agent-sdk@*/node_modules/@anthropic-ai/claude-agent-sdk/cli.js',
