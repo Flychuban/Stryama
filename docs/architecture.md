@@ -63,13 +63,13 @@ graph TB
     GitHub --> Repo[📂 User Repository]
     Netlify --> LiveSite[🌍 User Live Site]
 
-    style User fill:#e1f5fe
-    style Web fill:#f3e5f5
-    style Claude fill:#fff3e0
-    style E2B fill:#e8f5e8
-    style DB fill:#fce4ec
-    style GitHub fill:#fafafa
-    style Netlify fill:#e0f7fa
+    style User fill:#e1f5fe,stroke:#333,stroke-width:2px,color:#000
+    style Web fill:#f3e5f5,stroke:#333,stroke-width:2px,color:#000
+    style Claude fill:#fff3e0,stroke:#333,stroke-width:2px,color:#000
+    style E2B fill:#e8f5e8,stroke:#333,stroke-width:2px,color:#000
+    style DB fill:#fce4ec,stroke:#333,stroke-width:2px,color:#000
+    style GitHub fill:#fafafa,stroke:#333,stroke-width:2px,color:#000
+    style Netlify fill:#e0f7fa,stroke:#333,stroke-width:2px,color:#000
 ```
 
 ### Conceptual Scheme of Intent-Based Development
@@ -81,11 +81,11 @@ graph LR
     Implementation --> Sandbox["Sandbox: Visualization (E2B)"]
     Sandbox --> Project[Ready Web Project]
 
-    style User fill:#e1f5fe
-    style Analysis fill:#fff3e0
-    style Implementation fill:#fff3e0
-    style Sandbox fill:#e8f5e8
-    style Project fill:#f3e5f5
+    style User fill:#e1f5fe,stroke:#333,stroke-width:2px,color:#000
+    style Analysis fill:#fff3e0,stroke:#333,stroke-width:2px,color:#000
+    style Implementation fill:#fff3e0,stroke:#333,stroke-width:2px,color:#000
+    style Sandbox fill:#e8f5e8,stroke:#333,stroke-width:2px,color:#000
+    style Project fill:#f3e5f5,stroke:#333,stroke-width:2px,color:#000
 ```
 
 ## Tech Stack
@@ -313,13 +313,13 @@ graph TD
     Sync --> Vite[Starting Vite Server in Container]
     Vite --> Iframe[Visualization via Iframe URL]
 
-    style Start fill:#f9f9f9,stroke:#333
-    style Analysis fill:#fff3e0
-    style CodeGen fill:#e1f5fe
-    style E2BInit fill:#e8f5e8
-    style Sync fill:#e8f5e8
-    style Vite fill:#e8f5e8
-    style Iframe fill:#f3e5f5
+    style Start fill:#f9f9f9,stroke:#333,stroke-width:2px,color:#000
+    style Analysis fill:#fff3e0,stroke:#333,stroke-width:2px,color:#000
+    style CodeGen fill:#e1f5fe,stroke:#333,stroke-width:2px,color:#000
+    style E2BInit fill:#e8f5e8,stroke:#333,stroke-width:2px,color:#000
+    style Sync fill:#e8f5e8,stroke:#333,stroke-width:2px,color:#000
+    style Vite fill:#e8f5e8,stroke:#333,stroke-width:2px,color:#000
+    style Iframe fill:#f3e5f5,stroke:#333,stroke-width:2px,color:#000
 ```
 
 ## External APIs
