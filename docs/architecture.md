@@ -72,6 +72,22 @@ graph TB
     style Netlify fill:#e0f7fa
 ```
 
+### Conceptual Scheme of Intent-Based Development
+
+```mermaid
+graph LR
+    User[User Prompt] --> Analysis[AI Agent: Analysis]
+    Analysis --> Implementation[AI Agent: Implementation]
+    Implementation --> Sandbox[Sandbox: Visualization (E2B)]
+    Sandbox --> Project[Ready Web Project]
+
+    style User fill:#e1f5fe
+    style Analysis fill:#fff3e0
+    style Implementation fill:#fff3e0
+    style Sandbox fill:#e8f5e8
+    style Project fill:#f3e5f5
+```
+
 ## Tech Stack
 
 ### Technology Stack Table
@@ -98,6 +114,52 @@ graph TB
 ## Data Models
 
 **Note:** User authentication is handled entirely by Clerk. We do not store a separate `User` model for profile data; instead, we reference `clerkUserId` in all related models.
+
+### Entity Relationship Diagram
+
+```mermaid
+erDiagram
+    PROJECT ||--|{ FILE : contains
+    PROJECT ||--|{ AIGENERATION : initiates
+    PROJECT ||--|{ SANDBOX : runs_in
+
+    PROJECT {
+        String id PK
+        String name
+        Json fileStructure
+        String clerkUserId
+        DateTime createdAt
+        DateTime updatedAt
+    }
+
+    FILE {
+        String id PK
+        String path
+        String content
+        String language
+        String projectId FK
+    }
+
+    AIGENERATION {
+        String id PK
+        String prompt
+        String response
+        Int tokens
+        String duration
+        String model
+        String clerkUserId
+        String projectId FK
+    }
+
+    SANDBOX {
+        String id PK
+        String e2bId
+        String status
+        String projectId FK
+        String previewUrl
+        String templateId
+    }
+```
 
 ### Project
 
@@ -232,6 +294,34 @@ export const appRouter = createTRPCRouter({
 3.  **Input Validation**: Zod schemas validate all inputs.
 4.  **Error Handling**: Standardized TRPC errors.
 
+### Generation and Visualization Pipeline
+
+```mermaid
+graph TD
+    Start((Start: Waiting for Request)) --> Analysis[Analysis of Context (Claude SDK)]
+    Analysis --> Parallel{Parallel Processes}
+
+    Parallel --> CodeGen[Code Generation]
+    Parallel --> E2BInit[E2B Sandbox Initialization]
+
+    CodeGen --> Stream[Streaming Code to Client]
+    Stream --> DBWrite[Write to DB]
+
+    E2BInit --> Sync[Sync Files to E2B]
+    DBWrite --> Sync
+
+    Sync --> Vite[Starting Vite Server in Container]
+    Vite --> Iframe[Visualization via Iframe URL]
+
+    style Start fill:#f9f9f9,stroke:#333
+    style Analysis fill:#fff3e0
+    style CodeGen fill:#e1f5fe
+    style E2BInit fill:#e8f5e8
+    style Sync fill:#e8f5e8
+    style Vite fill:#e8f5e8
+    style Iframe fill:#f3e5f5
+```
+
 ## External APIs
 
 ### Claude Code SDK
@@ -255,6 +345,38 @@ export const appRouter = createTRPCRouter({
 - **Flow**: OAuth -> Store Token -> Create Site -> Deploy Files.
 
 ## Frontend Architecture
+
+### User Flow Diagram
+
+```mermaid
+stateDiagram-v2
+    [*] --> Auth: Authorization (Clerk)
+    Auth --> Dashboard: Success
+
+    state Dashboard {
+        [*] --> SelectProject
+        SelectProject --> CreateNew: New Project
+        SelectProject --> OpenExisting: Existing Project
+    }
+
+    Dashboard --> ChatInterface: Enter Project
+
+    state ChatInterface {
+        [*] --> Prompting
+        Prompting --> RealtimePreview: Generate Code
+        RealtimePreview --> Prompting: Iterate
+    }
+
+    ChatInterface --> ExportDeploy: Satisfied
+
+    state ExportDeploy {
+        [*] --> GitHub: GitHub Export
+        [*] --> Netlify: Netlify Deployment
+    }
+
+    GitHub --> [*]
+    Netlify --> [*]
+```
 
 ### Component Architecture
 
