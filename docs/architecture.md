@@ -76,9 +76,9 @@ graph TB
 
 ```mermaid
 graph LR
-    User[User Prompt] --> Analysis[AI Agent: Analysis]
-    Analysis --> Implementation[AI Agent: Implementation]
-    Implementation --> Sandbox[Sandbox: Visualization (E2B)]
+    User[User Prompt] --> Analysis["AI Agent: Analysis"]
+    Analysis --> Implementation["AI Agent: Implementation"]
+    Implementation --> Sandbox["Sandbox: Visualization (E2B)"]
     Sandbox --> Project[Ready Web Project]
 
     style User fill:#e1f5fe
@@ -298,7 +298,7 @@ export const appRouter = createTRPCRouter({
 
 ```mermaid
 graph TD
-    Start((Start: Waiting for Request)) --> Analysis[Analysis of Context (Claude SDK)]
+    Start(("Start: Waiting for Request")) --> Analysis["Analysis of Context (Claude SDK)"]
     Analysis --> Parallel{Parallel Processes}
 
     Parallel --> CodeGen[Code Generation]
