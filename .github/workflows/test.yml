@@ -41,6 +41,7 @@ jobs:
           ANTHROPIC_API_KEY: sk-ant-mock123
           E2B_API_KEY: e2b_mock123
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_mock123
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v4
@@ -78,6 +79,20 @@ jobs:
 
       - name: Run ESLint
         run: pnpm lint
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          CLERK_SECRET_KEY: sk_test_mock123
+          ANTHROPIC_API_KEY: sk-ant-mock123
+          E2B_API_KEY: e2b_mock123
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_mock123
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
 
       - name: Run TypeScript type checking
         run: pnpm typecheck
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          CLERK_SECRET_KEY: sk_test_mock123
+          ANTHROPIC_API_KEY: sk-ant-mock123
+          E2B_API_KEY: e2b_mock123
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_mock123
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
