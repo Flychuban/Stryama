@@ -18,6 +18,11 @@
     "lint:fix": "next lint --fix",
     "preview": "next build && next start",
     "start": "next start",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "test:ci": "vitest run --coverage --reporter=verbose",
+    "test:changed": "vitest related --run",
     "typecheck": "tsc --noEmit",
     "type-check": "tsc --noEmit",
     "prepare": "husky"
@@ -97,9 +102,16 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
+    "@faker-js/faker": "^10.1.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.1",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^20.14.10",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.1.2",
+    "@vitest/coverage-v8": "^4.0.16",
+    "@vitest/ui": "^4.0.16",
     "autoprefixer": "^10.4.21",
     "eslint": "^9.23.0",
     "eslint-config-next": "^15.2.3",
@@ -115,7 +127,9 @@
     "tailwindcss-animate": "^1.0.7",
     "tsx": "^4.20.6",
     "typescript": "^5.8.2",
-    "typescript-eslint": "^8.27.0"
+    "typescript-eslint": "^8.27.0",
+    "vitest": "^4.0.16",
+    "vitest-mock-extended": "^3.1.0"
   },
   "ct3aMetadata": {
     "initVersion": "7.39.3"
