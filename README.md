@@ -75,6 +75,96 @@ For a deep dive into the system design, please refer to the [Architecture Docume
 - [Project Brief](docs/brief.md)
 - [Frontend Specifications](docs/front-end-spec.md)
 
+## 🧪 Testing
+
+Stryama uses **Vitest** for unit testing with a focus on critical business logic and services.
+
+### Test Coverage Strategy
+
+**Phase 1 (Current)**: Critical Services Layer ✅
+
+- ✅ Usage Tracking & Billing Logic (prevents cost overruns)
+- ✅ Rate Limiting (prevents API abuse)
+- ✅ Model Selection (ensures cost optimization)
+- ✅ File Persistence (prevents data loss)
+- **95 tests** with **100% coverage** on critical services
+
+**Phase 2 (Planned)**: API Layer & Integration Tests
+
+- tRPC routers (AI, Project, Subscription, Usage)
+- Sandbox Manager & Stream Manager
+- Target: 20-30% overall coverage
+
+### Running Tests
+
+```bash
+# Run all tests in watch mode
+pnpm test
+
+# Run tests with UI
+pnpm test:ui
+
+# Run tests with coverage report
+pnpm test:coverage
+
+# Run tests once (CI mode)
+pnpm test:ci
+
+# Run tests for changed files only
+pnpm test:changed
+```
+
+### Test Structure
+
+```
+src/
+├── __tests__/
+│   ├── helpers/         # Test utilities
+│   │   ├── db.ts        # Prisma mocks
+│   │   ├── factories.ts # Test data factories
+│   │   └── clerk.ts     # Auth mocks
+│   ├── mocks/           # External service mocks
+│   │   ├── e2b.ts       # E2B sandbox mocks
+│   │   └── anthropic.ts # Claude SDK mocks
+│   └── setup.ts         # Global test setup
+└── lib/
+    ├── services/
+    │   ├── modelSelection.test.ts    # ✅ 29 tests
+    │   └── usageTracking.test.ts     # ✅ 25 tests
+    └── integrations/
+        ├── claude/
+        │   └── rateLimiter.test.ts   # ✅ 25 tests
+        └── e2b/
+            └── utils/
+                └── file-saver.test.ts # ✅ 16 tests
+```
+
+### CI/CD
+
+Tests run automatically on:
+
+- Every commit via pre-commit hooks (changed files only)
+- Every pull request via GitHub Actions
+- Every push to `main` branch
+
+See `.github/workflows/test.yml` for CI configuration.
+
+### Coverage Reports
+
+Coverage reports are generated in the `coverage/` directory:
+
+- `coverage/index.html` - Interactive HTML report
+- `coverage/lcov.info` - LCOV format for CI integration
+
+Current thresholds:
+
+- Lines: 3%
+- Functions: 4%
+- Branches: 3%
+- Statements: 3%
+
+**Note**: Low overall percentage is intentional - we focus on 100% coverage of high-risk business logic rather than 100% coverage of all code. UI components and integration code will be tested via E2E tests.
+
 ## 📦 Deployment
 
 Stryama is optimized for deployment on **Vercel**.
