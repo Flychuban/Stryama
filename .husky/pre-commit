@@ -1,1 +1,4 @@
 npx lint-staged
+
+# Run tests for changed files (bail after first failure)
+pnpm test:changed --bail=1
