@@ -48,14 +48,6 @@ if (SENTRY_DSN && IS_BROWSER) {
           return event;
         },
       }),
-
-      // TODO: PostHog integration for linked session replays
-      // Commented out due to type compatibility issues - can be added later
-      // new posthog.SentryIntegration({
-      //   organization: process.env.SENTRY_ORG,
-      //   projectId: parseInt(process.env.SENTRY_PROJECT ?? '0'),
-      //   severityAllowList: ['error', 'fatal'],
-      // }),
     ],
 
     // Filter sensitive data

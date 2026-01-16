@@ -1,13 +1,3 @@
-/**
- * Netlify Deploy Service
- *
- * Orchestrates the complete deployment process:
- * 1. Build static files from E2B sandbox
- * 2. Create/retrieve Netlify site
- * 3. Upload ZIP to Netlify
- * 4. Poll for deployment completion
- */
-
 import type { Sandbox as E2BSandbox } from '@e2b/code-interpreter';
 import { NETLIFY_CONFIG } from '../config';
 import {
@@ -20,6 +10,7 @@ import {
 import type { DeployResult } from '../types';
 import { netlifyClient } from '../client';
 import { NetlifyBuildService } from './build';
+import { logger } from '~/lib/utils/logger';
 
 /**
  * Deployment options
@@ -84,10 +75,10 @@ export class NetlifyDeployService {
       customSubdomain,
     } = options;
 
-    console.log(
+    logger.debug(
       `[Netlify Deploy] Starting deployment for project ${projectId}...`
     );
-    console.log(
+    logger.debug(
       `[Netlify Deploy] Mode: ${existingSiteId ? 'Update existing site' : 'Create new site'}`
     );
 
@@ -96,7 +87,7 @@ export class NetlifyDeployService {
 
     try {
       // Step 1: Build project
-      console.log('[Netlify Deploy] Step 1: Building project...');
+      logger.debug('[Netlify Deploy] Step 1: Building project...');
       const buildStartTime = Date.now();
       const artifacts = await NetlifyBuildService.buildFromSandbox(
         sandbox,
@@ -105,11 +96,11 @@ export class NetlifyDeployService {
       const buildTime = Date.now() - buildStartTime;
 
       // Step 2: Create ZIP archive
-      console.log('[Netlify Deploy] Step 2: Creating ZIP archive...');
+      logger.debug('[Netlify Deploy] Step 2: Creating ZIP archive...');
       const zipBuffer = await NetlifyBuildService.createZipArchive(artifacts);
 
       // Step 3: Get or create Netlify site
-      console.log('[Netlify Deploy] Step 3: Getting/creating Netlify site...');
+      logger.debug('[Netlify Deploy] Step 3: Getting/creating Netlify site...');
       let siteId: string;
       let siteName: string;
       let siteUrl: string;
@@ -123,11 +114,11 @@ export class NetlifyDeployService {
           siteName = site.name;
           siteUrl = site.ssl_url || site.url;
           adminUrl = site.admin_url;
-          console.log(
+          logger.debug(
             `[Netlify Deploy] Using existing site: ${siteName} (${siteId})`
           );
         } catch (error) {
-          console.error(
+          logger.error(
             `[Netlify Deploy] Failed to get site ${existingSiteId}:`,
             error
           );
@@ -140,13 +131,13 @@ export class NetlifyDeployService {
           : this.createUniqueSiteName(this.sanitizeSiteName(projectName));
 
         try {
-          console.log(`[Netlify Deploy] Creating site with name: ${baseName}`);
+          logger.debug(`[Netlify Deploy] Creating site with name: ${baseName}`);
           const site = await client.createSite(baseName);
           siteId = site.id;
           siteName = site.name;
           siteUrl = site.ssl_url || site.url;
           adminUrl = site.admin_url;
-          console.log(
+          logger.debug(
             `[Netlify Deploy] Created new site: ${siteName} (${siteId})`
           );
         } catch (error) {
@@ -154,7 +145,7 @@ export class NetlifyDeployService {
           if (error instanceof NetlifySiteConflictError) {
             if (customSubdomain) {
               // Custom subdomain taken - throw error without fallback
-              console.error(
+              logger.error(
                 `[Netlify Deploy] Custom subdomain '${baseName}' is already taken`
               );
               throw new NetlifySiteConflictError(
@@ -164,7 +155,7 @@ export class NetlifyDeployService {
               );
             } else {
               // Auto-generated conflict (rare) - let Netlify generate random name
-              console.warn(
+              logger.warn(
                 `[Netlify Deploy] Name conflict even with suffix: ${baseName}, retrying without name...`
               );
               const site = await client.createSite(); // No name parameter
@@ -172,7 +163,7 @@ export class NetlifyDeployService {
               siteName = site.name;
               siteUrl = site.ssl_url || site.url;
               adminUrl = site.admin_url;
-              console.log(
+              logger.debug(
                 `[Netlify Deploy] Created site with auto-generated name: ${siteName} (${siteId})`
               );
             }
@@ -184,18 +175,18 @@ export class NetlifyDeployService {
       }
 
       // Step 4: Upload ZIP to Netlify
-      console.log('[Netlify Deploy] Step 4: Uploading build to Netlify...');
+      logger.debug('[Netlify Deploy] Step 4: Uploading build to Netlify...');
       const uploadStartTime = Date.now();
       const deployment = await client.deploySite(siteId, zipBuffer);
       const uploadTime = Date.now() - uploadStartTime;
-      console.log(
+      logger.debug(
         `[Netlify Deploy] Upload completed in ${(uploadTime / 1000).toFixed(1)}s`
       );
-      console.log(`[Netlify Deploy] Deployment ID: ${deployment.id}`);
-      console.log(`[Netlify Deploy] Initial state: ${deployment.state}`);
+      logger.debug(`[Netlify Deploy] Deployment ID: ${deployment.id}`);
+      logger.debug(`[Netlify Deploy] Initial state: ${deployment.state}`);
 
       // Step 5: Poll deployment status until complete
-      console.log('[Netlify Deploy] Step 5: Waiting for deployment...');
+      logger.debug('[Netlify Deploy] Step 5: Waiting for deployment...');
       const finalDeployment = await this.pollDeploymentStatus(
         client,
         siteId,
@@ -203,7 +194,7 @@ export class NetlifyDeployService {
       );
 
       const totalTime = Date.now() - deployStartTime;
-      console.log(
+      logger.debug(
         `[Netlify Deploy] ✅ Deployment completed in ${(totalTime / 1000).toFixed(1)}s`
       );
 
@@ -222,7 +213,7 @@ export class NetlifyDeployService {
       };
     } catch (error) {
       const totalTime = Date.now() - deployStartTime;
-      console.error(
+      logger.error(
         `[Netlify Deploy] ❌ Deployment failed after ${(totalTime / 1000).toFixed(1)}s:`,
         error
       );
@@ -278,13 +269,13 @@ export class NetlifyDeployService {
       // Get deployment status
       const deployment = await client.getDeploy(siteId, deployId);
 
-      console.log(
+      logger.debug(
         `[Netlify Deploy] Poll attempt ${attempts}: state=${deployment.state} (${(elapsed / 1000).toFixed(1)}s elapsed)`
       );
 
       // Check if deployment is complete
       if (deployment.state === 'ready') {
-        console.log(
+        logger.debug(
           `[Netlify Deploy] ✅ Deployment ready after ${attempts} attempts`
         );
         return deployment;
@@ -294,7 +285,7 @@ export class NetlifyDeployService {
       if (deployment.state === 'error') {
         const errorMsg =
           deployment.error_message ?? 'Deployment failed without error message';
-        console.error(`[Netlify Deploy] ❌ Deployment error: ${errorMsg}`);
+        logger.error(`[Netlify Deploy] ❌ Deployment error: ${errorMsg}`);
         throw new NetlifyDeployError(`Deployment failed: ${errorMsg}`, {
           siteId,
           deployId,
@@ -303,7 +294,7 @@ export class NetlifyDeployService {
       }
 
       // Continue polling for other states: 'building', 'processing', 'uploaded'
-      console.log(
+      logger.debug(
         `[Netlify Deploy] Deployment still ${deployment.state}, waiting ${pollInterval}ms...`
       );
       await new Promise((resolve) => setTimeout(resolve, pollInterval));
@@ -400,7 +391,7 @@ export class NetlifyDeployService {
       await client.getSite(siteId);
       return true;
     } catch (error) {
-      console.error(
+      logger.error(
         `[Netlify Deploy] Site validation failed for ${siteId}:`,
         error
       );

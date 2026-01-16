@@ -16,6 +16,7 @@ import * as Sentry from '@sentry/nextjs';
 import type { db as DbType } from '~/server/db';
 import { sandboxManager } from '~/lib/integrations/e2b';
 import type { Sandbox } from '@e2b/code-interpreter';
+import { logger } from '~/lib/utils/logger';
 
 /**
  * Helper function to get Netlify token from database
@@ -238,7 +239,7 @@ export const netlifyRouter = createTRPCRouter({
         // 2. Get ACTIVE sandbox for project using SandboxManager
         // CRITICAL: This gets a validated, cached E2B instance
         // The SandboxManager handles connection caching, validation, and error handling
-        console.log(
+        logger.debug(
           `[Netlify Deploy] Getting sandbox for project ${input.projectId}...`
         );
 
@@ -261,7 +262,9 @@ export const netlifyRouter = createTRPCRouter({
         sandbox = sandboxResult.data.instance;
         sandboxE2bId = sandboxResult.data.e2bId;
 
-        console.log(`[Netlify Deploy] Connected to sandbox ${sandboxE2bId}...`);
+        logger.debug(
+          `[Netlify Deploy] Connected to sandbox ${sandboxE2bId}...`
+        );
 
         // 4. Get Netlify token
         const token = await getNetlifyToken(ctx.auth.userId, ctx.db);
@@ -292,7 +295,7 @@ export const netlifyRouter = createTRPCRouter({
 
         try {
           // 7. Deploy to Netlify
-          console.log(
+          logger.debug(
             `[Netlify Deploy] Starting deployment for project ${input.projectId}...`
           );
 
@@ -329,7 +332,7 @@ export const netlifyRouter = createTRPCRouter({
             data: { lastDeployAt: new Date() },
           });
 
-          console.log(`[Netlify Deploy] ✅ Deployment successful`);
+          logger.debug(`[Netlify Deploy] ✅ Deployment successful`);
 
           return {
             success: true,
@@ -360,7 +363,7 @@ export const netlifyRouter = createTRPCRouter({
           // The instance remains cached and alive for other operations
           // SandboxManager will handle cleanup when sandbox expires
           if (sandbox && sandboxE2bId) {
-            console.log(
+            logger.debug(
               `[Netlify Deploy] Deployment complete, sandbox ${sandboxE2bId} remains active`
             );
           }

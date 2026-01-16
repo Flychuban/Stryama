@@ -1,29 +1,26 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 
-// Define public routes that don't require authentication
 const isPublicRoute = createRouteMatcher([
   '/',
   '/sign-in(.*)',
   '/sign-up(.*)',
-  '/github/callback(.*)', // Allow GitHub OAuth callback
-  '/opengraph-image(.*)', // Allow OG image for social media previews
-  '/twitter-image(.*)', // Allow Twitter card images
-  '/icon(.*)', // Allow favicon generation
-  '/apple-icon(.*)', // Allow Apple touch icons
-  '/robots.txt', // Allow robots.txt
-  '/sitemap.xml', // Allow sitemap
+  '/github/callback(.*)',
+  '/opengraph-image(.*)',
+  '/twitter-image(.*)',
+  '/icon(.*)',
+  '/apple-icon(.*)',
+  '/robots.txt',
+  '/sitemap.xml',
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
-  // Protect all routes except public ones
   if (!isPublicRoute(req)) {
     const isApiRoute =
       req.nextUrl.pathname.startsWith('/api') ||
       req.nextUrl.pathname.startsWith('/trpc');
 
     if (isApiRoute) {
-      // For API routes, return JSON error instead of redirect
       try {
         await auth.protect();
       } catch {
@@ -33,7 +30,6 @@ export default clerkMiddleware(async (auth, req) => {
         );
       }
     } else {
-      // For page routes, use normal redirect behavior
       await auth.protect();
     }
   }
@@ -41,9 +37,7 @@ export default clerkMiddleware(async (auth, req) => {
 
 export const config = {
   matcher: [
-    // Skip Next.js internals and all static files, unless found in search params
     '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
-    // Always run for API routes
     '/(api|trpc)(.*)',
   ],
 };

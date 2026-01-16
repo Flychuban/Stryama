@@ -12,6 +12,7 @@ import {
   filterApplicationFiles,
   logFilteringResults,
 } from '~/lib/utils/file-filtering';
+import { logger } from '~/lib/utils/logger';
 
 /**
  * File object structure
@@ -47,7 +48,7 @@ export async function saveGeneratedFilesToDatabase(
 
   // If using E2B mode and no files in response, read from sandbox
   if (sandboxInstance && responseFiles.length === 0) {
-    console.log(
+    logger.debug(
       `${logPrefix} 🔄 E2B mode: No files in response, reading from sandbox filesystem...`
     );
 
@@ -65,26 +66,26 @@ export async function saveGeneratedFilesToDatabase(
       // Log filtering results
       logFilteringResults(allFiles, filterResult, logPrefix);
     } else {
-      console.error(
+      logger.error(
         `${logPrefix} ❌ Failed to read files from sandbox: ${sandboxFilesResult.error}`
       );
       // Don't throw - caller can decide how to handle this
       return;
     }
   } else if (responseFiles.length > 0) {
-    console.log(
+    logger.debug(
       `${logPrefix} ✅ Using ${responseFiles.length} files from Claude response`
     );
   }
 
   if (filesToSave.length === 0) {
-    console.warn(
+    logger.warn(
       `${logPrefix} ⚠️ No files to save to database - this may cause issues when regenerating preview`
     );
     return;
   }
 
-  console.log(
+  logger.debug(
     `${logPrefix} 💾 Saving ${filesToSave.length} file(s) to database for project ${projectId}`
   );
 
@@ -113,7 +114,7 @@ export async function saveGeneratedFilesToDatabase(
     )
   );
 
-  console.log(
+  logger.debug(
     `${logPrefix} ✅ Successfully saved ${filesToSave.length} file(s) to database:`,
     filesToSave.map((f) => `${f.path} (${f.language})`)
   );

@@ -1,16 +1,3 @@
-/**
- * Netlify Build Service
- *
- * Handles building static files from E2B sandbox for Netlify deployment
- *
- * CRITICAL SAFETY CHECKS:
- * 1. Never modify sandbox state - only read files
- * 2. Use existing sandbox connection (don't create new)
- * 3. Run commands in /project directory
- * 4. Timeout builds after 5 minutes
- * 5. Validate file sizes before zipping
- */
-
 import type { Sandbox as E2BSandbox } from '@e2b/code-interpreter';
 import JSZip from 'jszip';
 import { NETLIFY_CONFIG } from '../config';
@@ -20,6 +7,7 @@ import {
   NetlifyConfigError,
 } from '../errors';
 import type { BuildArtifacts, Framework, FrameworkBuildConfig } from '../types';
+import { logger } from '~/lib/utils/logger';
 
 /**
  * Framework build configurations
@@ -64,24 +52,24 @@ export class NetlifyBuildService {
     sandbox: E2BSandbox,
     projectId: string
   ): Promise<BuildArtifacts> {
-    console.log(`[Netlify Build] Starting build for project ${projectId}...`);
+    logger.debug(`[Netlify Build] Starting build for project ${projectId}...`);
     const buildStartTime = Date.now();
 
     try {
       // Step 1: Detect framework
       const framework = await this.detectFramework(sandbox);
-      console.log(`[Netlify Build] Detected framework: ${framework}`);
+      logger.debug(`[Netlify Build] Detected framework: ${framework}`);
 
       // Step 2: Run build command
       const buildDir = await this.runBuild(sandbox, framework);
       const buildDuration = Date.now() - buildStartTime;
-      console.log(
+      logger.debug(
         `[Netlify Build] Build completed in ${(buildDuration / 1000).toFixed(1)}s`
       );
 
       // Step 3: Collect files from build output
       const artifacts = await this.collectBuildFiles(sandbox, buildDir);
-      console.log(
+      logger.debug(
         `[Netlify Build] Collected ${artifacts.fileCount} files (${(artifacts.totalSize / 1024 / 1024).toFixed(2)}MB)`
       );
 
@@ -96,7 +84,7 @@ export class NetlifyBuildService {
       return artifacts;
     } catch (error) {
       const buildDuration = Date.now() - buildStartTime;
-      console.error(
+      logger.error(
         `[Netlify Build] Build failed after ${(buildDuration / 1000).toFixed(1)}s:`,
         error
       );
@@ -114,7 +102,7 @@ export class NetlifyBuildService {
     sandbox: E2BSandbox
   ): Promise<Framework> {
     try {
-      console.log('[Netlify Build] Reading package.json...');
+      logger.debug('[Netlify Build] Reading package.json...');
 
       // Read package.json from /project directory (matches file-sync location)
       const packageJsonContent = await sandbox.files.read(
@@ -126,7 +114,7 @@ export class NetlifyBuildService {
         devDependencies?: Record<string, string>;
       };
 
-      console.log(
+      logger.debug(
         '[Netlify Build] Package.json dependencies:',
         Object.keys(packageJson.dependencies ?? {}).join(', ')
       );
@@ -150,10 +138,10 @@ export class NetlifyBuildService {
       }
 
       // Default to static
-      console.warn('[Netlify Build] No framework detected, treating as static');
+      logger.warn('[Netlify Build] No framework detected, treating as static');
       return 'static';
     } catch (error) {
-      console.error('[Netlify Build] Failed to detect framework:', error);
+      logger.error('[Netlify Build] Failed to detect framework:', error);
       throw new NetlifyConfigError(
         'Failed to read package.json. Ensure your project has a valid package.json file.',
         { error }
@@ -178,7 +166,7 @@ export class NetlifyBuildService {
       throw new NetlifyConfigError(`Unsupported framework: ${framework}`);
     }
 
-    console.log(
+    logger.debug(
       `[Netlify Build] Running ${config.name} build command: ${config.command}`
     );
 
@@ -191,8 +179,8 @@ export class NetlifyBuildService {
     });
 
     if (result.exitCode !== 0) {
-      console.error('[Netlify Build] Build failed:', result.stderr);
-      console.error('[Netlify Build] Build stdout:', result.stdout);
+      logger.error('[Netlify Build] Build failed:', result.stderr);
+      logger.error('[Netlify Build] Build stdout:', result.stdout);
 
       // Extract meaningful error message
       const errorMessage = result.stderr || result.stdout || 'Unknown error';
@@ -210,7 +198,7 @@ export class NetlifyBuildService {
       );
     }
 
-    console.log('[Netlify Build] Build command completed successfully');
+    logger.debug('[Netlify Build] Build command completed successfully');
 
     return config.outputDir;
   }
@@ -229,7 +217,7 @@ export class NetlifyBuildService {
     const files = new Map<string, string>();
     let totalSize = 0;
 
-    console.log(`[Netlify Build] Collecting files from ${buildDir}...`);
+    logger.debug(`[Netlify Build] Collecting files from ${buildDir}...`);
 
     try {
       // List all files in build directory using find command
@@ -260,7 +248,9 @@ export class NetlifyBuildService {
         );
       }
 
-      console.log(`[Netlify Build] Found ${filePaths.length} files to collect`);
+      logger.debug(
+        `[Netlify Build] Found ${filePaths.length} files to collect`
+      );
 
       // Read each file and add to collection
       let skippedFiles = 0;
@@ -271,7 +261,7 @@ export class NetlifyBuildService {
 
           // Skip files that exceed individual file size limit
           if (size > NETLIFY_CONFIG.deployment.maxFileSize) {
-            console.warn(
+            logger.warn(
               `[Netlify Build] Skipping large file: ${absolutePath} (${(size / 1024 / 1024).toFixed(2)}MB)`
             );
             skippedFiles++;
@@ -285,7 +275,7 @@ export class NetlifyBuildService {
           files.set(relativePath, content);
           totalSize += size;
         } catch (error) {
-          console.warn(
+          logger.warn(
             `[Netlify Build] Failed to read file: ${absolutePath}`,
             error
           );
@@ -294,7 +284,7 @@ export class NetlifyBuildService {
       }
 
       if (skippedFiles > 0) {
-        console.warn(
+        logger.warn(
           `[Netlify Build] Skipped ${skippedFiles} large files (>10MB each)`
         );
       }
@@ -328,7 +318,7 @@ export class NetlifyBuildService {
    * @returns ZIP file as Buffer
    */
   static async createZipArchive(artifacts: BuildArtifacts): Promise<Buffer> {
-    console.log(
+    logger.debug(
       `[Netlify Build] Creating ZIP archive from ${artifacts.fileCount} files...`
     );
     const zipStartTime = Date.now();
@@ -349,13 +339,13 @@ export class NetlifyBuildService {
       });
 
       const zipDuration = Date.now() - zipStartTime;
-      console.log(
+      logger.debug(
         `[Netlify Build] ZIP created in ${(zipDuration / 1000).toFixed(1)}s (${(zipBuffer.length / 1024 / 1024).toFixed(2)}MB compressed)`
       );
 
       return zipBuffer;
     } catch (error) {
-      console.error('[Netlify Build] Failed to create ZIP archive:', error);
+      logger.error('[Netlify Build] Failed to create ZIP archive:', error);
       throw new NetlifyBuildError('Failed to create ZIP archive', { error });
     }
   }
@@ -380,6 +370,6 @@ export class NetlifyBuildService {
       throw new NetlifyBuildError('No files in build artifacts');
     }
 
-    console.log('[Netlify Build] Artifacts validation passed');
+    logger.debug('[Netlify Build] Artifacts validation passed');
   }
 }

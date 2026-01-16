@@ -113,10 +113,10 @@ export class ClaudeClient {
             );
             canResumeSession = true;
           } else {
-            console.warn(
+            logger.warn(
               `[Claude] ⚠️ Session ${sessionId} restored but file not found in process ${verification.processId}`
             );
-            console.warn(
+            logger.warn(
               `[Claude] This indicates a serverless container mismatch - starting fresh session`
             );
             canResumeSession = false;
@@ -128,7 +128,7 @@ export class ClaudeClient {
           canResumeSession = false;
         }
       } else if (sessionId && !db) {
-        console.warn(
+        logger.warn(
           `[Claude] ⚠️ Session ID provided but no database client - cannot restore session`
         );
         canResumeSession = false;
@@ -159,7 +159,7 @@ export class ClaudeClient {
           pathToClaudeCodeExecutable: cliPath,
           env: getCleanEnvironment(),
           stderr: (data: string) => {
-            console.error(`[Claude CLI stderr] ${data}`);
+            logger.error(`[Claude CLI stderr] ${data}`);
           },
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,
@@ -174,7 +174,7 @@ export class ClaudeClient {
         `[Claude] Streaming generation ${generationId} completed in ${duration}ms`
       );
     } catch (error) {
-      console.error(
+      logger.error(
         `[Claude] Streaming generation ${generationId} failed:`,
         error
       );
@@ -230,10 +230,10 @@ export class ClaudeClient {
             );
             canResumeSession = true;
           } else {
-            console.warn(
+            logger.warn(
               `[Claude] ⚠️ Session ${sessionId} restored but file not found in process ${verification.processId}`
             );
-            console.warn(
+            logger.warn(
               `[Claude] This indicates a serverless container mismatch - starting fresh session`
             );
             canResumeSession = false;
@@ -245,7 +245,7 @@ export class ClaudeClient {
           canResumeSession = false;
         }
       } else if (sessionId && !db) {
-        console.warn(
+        logger.warn(
           `[Claude] ⚠️ Session ID provided but no database client - cannot restore session`
         );
         canResumeSession = false;
@@ -287,7 +287,7 @@ export class ClaudeClient {
           pathToClaudeCodeExecutable: cliPath,
           env: getCleanEnvironment(),
           stderr: (data: string) => {
-            console.error(`[Claude CLI stderr] ${data}`);
+            logger.error(`[Claude CLI stderr] ${data}`);
           },
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,
@@ -313,7 +313,7 @@ export class ClaudeClient {
               `[Claude] Success: ${tokensUsed} tokens, $${totalCost.toFixed(4)}`
             );
           } else if (message.subtype === 'error_max_turns') {
-            console.warn(`[Claude] Generation hit max turns limit`);
+            logger.warn(`[Claude] Generation hit max turns limit`);
             throw new ClaudeGenerationError(
               'Generation exceeded maximum conversation turns. Try simplifying your prompt.',
               ClaudeErrorType.TIMEOUT,
@@ -323,7 +323,7 @@ export class ClaudeClient {
               } as Record<string, unknown>
             );
           } else if (message.subtype === 'error_during_execution') {
-            console.error(`[Claude] Error during execution`);
+            logger.error(`[Claude] Error during execution`);
             throw new ClaudeGenerationError(
               'An error occurred during code generation. Please try again.',
               ClaudeErrorType.API_ERROR,
@@ -369,7 +369,7 @@ export class ClaudeClient {
       const errorType = classifyError(error);
       const errorMessage = getUserFriendlyErrorMessage(errorType);
 
-      console.error(`[Claude] Generation ${generationId} failed:`, error);
+      logger.error(`[Claude] Generation ${generationId} failed:`, error);
 
       return {
         success: false,
