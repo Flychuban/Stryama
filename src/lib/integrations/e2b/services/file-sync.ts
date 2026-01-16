@@ -10,6 +10,7 @@ import { FileValidator } from '../utils/file-validator';
 import { withRetry } from '../errors/retry-handler';
 import { E2BSandboxError, E2BErrorType } from '../errors';
 import { isInfrastructureFile } from '~/lib/utils/file-filtering';
+import { logger } from '~/lib/utils/logger';
 
 type E2BWriteEntry = {
   path: string;
@@ -80,7 +81,7 @@ export class FileSync {
             : null,
       };
     } catch (error) {
-      console.error('[FileSync] Error syncing all files:', error);
+      logger.error('[FileSync] Error syncing all files:', error);
       return {
         success: false,
         data: null,
@@ -144,7 +145,7 @@ export class FileSync {
             : null,
       };
     } catch (error) {
-      console.error('[FileSync] Error syncing incremental files:', error);
+      logger.error('[FileSync] Error syncing incremental files:', error);
       return {
         success: false,
         data: null,
@@ -189,7 +190,7 @@ export class FileSync {
       });
 
       if (files.length === 0) {
-        console.log('[FileSync] No changed files to sync');
+        logger.debug('[FileSync] No changed files to sync');
         return {
           success: true,
           data: {
@@ -203,7 +204,7 @@ export class FileSync {
         };
       }
 
-      console.log(
+      logger.debug(
         `[FileSync] Found ${files.length} changed file(s) since last sync`
       );
 
@@ -214,7 +215,7 @@ export class FileSync {
         db
       );
     } catch (error) {
-      console.error('[FileSync] Error syncing changed files:', error);
+      logger.error('[FileSync] Error syncing changed files:', error);
       return {
         success: false,
         data: null,
@@ -246,7 +247,7 @@ export class FileSync {
 
     try {
       // Log files being synced for debugging
-      console.log(
+      logger.debug(
         `[FileSync] Files to sync (${filesToSync.length}/${files.length}): ${filesToSync.map((f) => f.path).join(', ')}`
       );
 
@@ -254,13 +255,13 @@ export class FileSync {
         const skippedFiles = files
           .filter((f) => isInfrastructureFile(f.path))
           .map((f) => f.path);
-        console.log(
+        logger.debug(
           `[FileSync] Skipping ${skippedFiles.length} infrastructure file(s) - will be generated fresh: ${skippedFiles.join(', ')}`
         );
       }
 
       if (filesToSync.length === 0) {
-        console.log(
+        logger.debug(
           '[FileSync] No application files to sync (only infrastructure files)'
         );
         return {
@@ -287,7 +288,7 @@ export class FileSync {
 
       if (directories.size > 0) {
         const dirsArray = Array.from(directories);
-        console.log(
+        logger.debug(
           `[FileSync] Creating ${directories.size} subdirector${directories.size === 1 ? 'y' : 'ies'}: ${dirsArray.join(', ')}`
         );
         // Create all directories in one command for efficiency
@@ -304,11 +305,11 @@ export class FileSync {
 
       syncedPaths.push(...filesToSync.map((f) => f.path));
 
-      console.log(
+      logger.debug(
         `[FileSync] Successfully synced ${filesToSync.length} file(s) to sandbox`
       );
     } catch (error) {
-      console.error(
+      logger.error(
         '[FileSync] Batch upload failed, falling back to individual uploads:',
         error
       );
@@ -334,7 +335,7 @@ export class FileSync {
 
           syncedPaths.push(file.path);
         } catch (fileError) {
-          console.error(
+          logger.error(
             `[FileSync] Failed to upload file ${file.path}:`,
             fileError
           );
@@ -387,7 +388,7 @@ export class FileSync {
       });
 
       if (!sandbox) {
-        console.warn('[FileSync] Sandbox not found, skipping metadata update');
+        logger.warn('[FileSync] Sandbox not found, skipping metadata update');
         return;
       }
 
@@ -413,9 +414,9 @@ export class FileSync {
         },
       });
 
-      console.log('[FileSync] Updated sync metadata in database');
+      logger.debug('[FileSync] Updated sync metadata in database');
     } catch (error) {
-      console.error('[FileSync] Failed to update sync metadata:', error);
+      logger.error('[FileSync] Failed to update sync metadata:', error);
     }
   }
 }

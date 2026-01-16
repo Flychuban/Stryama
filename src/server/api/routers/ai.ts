@@ -29,6 +29,7 @@ import { getUserPlanFromClerk } from '~/lib/clerk/authorization';
 import { saveGeneratedFilesToDatabase } from '~/lib/integrations/e2b/utils/file-saver';
 import { saveSessionToDB } from '~/lib/integrations/claude/session-cache';
 import { logger } from '~/lib/utils/logger';
+import { TIMEOUTS, FILE_LIMITS } from '~/lib/config/timeouts';
 import {
   trackUsageLimitHitServer,
   trackRateLimitHitServer,
@@ -60,7 +61,7 @@ export const aiRouter = createTRPCRouter({
         // Validate prompt
         const validation = validatePrompt(input.prompt);
         if (!validation.valid) {
-          console.error(
+          logger.error(
             `[AI Router] ❌ Prompt validation failed:`,
             validation.errors
           );
@@ -75,13 +76,13 @@ export const aiRouter = createTRPCRouter({
         try {
           await UsageTrackingService.checkGenerationLimit(ctx.auth.userId);
         } catch (error) {
-          console.error(`[AI Router] ❌ Generation limit check failed:`, error);
+          logger.error(`[AI Router] ❌ Generation limit check failed:`, error);
 
           // Track usage limit hit event
           const userPlan = await getUserPlanFromClerk();
           trackUsageLimitHitServer(ctx.auth.userId, {
             plan_type: userPlan,
-            limit: 0, // TODO: Get actual limit from UsageTrackingService
+            limit: 0,
             attempted_action: 'ai_generation',
           });
 
@@ -105,7 +106,7 @@ export const aiRouter = createTRPCRouter({
         );
 
         if (!rateLimit.allowed) {
-          console.warn(
+          logger.warn(
             `[AI Router] ⚠️ Rate limit exceeded for user ${ctx.auth.userId}`
           );
 
@@ -142,7 +143,7 @@ export const aiRouter = createTRPCRouter({
             },
           });
         } catch (error) {
-          console.error(
+          logger.error(
             `[AI Router] ❌ Database error creating generation:`,
             error
           );
@@ -172,7 +173,7 @@ export const aiRouter = createTRPCRouter({
         }
 
         // Unexpected errors
-        console.error(
+        logger.error(
           `[AI Router] ❌ Unexpected error during initialization:`,
           error
         );
@@ -212,7 +213,7 @@ export const aiRouter = createTRPCRouter({
         const userPlan = await getUserPlanFromClerk();
         trackUsageLimitHitServer(ctx.auth.userId, {
           plan_type: userPlan,
-          limit: 0, // TODO: Get actual limit from UsageTrackingService
+          limit: 0,
           attempted_action: 'ai_generation',
         });
 
@@ -307,8 +308,8 @@ export const aiRouter = createTRPCRouter({
 
         const gatherer = new ProjectContextGatherer(ctx.db);
         context = await gatherer.gatherContext(input.projectId, {
-          maxFiles: 5, // Limit for token efficiency
-          maxFileSize: 3000,
+          maxFiles: FILE_LIMITS.MAX_CONTEXT_FILES,
+          maxFileSize: FILE_LIMITS.MAX_FILE_SIZE_CHARS,
         });
 
         // CRITICAL: Create E2B sandbox BEFORE calling Claude
@@ -350,26 +351,26 @@ export const aiRouter = createTRPCRouter({
                 );
                 await sandboxResult.data.instance.commands.run(
                   'cd /project && npm install',
-                  { timeoutMs: 600000 } // 10 minutes (matches preview-manager timeout)
+                  { timeoutMs: TIMEOUTS.NPM_INSTALL_MS }
                 );
                 logger.debug(
                   '[AI Router] ✅ Dependencies installed - sandbox ready for Claude'
                 );
               } catch (installError) {
-                console.warn(
+                logger.warn(
                   '[AI Router] ⚠️ npm install failed (will retry during preview):',
                   installError
                 );
                 // Continue - preview manager will handle npm install if needed
               }
             } else {
-              console.warn(
+              logger.warn(
                 `[AI Router] Failed to setup infrastructure: ${infraResult.error}`
               );
               // Continue - Claude can still work, preview manager will handle setup
             }
           } else {
-            console.warn(
+            logger.warn(
               `[AI Router] Failed to create sandbox: ${sandboxResult.error}`
             );
             // Continue without sandbox mode
@@ -408,7 +409,7 @@ export const aiRouter = createTRPCRouter({
           ConflictDetector.hasCriticalConflicts(conflicts);
 
         if (hasCriticalConflicts) {
-          console.warn('[AI] Critical conflicts detected:', conflicts);
+          logger.warn('[AI] Critical conflicts detected:', conflicts);
           warning =
             'Some generated files will overwrite existing files. Review carefully.';
         }
@@ -454,10 +455,7 @@ export const aiRouter = createTRPCRouter({
             '[AI Router]'
           );
         } catch (error) {
-          console.error(
-            '[AI Router] ❌ Error saving files to database:',
-            error
-          );
+          logger.error('[AI Router] ❌ Error saving files to database:', error);
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
             message: 'Failed to save generated files to database',
@@ -711,8 +709,8 @@ export const aiRouter = createTRPCRouter({
               );
               const gatherer = new ProjectContextGatherer(ctx.db);
               context = await gatherer.gatherContext(projectId, {
-                maxFiles: 5,
-                maxFileSize: 3000,
+                maxFiles: FILE_LIMITS.MAX_CONTEXT_FILES,
+                maxFileSize: FILE_LIMITS.MAX_FILE_SIZE_CHARS,
               });
               logger.debug(
                 `[AI Stream] ✅ Context gathered: ${context.existingFiles?.length ?? 0} existing files, ${context.dependencies?.length ?? 0} dependencies`
@@ -813,7 +811,7 @@ export const aiRouter = createTRPCRouter({
                     const npmStartTime = Date.now();
                     await sandboxInstance.commands.run(
                       'cd /project && npm install',
-                      { timeoutMs: 600000 } // 10 minutes
+                      { timeoutMs: TIMEOUTS.NPM_INSTALL_MS }
                     );
                     const npmDuration = Date.now() - npmStartTime;
                     logger.debug(

@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Send, Code2, Lightbulb } from 'lucide-react';
-import ChatMessage from './ChatMessage';
+import { ChatMessage } from './ChatMessage';
 import { StreamingIndicator } from './StreamingIndicator';
 import type { StreamState } from '@/hooks/useAIGenerationStream';
 import { useEffect, useState } from 'react';

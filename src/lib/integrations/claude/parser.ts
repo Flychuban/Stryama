@@ -1,5 +1,6 @@
 import { ProgrammingLanguage } from './types';
 import type { GeneratedFile } from './types';
+import { logger } from '~/lib/utils/logger';
 
 export type ParsedCodeBlock = {
   readonly language: string;
@@ -203,14 +204,14 @@ export class CodeParser {
       const validation = this.validateSecurity(block.content);
 
       if (!validation.safe) {
-        console.warn(
+        logger.warn(
           `[Parser] Skipping potentially dangerous code block at index ${index}`
         );
         return; // Skip this block
       }
 
       if (validation.warnings.length > 0) {
-        console.warn(
+        logger.warn(
           `[Parser] Security warnings for block ${index}:`,
           validation.warnings
         );

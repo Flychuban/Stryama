@@ -5,12 +5,12 @@ import { Button } from '@/components/ui/button';
 import { FileCode, Copy, Check } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
-type CodeViewProps = {
+interface CodeViewProps {
   code: string;
   filename?: string;
-};
+}
 
-const CodeView = ({ code, filename = 'component.tsx' }: CodeViewProps) => {
+export function CodeView({ code, filename = 'component.tsx' }: CodeViewProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -21,7 +21,6 @@ const CodeView = ({ code, filename = 'component.tsx' }: CodeViewProps) => {
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-background to-muted/20 shadow-xl">
-      {/* Header */}
       <div className="flex items-center justify-between border-b border-border/50 bg-muted/40 px-5 py-3.5 backdrop-blur-sm">
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-primary/20 bg-gradient-to-br from-primary/20 to-accent/10">
@@ -51,7 +50,6 @@ const CodeView = ({ code, filename = 'component.tsx' }: CodeViewProps) => {
         </Button>
       </div>
 
-      {/* Code Content */}
       <ScrollArea className="flex-1 bg-background/40">
         <pre className="p-6 font-mono text-sm leading-relaxed">
           <code className="text-foreground/90">{code}</code>
@@ -59,6 +57,4 @@ const CodeView = ({ code, filename = 'component.tsx' }: CodeViewProps) => {
       </ScrollArea>
     </div>
   );
-};
-
-export default CodeView;
+}

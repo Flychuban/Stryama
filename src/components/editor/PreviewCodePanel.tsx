@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Code2, Monitor, AlertCircle, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import CodeView from './CodeView';
+import { CodeView } from './CodeView';
 import type { DeviceMode, ViewMode } from './ControlBar';
 import type { RefObject } from 'react';
 import type { StreamState } from '~/hooks/useAIGenerationStream';

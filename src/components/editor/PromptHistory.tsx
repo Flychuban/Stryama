@@ -1,9 +1,9 @@
 import { Clock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
-type PromptHistoryProps = {
+interface PromptHistoryProps {
   onSelectPrompt: (prompt: string) => void;
-};
+}
 
 const mockHistory = [
   {
@@ -23,7 +23,7 @@ const mockHistory = [
   },
 ];
 
-const PromptHistory = ({ onSelectPrompt }: PromptHistoryProps) => {
+export function PromptHistory({ onSelectPrompt }: PromptHistoryProps) {
   if (mockHistory.length === 0) {
     return (
       <div className="p-8 text-center text-muted-foreground">
@@ -52,6 +52,4 @@ const PromptHistory = ({ onSelectPrompt }: PromptHistoryProps) => {
       ))}
     </div>
   );
-};
-
-export default PromptHistory;
+}
