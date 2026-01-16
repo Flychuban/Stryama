@@ -11,9 +11,6 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Log the error to console for debugging
-    console.error('Global error:', error);
-
     // Capture error in Sentry
     Sentry.captureException(error, {
       tags: { errorBoundary: 'global-error' },
@@ -50,7 +47,6 @@ export default function GlobalError({
                 '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
             }}
           >
-            {/* Error Icon - Using SVG directly to avoid client-side imports */}
             <div
               style={{
                 display: 'inline-flex',
@@ -80,7 +76,6 @@ export default function GlobalError({
               </svg>
             </div>
 
-            {/* Error Title */}
             <h1
               style={{
                 fontSize: '2.25rem',
@@ -92,7 +87,6 @@ export default function GlobalError({
               Critical Error
             </h1>
 
-            {/* Error Message */}
             <p
               style={{
                 fontSize: '1.125rem',
@@ -105,7 +99,6 @@ export default function GlobalError({
                 : 'Something went wrong. Our team has been notified.'}
             </p>
 
-            {/* Error Digest (for support) */}
             {error.digest && (
               <p
                 style={{
@@ -118,7 +111,6 @@ export default function GlobalError({
               </p>
             )}
 
-            {/* Try Again Button */}
             <button
               onClick={() => reset()}
               style={{
@@ -146,7 +138,6 @@ export default function GlobalError({
               Try Again
             </button>
 
-            {/* Additional Help Text */}
             <p
               style={{
                 fontSize: '0.875rem',

@@ -25,43 +25,25 @@ export default function SignInPage() {
               elements: {
                 rootBox: 'w-full',
                 card: 'shadow-none border-0 bg-transparent w-full',
-
-                // Header
                 headerTitle: 'text-3xl font-bold tracking-tight text-center',
                 headerSubtitle: 'text-muted-foreground text-center mt-2',
-
-                // Form container
                 formContainer: 'space-y-6',
                 formFieldRow: 'space-y-2',
-
-                // Form fields
                 formFieldLabel: 'text-foreground font-medium',
                 formFieldInput:
                   'h-11 border-border focus:border-primary focus:ring-primary bg-background',
                 formFieldInputShowPasswordButton:
                   'text-muted-foreground hover:text-foreground',
-
-                // Buttons
                 formButtonPrimary:
                   'w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium normal-case shadow-sm',
-
-                // Divider
                 dividerLine: 'bg-border',
                 dividerText: 'text-xs uppercase text-muted-foreground',
-
-                // Social buttons
                 socialButtonsBlockButton:
                   'h-11 border-border hover:bg-accent/5 text-foreground font-normal normal-case',
                 socialButtonsBlockButtonText: 'font-normal text-sm',
-
-                // Footer
                 footerActionText: 'text-center text-sm text-muted-foreground',
                 footerActionLink: 'text-primary hover:underline font-medium',
-
-                // Form field errors
                 formFieldErrorText: 'text-xs text-destructive',
-
-                // Internal card
                 cardBox: 'w-full shadow-none',
                 main: 'w-full',
               },

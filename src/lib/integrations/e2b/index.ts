@@ -15,7 +15,7 @@ export {
   stopPreviewServer,
   restartPreviewServer,
   getPreviewLogs,
-} from './services/preview-manager';
+} from './services/preview';
 export {
   getFrameworkType,
   getFrameworkPort,

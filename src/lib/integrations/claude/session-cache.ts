@@ -14,6 +14,7 @@
 import { readFile, writeFile, mkdir, readdir, stat } from 'fs/promises';
 import { dirname, join } from 'path';
 import type { PrismaClient } from '@prisma/client';
+import { logger } from '~/lib/utils/logger';
 
 const CLAUDE_PROJECTS_DIR = '/tmp/.claude/projects';
 const MAX_SESSION_FILE_SIZE = 10 * 1024 * 1024; // 10MB limit
@@ -49,7 +50,7 @@ async function findSessionFilePath(sessionId: string): Promise<string | null> {
       try {
         const stats = await stat(sessionPath);
         if (stats.size > MAX_SESSION_FILE_SIZE) {
-          console.warn(
+          logger.warn(
             `[Session Cache] Session file too large: ${stats.size} bytes`
           );
           continue;
@@ -62,7 +63,7 @@ async function findSessionFilePath(sessionId: string): Promise<string | null> {
 
     return null;
   } catch (error) {
-    console.error('[Session Cache] Error searching for session:', error);
+    logger.error('[Session Cache] Error searching for session:', error);
     return null;
   }
 }
@@ -96,7 +97,7 @@ export async function saveSessionToDB(
     // Check file size before reading
     const stats = await stat(sessionPath);
     if (stats.size > MAX_SESSION_FILE_SIZE) {
-      console.error(
+      logger.error(
         `[Session Cache] Session file too large: ${stats.size} bytes`
       );
       return false;
@@ -119,15 +120,12 @@ export async function saveSessionToDB(
       data: { sessionData },
     });
 
-    console.log(
+    logger.debug(
       `[Session Cache] ✅ Saved session ${sessionId} (${sessionData.length} bytes)`
     );
     return true;
   } catch (error) {
-    console.error(
-      `[Session Cache] Failed to save session ${sessionId}:`,
-      error
-    );
+    logger.error(`[Session Cache] Failed to save session ${sessionId}:`, error);
     return false;
   }
 }
@@ -155,7 +153,7 @@ export async function restoreSessionFromDB(
 
     // Verify size
     if (generation.sessionData.length > MAX_SESSION_FILE_SIZE) {
-      console.error(
+      logger.error(
         `[Session Cache] Session data too large: ${generation.sessionData.length} bytes`
       );
       return false;
@@ -165,12 +163,12 @@ export async function restoreSessionFromDB(
     await mkdir(dirname(sessionPath), { recursive: true });
     await writeFile(sessionPath, generation.sessionData, 'utf-8');
 
-    console.log(
+    logger.debug(
       `[Session Cache] ✅ Restored session ${sessionId} (${generation.sessionData.length} bytes)`
     );
     return true;
   } catch (error) {
-    console.error(
+    logger.error(
       `[Session Cache] Failed to restore session ${sessionId}:`,
       error
     );
@@ -192,7 +190,7 @@ export async function clearSessionFromDB(
     });
     return true;
   } catch (error) {
-    console.error(
+    logger.error(
       `[Session Cache] Failed to clear session ${sessionId}:`,
       error
     );
@@ -216,7 +214,7 @@ export async function hasSessionInDB(
     });
     return count > 0;
   } catch (error) {
-    console.error(
+    logger.error(
       `[Session Cache] Failed to check session ${sessionId}:`,
       error
     );
@@ -237,7 +235,7 @@ export async function verifySessionFileExists(
     const sessionPath = await findSessionFilePath(sessionId);
 
     if (!sessionPath) {
-      console.log(
+      logger.debug(
         `[Session Cache] ❌ Session file NOT found for ${sessionId} (process ${processId})`
       );
       return { exists: false, path: null, processId };
@@ -246,19 +244,19 @@ export async function verifySessionFileExists(
     // Verify the file is actually readable
     try {
       const stats = await stat(sessionPath);
-      console.log(
+      logger.debug(
         `[Session Cache] ✅ Session file verified: ${sessionPath} (${stats.size} bytes, process ${processId})`
       );
       return { exists: true, path: sessionPath, processId };
     } catch (error) {
-      console.error(
+      logger.error(
         `[Session Cache] ❌ Session file found but not readable: ${sessionPath} (process ${processId})`,
         error
       );
       return { exists: false, path: sessionPath, processId };
     }
   } catch (error) {
-    console.error(
+    logger.error(
       `[Session Cache] Error verifying session ${sessionId} (process ${processId}):`,
       error
     );

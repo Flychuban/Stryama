@@ -30,7 +30,7 @@ async function getSandbox(
       logger.debug(`[E2B Tools] ✅ Cached sandbox is valid`);
       return cachedInstance;
     } catch (error) {
-      console.error(`[E2B Tools] ❌ Cached sandbox is dead:`, error);
+      logger.error(`[E2B Tools] ❌ Cached sandbox is dead:`, error);
       // Fall through to resume
     }
   }
@@ -45,7 +45,7 @@ async function getSandbox(
       result.error?.includes('404') ||
       result.error?.includes("doesn't exist")
     ) {
-      console.error(
+      logger.error(
         `[E2B Tools] ❌ Sandbox ${sandboxId} is dead (404), marking as STOPPED`
       );
       try {
@@ -54,7 +54,7 @@ async function getSandbox(
           data: { status: 'STOPPED' },
         });
       } catch (dbError) {
-        console.error(`[E2B Tools] Failed to update sandbox status:`, dbError);
+        logger.error(`[E2B Tools] Failed to update sandbox status:`, dbError);
       }
     }
     throw new Error(
@@ -112,7 +112,7 @@ export function createE2BTools(db: PrismaClient) {
           ],
         };
       } catch (error) {
-        console.error(`[E2B Tool] ❌ Error writing file:`, error);
+        logger.error(`[E2B Tool] ❌ Error writing file:`, error);
         return {
           content: [
             {
@@ -163,7 +163,7 @@ export function createE2BTools(db: PrismaClient) {
           ],
         };
       } catch (error) {
-        console.error(`[E2B Tool] ❌ Error reading file:`, error);
+        logger.error(`[E2B Tool] ❌ Error reading file:`, error);
         return {
           content: [
             {
@@ -243,7 +243,7 @@ export function createE2BTools(db: PrismaClient) {
                 `[E2B Tool] ✅ Stored dev server metadata in database (PID: ${pid})`
               );
             } catch (dbError) {
-              console.error(
+              logger.error(
                 `[E2B Tool] ⚠️ Failed to store dev server metadata:`,
                 dbError
               );
@@ -285,7 +285,7 @@ export function createE2BTools(db: PrismaClient) {
           isError: process.exitCode !== 0,
         };
       } catch (error) {
-        console.error(`[E2B Tool] ❌ Error executing command:`, error);
+        logger.error(`[E2B Tool] ❌ Error executing command:`, error);
         return {
           content: [
             {
@@ -334,7 +334,7 @@ export function createE2BTools(db: PrismaClient) {
           ],
         };
       } catch (error) {
-        console.error(`[E2B Tool] ❌ Error listing directory:`, error);
+        logger.error(`[E2B Tool] ❌ Error listing directory:`, error);
         return {
           content: [
             {
@@ -377,7 +377,7 @@ export function createE2BTools(db: PrismaClient) {
             `[E2B Tool] ✅ Sandbox validated - E2B ID: ${sandboxInfo.sandboxId}`
           );
         } catch (validationError) {
-          console.error(
+          logger.error(
             `[E2B Tool] ❌ Sandbox validation failed:`,
             validationError
           );
@@ -406,7 +406,7 @@ export function createE2BTools(db: PrismaClient) {
           ],
         };
       } catch (error) {
-        console.error(`[E2B Tool] ❌ Error getting preview URL:`, error);
+        logger.error(`[E2B Tool] ❌ Error getting preview URL:`, error);
         return {
           content: [
             {

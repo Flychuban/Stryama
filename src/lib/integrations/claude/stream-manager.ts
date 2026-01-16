@@ -18,6 +18,31 @@ type BetaRawMessageStreamEvent = Extract<
   { type: string }
 >;
 
+interface AssistantMessageContent {
+  type: string;
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: unknown;
+}
+
+interface ToolResultContent {
+  type: 'tool_result';
+  tool_use_id: string;
+  is_error?: boolean;
+  content?: unknown;
+}
+
+interface ResultMessage {
+  subtype: string;
+  result?: string;
+  session_id?: string;
+  usage?: { input_tokens: number; output_tokens: number };
+  total_cost_usd?: number;
+  duration_ms?: number;
+  num_turns?: number;
+}
+
 /**
  * Processes SDK messages and yields structured stream events
  */
@@ -70,15 +95,7 @@ export async function* processSDKStream(
       // Handle assistant messages (full messages, not streaming)
       if (message.type === 'assistant' && 'message' in message) {
         const assistantMsg = message as {
-          message: {
-            content: Array<{
-              type: string;
-              text?: string;
-              id?: string;
-              name?: string;
-              input?: unknown;
-            }>;
-          };
+          message: { content: AssistantMessageContent[] };
         };
 
         // Extract content
@@ -127,12 +144,7 @@ export async function* processSDKStream(
               'tool_use_id' in item &&
               typeof (item as { tool_use_id: unknown }).tool_use_id === 'string'
             ) {
-              const content = item as {
-                type: 'tool_result';
-                tool_use_id: string;
-                is_error?: boolean;
-                content?: unknown;
-              };
+              const content = item as ToolResultContent;
 
               const toolInfo = currentToolUses.get(content.tool_use_id);
               const isError = content.is_error ?? false;
@@ -160,15 +172,7 @@ export async function* processSDKStream(
 
       // Handle result messages
       if (message.type === 'result' && 'subtype' in message) {
-        const resultMsg = message as unknown as {
-          subtype: string;
-          result?: string;
-          session_id?: string;
-          usage?: { input_tokens: number; output_tokens: number };
-          total_cost_usd?: number;
-          duration_ms?: number;
-          num_turns?: number;
-        };
+        const resultMsg = message as unknown as ResultMessage;
 
         if (
           resultMsg.subtype === 'success' &&

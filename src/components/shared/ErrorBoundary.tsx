@@ -7,15 +7,15 @@ import { Component, type ReactNode } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 
-type ErrorBoundaryProps = {
+interface ErrorBoundaryProps {
   children: ReactNode;
   fallback?: (error: Error, resetError: () => void) => ReactNode;
-};
+}
 
-type ErrorBoundaryState = {
+interface ErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
-};
+}
 
 export class ErrorBoundary extends Component<
   ErrorBoundaryProps,
@@ -30,8 +30,9 @@ export class ErrorBoundary extends Component<
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
-    console.error('Error caught by boundary:', error, errorInfo);
+  componentDidCatch(_error: Error, _errorInfo: React.ErrorInfo): void {
+    // Error is already captured in getDerivedStateFromError
+    // Sentry handles error reporting
   }
 
   resetError = (): void => {

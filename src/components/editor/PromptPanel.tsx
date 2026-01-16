@@ -13,23 +13,23 @@ import {
 
 // 6. Local components
 import ExamplePrompts from './ExamplePrompts';
-import PromptHistory from './PromptHistory';
+import { PromptHistory } from './PromptHistory';
 
-type PromptPanelProps = {
+interface PromptPanelProps {
   prompt: string;
   onPromptChange: (value: string) => void;
   onGenerate: () => void;
   isLoading: boolean;
-};
+}
 
 const MAX_CHARS = 50000;
 
-const PromptPanel = ({
+export function PromptPanel({
   prompt,
   onPromptChange,
   onGenerate,
   isLoading,
-}: PromptPanelProps) => {
+}: PromptPanelProps) {
   const [showExamples, setShowExamples] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -38,7 +38,6 @@ const PromptPanel = ({
 
   return (
     <div className="flex w-full flex-col border-r border-border/50 bg-background/40 backdrop-blur-sm lg:w-1/2">
-      {/* Header */}
       <div className="border-b border-border/50 bg-background/60 p-6 backdrop-blur-md">
         <h1 className="animate-gradient-shift bg-gradient-to-r from-primary via-accent to-primary bg-[length:200%_auto] bg-clip-text text-3xl font-bold text-transparent">
           What do you want to build?
@@ -48,9 +47,7 @@ const PromptPanel = ({
         </p>
       </div>
 
-      {/* Main Content */}
       <div className="flex-1 overflow-y-auto p-6">
-        {/* Textarea */}
         <div className="group relative">
           <Textarea
             value={prompt}
@@ -69,7 +66,6 @@ const PromptPanel = ({
           </div>
         </div>
 
-        {/* Action Buttons */}
         <div className="mt-4 flex gap-3">
           <Button
             variant="outline"
@@ -82,7 +78,6 @@ const PromptPanel = ({
           </Button>
         </div>
 
-        {/* Generate Button */}
         <Button
           onClick={onGenerate}
           disabled={!prompt.trim() || isOverLimit || isLoading}
@@ -104,7 +99,6 @@ const PromptPanel = ({
           <div className="absolute inset-0 bg-gradient-to-r from-accent to-primary opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
         </Button>
 
-        {/* History Section */}
         <Collapsible
           open={historyOpen}
           onOpenChange={setHistoryOpen}
@@ -125,7 +119,6 @@ const PromptPanel = ({
         </Collapsible>
       </div>
 
-      {/* Example Prompts Dialog */}
       <ExamplePrompts
         open={showExamples}
         onOpenChange={setShowExamples}
@@ -136,6 +129,4 @@ const PromptPanel = ({
       />
     </div>
   );
-};
-
-export default PromptPanel;
+}

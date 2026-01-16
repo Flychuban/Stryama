@@ -6,6 +6,8 @@
  * during preview regeneration and should not be stored in the database.
  */
 
+import { logger } from '~/lib/utils/logger';
+
 /**
  * File object structure returned from sandbox
  */
@@ -119,8 +121,8 @@ export type FileFilterResult = {
  * @example
  * ```typescript
  * const result = filterApplicationFiles(allFiles);
- * console.log(`Saving ${result.filesToSave.length} files`);
- * console.log(`Skipped ${result.skippedFiles.length} infrastructure files`);
+ * logger.debug(`Saving ${result.filesToSave.length} files`);
+ * logger.debug(`Skipped ${result.skippedFiles.length} infrastructure files`);
  * ```
  */
 export function filterApplicationFiles(files: SandboxFile[]): FileFilterResult {
@@ -155,17 +157,17 @@ export function logFilteringResults(
   result: FileFilterResult,
   logPrefix: string
 ): void {
-  console.log(
+  logger.debug(
     `${logPrefix} ✅ Found ${allFiles.length} files in sandbox, filtered out ${result.filteredCount} infrastructure file(s)`
   );
 
-  console.log(
+  logger.debug(
     `${logPrefix} 📁 Saving ${result.filesToSave.length} application files to database:`,
     result.filesToSave.map((f) => f.path)
   );
 
   if (result.filteredCount > 0) {
-    console.log(
+    logger.debug(
       `${logPrefix} 🚫 Skipped infrastructure files (will be generated fresh):`,
       result.skippedFiles.map((f) => f.path)
     );

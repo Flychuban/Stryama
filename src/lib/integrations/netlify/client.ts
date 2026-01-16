@@ -203,6 +203,9 @@ class NetlifyClient {
   async deploySite(siteId: string, zipBuffer: Buffer): Promise<NetlifyDeploy> {
     const url = `${NETLIFY_CONFIG.apiUrl}/sites/${siteId}/deploys`;
 
+    // Convert Buffer to Uint8Array for proper BodyInit compatibility
+    const body = new Uint8Array(zipBuffer);
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -210,7 +213,7 @@ class NetlifyClient {
         'Content-Type': 'application/zip',
         'User-Agent': NETLIFY_CONFIG.userAgent,
       },
-      body: zipBuffer as unknown as BodyInit,
+      body,
     });
 
     if (!response.ok) {

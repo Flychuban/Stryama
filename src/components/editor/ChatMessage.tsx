@@ -2,14 +2,19 @@ import { User, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MarkdownRenderer } from './MarkdownRenderer';
 
-type ChatMessageProps = {
+interface ChatMessageProps {
   role: 'user' | 'assistant';
   content: string;
   thinking?: string[];
   files?: string[];
-};
+}
 
-const ChatMessage = ({ role, content, thinking, files }: ChatMessageProps) => {
+export function ChatMessage({
+  role,
+  content,
+  thinking,
+  files,
+}: ChatMessageProps) {
   const isUser = role === 'user';
 
   return (
@@ -21,7 +26,6 @@ const ChatMessage = ({ role, content, thinking, files }: ChatMessageProps) => {
           : 'border border-transparent bg-gradient-to-br from-primary/[0.03] to-accent/[0.02] hover:border-primary/10'
       )}
     >
-      {/* Avatar */}
       <div
         className={cn(
           'flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl transition-all duration-300',
@@ -37,9 +41,7 @@ const ChatMessage = ({ role, content, thinking, files }: ChatMessageProps) => {
         )}
       </div>
 
-      {/* Content */}
       <div className="min-w-0 flex-1 space-y-4">
-        {/* Thinking Process */}
         {thinking && thinking.length > 0 && (
           <div className="space-y-2.5 py-2">
             {thinking.map((step, i) => (
@@ -57,7 +59,6 @@ const ChatMessage = ({ role, content, thinking, files }: ChatMessageProps) => {
           </div>
         )}
 
-        {/* Files */}
         {files && files.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {files.map((file, i) => (
@@ -71,7 +72,6 @@ const ChatMessage = ({ role, content, thinking, files }: ChatMessageProps) => {
           </div>
         )}
 
-        {/* Message Content */}
         {isUser ? (
           <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
             {content}
@@ -85,6 +85,4 @@ const ChatMessage = ({ role, content, thinking, files }: ChatMessageProps) => {
       </div>
     </div>
   );
-};
-
-export default ChatMessage;
+}

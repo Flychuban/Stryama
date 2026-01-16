@@ -1,6 +1,7 @@
 import { ClaudeErrorType } from '../types';
 import { ClaudeGenerationError } from '../errors';
 import type { ServiceResult } from '../types';
+import { logger } from '~/lib/utils/logger';
 
 type RetryConfig = {
   readonly maxAttempts: number;
@@ -35,7 +36,7 @@ export class RetryHandler {
 
     for (let attempt = 0; attempt < this.config.maxAttempts; attempt++) {
       try {
-        console.log(
+        logger.debug(
           `[Retry] ${operationName} - Attempt ${attempt + 1}/${this.config.maxAttempts}`
         );
 
@@ -43,7 +44,7 @@ export class RetryHandler {
 
         if (result.success) {
           if (attempt > 0) {
-            console.log(
+            logger.debug(
               `[Retry] ${operationName} succeeded on attempt ${attempt + 1}`
             );
           }
@@ -56,19 +57,19 @@ export class RetryHandler {
 
         const errorType = this.classifyErrorFromMessage(result.error);
         if (!this.isRetryable(errorType)) {
-          console.log(
+          logger.debug(
             `[Retry] ${operationName} - Non-retryable error: ${errorType}`
           );
           return result;
         }
 
         if (attempt === this.config.maxAttempts - 1) {
-          console.error(`[Retry] ${operationName} - Max attempts reached`);
+          logger.error(`[Retry] ${operationName} - Max attempts reached`);
           return result;
         }
 
         const delay = this.calculateDelay(attempt);
-        console.log(
+        logger.debug(
           `[Retry] ${operationName} - Waiting ${delay}ms before retry`
         );
         await this.sleep(delay);
@@ -86,7 +87,7 @@ export class RetryHandler {
         }
 
         const delay = this.calculateDelay(attempt);
-        console.log(
+        logger.debug(
           `[Retry] ${operationName} - Error: ${lastError.message}. Retrying in ${delay}ms`
         );
         await this.sleep(delay);

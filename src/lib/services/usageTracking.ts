@@ -17,7 +17,7 @@ export class UsageTrackingService {
 
     // Get current plan from Clerk session (source of truth)
     const clerkPlan = await getUserPlanFromClerk();
-    const limits = PLAN_LIMITS[clerkPlan as UserPlan];
+    const limits = PLAN_LIMITS[clerkPlan];
 
     // Check if billing period has reset
     if (new Date() > usage.currentPeriodEnd) {
@@ -53,7 +53,7 @@ export class UsageTrackingService {
   static async checkProjectLimit(userId: string): Promise<void> {
     // Get current plan from Clerk session (source of truth)
     const clerkPlan = await getUserPlanFromClerk();
-    const limits = PLAN_LIMITS[clerkPlan as UserPlan];
+    const limits = PLAN_LIMITS[clerkPlan];
 
     // Count active projects
     const projectCount = await db.project.count({
@@ -145,7 +145,7 @@ export class UsageTrackingService {
 
     // Get plan from Clerk session (source of truth for authorization)
     const clerkPlan = await getUserPlanFromClerk();
-    const limits = PLAN_LIMITS[clerkPlan as UserPlan];
+    const limits = PLAN_LIMITS[clerkPlan];
 
     const projectCount = await db.project.count({
       where: { clerkUserId: userId },
@@ -178,7 +178,7 @@ export class UsageTrackingService {
   static async getSandboxLimits(_userId: string) {
     // Get current plan from Clerk session (source of truth)
     const clerkPlan = await getUserPlanFromClerk();
-    const limits = PLAN_LIMITS[clerkPlan as UserPlan];
+    const limits = PLAN_LIMITS[clerkPlan];
 
     return {
       concurrent: limits.e2bConcurrent,

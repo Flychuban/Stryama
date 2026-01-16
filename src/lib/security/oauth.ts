@@ -9,6 +9,7 @@
 
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { db } from '~/server/db';
+import { logger } from '~/lib/utils/logger';
 
 /**
  * Allowed return URLs for OAuth redirect
@@ -61,13 +62,13 @@ export function validateReturnUrl(url: string | null): string {
       url.startsWith('https://') ||
       url.startsWith('//')
     ) {
-      console.warn('[OAuth Security] Rejected absolute URL in returnUrl:', url);
+      logger.warn('[OAuth Security] Rejected absolute URL in returnUrl:', url);
       return defaultPath;
     }
 
     // Must start with /
     if (!url.startsWith('/')) {
-      console.warn('[OAuth Security] Rejected non-path returnUrl:', url);
+      logger.warn('[OAuth Security] Rejected non-path returnUrl:', url);
       return defaultPath;
     }
 
@@ -80,7 +81,7 @@ export function validateReturnUrl(url: string | null): string {
     );
 
     if (!isAllowed) {
-      console.warn(
+      logger.warn(
         '[OAuth Security] Rejected disallowed returnUrl path:',
         basePath
       );
@@ -89,7 +90,7 @@ export function validateReturnUrl(url: string | null): string {
 
     return url;
   } catch (error) {
-    console.error('[OAuth Security] Error validating returnUrl:', error);
+    logger.error('[OAuth Security] Error validating returnUrl:', error);
     return defaultPath;
   }
 }
@@ -218,13 +219,13 @@ export async function validateOAuthState(
       sigBuffer.length !== expectedSigBuffer.length ||
       !timingSafeEqual(sigBuffer, expectedSigBuffer)
     ) {
-      console.warn('[OAuth Security] Invalid state signature');
+      logger.warn('[OAuth Security] Invalid state signature');
       return null;
     }
 
     // Check expiration
     if (Date.now() > data.exp) {
-      console.warn('[OAuth Security] State token expired');
+      logger.warn('[OAuth Security] State token expired');
       // Clean up expired nonce from database
       await db.oAuthState.deleteMany({
         where: { nonce: data.nonce },
@@ -238,8 +239,8 @@ export async function validateOAuthState(
     });
 
     if (!storedState) {
-      console.warn('[OAuth Security] Nonce not found in database');
-      console.warn(
+      logger.warn('[OAuth Security] Nonce not found in database');
+      logger.warn(
         '[OAuth Security] Requested nonce:',
         data.nonce.substring(0, 16) + '...'
       );
@@ -247,9 +248,9 @@ export async function validateOAuthState(
     }
 
     if (storedState.userId !== data.userId) {
-      console.warn('[OAuth Security] Nonce userId mismatch');
-      console.warn('[OAuth Security] Expected userId:', data.userId);
-      console.warn('[OAuth Security] Stored userId:', storedState.userId);
+      logger.warn('[OAuth Security] Nonce userId mismatch');
+      logger.warn('[OAuth Security] Expected userId:', data.userId);
+      logger.warn('[OAuth Security] Stored userId:', storedState.userId);
       return null;
     }
 
@@ -272,7 +273,7 @@ export async function validateOAuthState(
 
     return data;
   } catch (error) {
-    console.error('[OAuth Security] Error validating state:', error);
+    logger.error('[OAuth Security] Error validating state:', error);
     return null;
   }
 }
@@ -292,7 +293,7 @@ function getOAuthSecret(): string {
     }
 
     // Development fallback (not secure, but prevents errors in local dev)
-    console.warn(
+    logger.warn(
       '[OAuth Security] Using default OAuth secret in development. Set OAUTH_STATE_SECRET in production!'
     );
     return 'dev-oauth-secret-change-in-production';

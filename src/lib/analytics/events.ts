@@ -1,17 +1,3 @@
-/**
- * PostHog Analytics Event Types and Constants
- *
- * This file defines all analytics events tracked in the application.
- * Events are organized by priority (P0, P1, P2) based on business value.
- */
-
-// ============================================================================
-// P0 Events - Critical Launch Metrics
-// ============================================================================
-
-/**
- * Authentication & Onboarding Events
- */
 export const AuthEvents = {
   USER_SIGNED_UP: 'user_signed_up',
   USER_SIGNED_IN: 'user_signed_in',
@@ -32,9 +18,6 @@ export interface UserSignedOutProps {
   session_duration_minutes: number;
 }
 
-/**
- * AI Generation Events
- */
 export const AIGenerationEvents = {
   AI_GENERATION_STARTED: 'ai_generation_started',
   AI_GENERATION_COMPLETED: 'ai_generation_completed',
@@ -76,9 +59,6 @@ export interface AIGenerationFailedProps {
   project_id?: string;
 }
 
-/**
- * Project Management Events
- */
 export const ProjectEvents = {
   PROJECT_CREATED: 'project_created',
   PROJECT_OPENED: 'project_opened',
@@ -108,9 +88,6 @@ export interface ProjectDownloadedProps {
   time_from_last_generation_seconds: number;
 }
 
-/**
- * GitHub Integration Events
- */
 export const GitHubEvents = {
   GITHUB_CONNECTED: 'github_connected',
   GITHUB_DISCONNECTED: 'github_disconnected',
@@ -147,13 +124,6 @@ export interface GitHubExportFailedProps {
   repo_full_name?: string;
 }
 
-// ============================================================================
-// P1 Events - Important Product Insights
-// ============================================================================
-
-/**
- * Editor Interaction Events
- */
 export const EditorEvents = {
   EDITOR_OPENED: 'editor_opened',
   EXAMPLE_PROMPT_CLICKED: 'example_prompt_clicked',
@@ -192,9 +162,6 @@ export interface CodeFileViewedProps {
   is_first_view: boolean;
 }
 
-/**
- * Preview & Sandbox Events
- */
 export const PreviewEvents = {
   PREVIEW_LOADED_SUCCESSFULLY: 'preview_loaded_successfully',
   PREVIEW_REGENERATED: 'preview_regenerated',
@@ -227,9 +194,6 @@ export interface PreviewFailedProps {
   project_id?: string;
 }
 
-/**
- * Usage & Limit Events
- */
 export const UsageLimitEvents = {
   USAGE_LIMIT_APPROACHED: 'usage_limit_approached',
   USAGE_LIMIT_HIT: 'usage_limit_hit',
@@ -256,13 +220,6 @@ export interface RateLimitHitProps {
   retry_after_seconds: number;
 }
 
-// ============================================================================
-// P2 Events - Nice-to-Have Analytics
-// ============================================================================
-
-/**
- * Feedback Events
- */
 export const FeedbackEvents = {
   FEEDBACK_BUTTON_CLICKED: 'feedback_button_clicked',
   FEEDBACK_SUBMITTED: 'feedback_submitted',
@@ -281,10 +238,6 @@ export interface FeedbackSubmittedProps {
   project_id?: string;
 }
 
-// ============================================================================
-// User Properties
-// ============================================================================
-
 export interface UserProperties {
   email?: string;
   plan_type?: 'FREE' | 'BUILDER' | 'PRO';
@@ -293,10 +246,6 @@ export interface UserProperties {
   total_projects?: number;
   total_generations?: number;
 }
-
-// ============================================================================
-// Combined Event Types
-// ============================================================================
 
 export const P0Events = {
   ...AuthEvents,
@@ -321,8 +270,5 @@ export const AllEvents = {
   ...P2Events,
 } as const;
 
-// Type for all event names
 export type EventName = (typeof AllEvents)[keyof typeof AllEvents];
-
-// Type for P0 event names only
 export type P0EventName = (typeof P0Events)[keyof typeof P0Events];

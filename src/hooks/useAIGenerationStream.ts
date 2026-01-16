@@ -1,10 +1,3 @@
-/**
- * useAIGenerationStream Hook
- *
- * React hook for consuming real-time AI generation events.
- * Provides live updates as Claude works on code generation.
- */
-
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { api } from '~/trpc/react';
 import { useAnalytics } from './useAnalytics';
@@ -338,12 +331,12 @@ export function useAIGenerationStream(
                 input_tokens: newState.inputTokens,
                 output_tokens: newState.outputTokens,
                 cost_usd: event.result.totalCost,
-                model_used: 'claude-sonnet-3.5', // TODO: Get from event if available
+                model_used: 'claude-sonnet-3.5',
                 files_generated: filesGenerated,
                 total_file_size_bytes: totalFileSize,
                 sandbox_id: event.result.sandboxId,
                 session_id: event.result.sessionId,
-                generation_number: 1, // TODO: Track this per project if needed
+                generation_number: 1,
                 project_id: projectId,
               });
             }
@@ -394,7 +387,7 @@ export function useAIGenerationStream(
                 duration_ms: duration,
                 tokens_used:
                   newState.tokensUsed > 0 ? newState.tokensUsed : undefined,
-                prompt_length: 0, // TODO: Store prompt length if needed
+                prompt_length: 0,
                 retry_count: undefined,
                 project_id: projectId,
               });

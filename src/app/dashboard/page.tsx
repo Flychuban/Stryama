@@ -1,20 +1,15 @@
 'use client';
 
-// 1. External libraries
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Loader2, Sparkles, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
-
-// 2. Internal utilities
-import { api } from '@/trpc/react';
-import { usePromptHandoff } from '@/hooks/usePromptHandoff';
 import Link from 'next/link';
 
-// 4. UI components
-import { Button } from '@/components/ui/button';
+import { api } from '@/trpc/react';
+import { usePromptHandoff } from '@/hooks/usePromptHandoff';
 
-// 6. Local components
+import { Button } from '@/components/ui/button';
 import { ProjectGrid } from '@/components/dashboard/ProjectGrid';
 import { EmptyState } from '@/components/dashboard/EmptyState';
 import { AppHeader } from '@/components/shared/AppHeader';
@@ -225,7 +220,6 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-background">
       <AppHeader />
 
-      {/* Animated Background */}
       <div className="fixed inset-0 -z-10">
         <div className="gradient-mesh absolute inset-0 animate-gradient-shift opacity-40" />
         <div className="absolute right-0 top-0 h-[500px] w-[500px] animate-float rounded-full bg-primary/20 blur-[120px]" />
@@ -235,7 +229,6 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Page Header */}
       <header className="sticky top-16 z-30 border-b border-border/40 bg-background/60 backdrop-blur-xl">
         <div className="mx-auto flex h-auto min-h-24 max-w-7xl flex-col items-start justify-between gap-4 px-6 py-4 sm:flex-row sm:items-center sm:py-4">
           <div className="space-y-2">
@@ -298,7 +291,6 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="mx-auto max-w-7xl px-6 py-12">
         {!isLoading && transformedProjects.length === 0 ? (
           <EmptyState onCreateProject={handleNewProject} />
@@ -320,7 +312,6 @@ export default function DashboardPage() {
         isCreating={createProject.isPending}
       />
 
-      {/* Limit reached dialog */}
       {limitDialogData && (
         <LimitReachedDialog
           open={showLimitDialog}
@@ -332,7 +323,6 @@ export default function DashboardPage() {
         />
       )}
 
-      {/* Footer */}
       <AppFooter />
     </div>
   );

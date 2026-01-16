@@ -1,5 +1,6 @@
 import { auth } from '@clerk/nextjs/server';
 import { type UserPlan } from '@prisma/client';
+import { logger } from '~/lib/utils/logger';
 
 /**
  * Authorization helper for Clerk Billing (B2C User Plans)
@@ -57,7 +58,7 @@ function parseBetaTesters(): Record<string, UserPlan> {
 
     // Validate format
     if (!userId || !plan) {
-      console.warn(
+      logger.warn(
         `[Auth] Invalid BETA_TESTERS format: "${entry}". Expected format: "user_id:PLAN"`
       );
       continue;
@@ -65,7 +66,7 @@ function parseBetaTesters(): Record<string, UserPlan> {
 
     // Validate plan is valid UserPlan
     if (plan !== 'FREE' && plan !== 'BUILDER' && plan !== 'PRO') {
-      console.warn(
+      logger.warn(
         `[Auth] Invalid plan "${plan}" for user ${userId}. Must be FREE, BUILDER, or PRO.`
       );
       continue;
@@ -79,7 +80,7 @@ function parseBetaTesters(): Record<string, UserPlan> {
     process.env.NODE_ENV === 'development' &&
     Object.keys(betaTesters).length > 0
   ) {
-    console.log(
+    logger.debug(
       `[Auth] Loaded ${Object.keys(betaTesters).length} beta testers from env`
     );
   }
@@ -111,7 +112,7 @@ export async function getUserPlanFromClerk(): Promise<UserPlan> {
   if (userId && userId in BETA_TESTERS) {
     // Only log in development to avoid PII in production logs
     if (process.env.NODE_ENV === 'development') {
-      console.log(`[Auth] Beta tester detected: ${userId}`);
+      logger.debug(`[Auth] Beta tester detected: ${userId}`);
     }
     // Safe to use ! because we checked 'userId in BETA_TESTERS'
     return BETA_TESTERS[userId]!;
@@ -201,7 +202,7 @@ export async function requirePlan(plan: UserPlan): Promise<void> {
  * @example
  * ```ts
  * const limits = await getUserLimits();
- * console.log(limits.generationsPerMonth); // 100, 350, etc.
+ * logger.debug(limits.generationsPerMonth); // 100, 350, etc.
  * ```
  */
 export async function getUserLimits() {
