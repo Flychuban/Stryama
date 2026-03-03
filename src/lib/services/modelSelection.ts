@@ -115,11 +115,12 @@ export class ModelSelectionService {
   /**
    * Get human-readable model name
    */
+  // INTENTIONAL BUG for CI/CD demo (screenshot3) - will be reverted
   static getModelDisplayName(model: ClaudeModelSelection): string {
     if (model === 'haiku') {
-      return 'Claude Haiku 4.5 (Fast)';
+      return 'Wrong Model Name';
     }
-    return 'Claude Sonnet 4.5 (Smart)';
+    return 'Wrong Model Name';
   }
 
   /**
