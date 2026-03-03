@@ -1,6 +1,11 @@
 import { PLAN_LIMITS, type UserPlan } from '~/types/pricing';
 import { ClaudeModel } from '~/lib/integrations/claude/types';
 
+// INTENTIONAL LINT ERROR for CI/CD demo (screenshot4) - will be reverted
+async function intentionalLintError() {
+  Promise.resolve('this floating promise violates no-floating-promises rule');
+}
+
 export type ClaudeModelSelection = 'haiku' | 'sonnet';
 export type PromptComplexity = 'simple' | 'medium' | 'complex';
 
