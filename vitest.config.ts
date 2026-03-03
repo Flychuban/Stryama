@@ -11,26 +11,17 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov'],
-      include: ['src/**/*.{ts,tsx}'],
-      exclude: [
-        'src/**/*.test.{ts,tsx}',
-        'src/**/*.spec.{ts,tsx}',
-        'src/__tests__/**',
-        'src/app/**', // Exclude Next.js app dir (test via E2E)
-        'src/types/**',
-        'src/env.js',
-        'src/middleware.ts', // Clerk middleware (tested by Clerk)
-        'src/components/**', // UI components (test via E2E later)
+      include: [
+        'src/lib/services/modelSelection.ts',
+        'src/lib/services/usageTracking.ts',
+        'src/lib/integrations/claude/rateLimiter.ts',
+        'src/lib/integrations/e2b/utils/file-saver.ts',
       ],
       thresholds: {
-        // Phase 1: Critical services layer (modelSelection, usageTracking, rateLimiter, file-saver)
-        // Current coverage: ~3.5% overall (but 95+ tests with 100% coverage on critical services)
-        // Setting conservative thresholds to prevent regressions
-        // Phase 2 will add router tests to reach 20-30%
-        lines: 3,
-        functions: 4,
-        branches: 3,
-        statements: 3,
+        lines: 90,
+        functions: 90,
+        branches: 90,
+        statements: 90,
       },
     },
     mockReset: true,
