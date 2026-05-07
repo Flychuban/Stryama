@@ -222,7 +222,7 @@ describe('ModelSelectionService', () => {
       const result = ModelSelectionService.getModelId('sonnet');
 
       // Assert
-      expect(result).toBe(ClaudeModel.SONNET_4_5);
+      expect(result).toBe(ClaudeModel.SONNET_4_6);
     });
   });
 
@@ -240,7 +240,7 @@ describe('ModelSelectionService', () => {
       const result = ModelSelectionService.getModelEnum('sonnet');
 
       // Assert
-      expect(result).toBe(ClaudeModel.SONNET_4_5);
+      expect(result).toBe(ClaudeModel.SONNET_4_6);
     });
   });
 
@@ -258,7 +258,7 @@ describe('ModelSelectionService', () => {
       const result = ModelSelectionService.getModelDisplayName('sonnet');
 
       // Assert
-      expect(result).toBe('Claude Sonnet 4.5 (Smart)');
+      expect(result).toBe('Claude Sonnet 4.6 (Smart)');
     });
   });
 

@@ -338,7 +338,7 @@ export function useAIGenerationStream(
                 input_tokens: newState.inputTokens,
                 output_tokens: newState.outputTokens,
                 cost_usd: event.result.totalCost,
-                model_used: 'claude-sonnet-3.5', // TODO: Get from event if available
+                model_used: 'claude-sonnet-4-6', // TODO: Get from event if available
                 files_generated: filesGenerated,
                 total_file_size_bytes: totalFileSize,
                 sandbox_id: event.result.sandboxId,

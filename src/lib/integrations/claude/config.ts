@@ -52,7 +52,7 @@ export const RATE_LIMIT_CONFIG = {
 } as const;
 
 export const MODEL_PRICING = {
-  [ClaudeModel.SONNET_4_5]: {
+  [ClaudeModel.SONNET_4_6]: {
     inputTokenPrice: 0.003,
     outputTokenPrice: 0.015,
   },

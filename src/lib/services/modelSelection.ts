@@ -99,7 +99,7 @@ export class ModelSelectionService {
     if (model === 'haiku') {
       return ClaudeModel.HAIKU_4_5;
     }
-    return ClaudeModel.SONNET_4_5;
+    return ClaudeModel.SONNET_4_6;
   }
 
   /**
@@ -109,7 +109,7 @@ export class ModelSelectionService {
     if (model === 'haiku') {
       return ClaudeModel.HAIKU_4_5;
     }
-    return ClaudeModel.SONNET_4_5;
+    return ClaudeModel.SONNET_4_6;
   }
 
   /**
@@ -119,7 +119,7 @@ export class ModelSelectionService {
     if (model === 'haiku') {
       return 'Claude Haiku 4.5 (Fast)';
     }
-    return 'Claude Sonnet 4.5 (Smart)';
+    return 'Claude Sonnet 4.6 (Smart)';
   }
 
   /**

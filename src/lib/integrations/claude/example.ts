@@ -27,7 +27,7 @@ async function example1_basicGeneration(): Promise<void> {
     prompt:
       'Create a modern landing page for a SaaS product with hero section and pricing',
     options: {
-      model: ClaudeModel.SONNET_4_5,
+      model: ClaudeModel.SONNET_4_6,
       maxTurns: 5,
     },
   };
@@ -71,7 +71,7 @@ async function example2_promptTemplates(): Promise<void> {
   const result = await claudeClient.generateCode({
     prompt,
     options: {
-      model: ClaudeModel.SONNET_4_5,
+      model: ClaudeModel.SONNET_4_6,
     },
   });
 }
@@ -159,7 +159,7 @@ export function UserProfile({ name, email }: UserProfileProps) {
       dependencies: ['react', 'next'],
     },
     options: {
-      model: ClaudeModel.SONNET_4_5,
+      model: ClaudeModel.SONNET_4_6,
       maxTurns: 3,
     },
   };
@@ -217,7 +217,7 @@ async function example7_completeWorkflow(userId: string): Promise<void> {
   const result = await claudeClient.generateCode({
     prompt,
     options: {
-      model: ClaudeModel.SONNET_4_5,
+      model: ClaudeModel.SONNET_4_6,
       maxTurns: 5,
     },
   });
