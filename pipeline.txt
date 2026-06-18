@@ -1,0 +1,157 @@
+================================================================================
+              CI/CD Pipeline документация - Проект Stryama
+================================================================================
+
+Repo: https://github.com/Flychuban/Stryama
+
+================================================================================
+1. GITHUB ACTIONS WORKFLOW
+================================================================================
+
+Файл: .github/workflows/ci.yml
+
+Workflow-ът се изпълнява автоматично при:
+  - Push към main branch (ред 6-7)
+  - Pull request към main branch (ред 4-5)
+
+Името на workflow-а е "CI Pipeline - Linter, Compilation & Tests" (ред 1).
+
+Environment променливите (ред 9-15) са дефинирани на top-level, за да са
+достъпни за всички jobs без дублиране. Те включват mock стойности за
+DATABASE_URL, CLERK_SECRET_KEY, ANTHROPIC_API_KEY и други, необходими за
+генериране на Prisma client и изпълнение на тестовете.
+
+Pipeline-ът съдържа 3 отделни job-а, които се изпълняват паралелно:
+
+--------------------------------------------------------------------------------
+Job 1: lint (Linter - ESLint)                              Редове 18-45
+--------------------------------------------------------------------------------
+
+  Стъпки:
+    1. Checkout на кода (ред 24-25)
+    2. Setup на pnpm v9.15.4 (ред 27-30)
+    3. Setup на Node.js v20 с pnpm cache (ред 32-36)
+    4. Инсталиране на зависимости с --frozen-lockfile (ред 38-39)
+    5. Генериране на Prisma Client (ред 41-42)
+    6. Изпълнение на ESLint чрез `pnpm lint` (ред 44-45)
+
+  Какво проверява:
+    - Спазване на ESLint правилата дефинирани в eslint.config.js
+    - TypeScript-specific правила от typescript-eslint (recommended + type-checked)
+    - Next.js core-web-vitals правила
+    - React hooks правила (rules-of-hooks, exhaustive-deps)
+
+  При успех: Зелена отметка в GitHub UI
+  При грешка: Червен X - показва кои файлове и редове имат lint грешки
+
+--------------------------------------------------------------------------------
+Job 2: typecheck (Compilation - TypeScript)                Редове 47-74
+--------------------------------------------------------------------------------
+
+  Стъпки:
+    1. Checkout на кода (ред 53-54)
+    2. Setup на pnpm v9.15.4 (ред 56-59)
+    3. Setup на Node.js v20 с pnpm cache (ред 61-65)
+    4. Инсталиране на зависимости с --frozen-lockfile (ред 67-68)
+    5. Генериране на Prisma Client (ред 70-71)
+    6. TypeScript type checking чрез `pnpm typecheck` = `tsc --noEmit` (ред 73-74)
+
+  Какво проверява:
+    - Всички TypeScript типове са коректни
+    - Няма type errors в целия проект
+    - `--noEmit` означава, че не се генерират JavaScript файлове, само се проверяват типовете
+
+  При успех: Зелена отметка в GitHub UI
+  При грешка: Червен X - показва TypeScript compile errors
+
+--------------------------------------------------------------------------------
+Job 3: test (Unit Tests - Vitest)                          Редове 76-111
+--------------------------------------------------------------------------------
+
+  Стъпки:
+    1. Checkout на кода (ред 82-83)
+    2. Setup на pnpm v9.15.4 (ред 85-88)
+    3. Setup на Node.js v20 с pnpm cache (ред 90-94)
+    4. Инсталиране на зависимости с --frozen-lockfile (ред 96-97)
+    5. Генериране на Prisma Client (ред 99-100)
+    6. Изпълнение на тестовете с coverage чрез `pnpm test:ci` (ред 102-103)
+    7. Upload на coverage reports в Codecov (ред 105-111)
+
+  Какво проверява:
+    - 95 unit теста минават успешно
+    - Code coverage е над 90% за критичните service файлове
+    - Coverage thresholds: lines >= 90%, functions >= 90%, branches >= 90%, statements >= 90%
+
+  При успех: Зелена отметка в GitHub UI
+  При грешка: Червен X - показва кои тестове са failed или coverage е под прага
+
+================================================================================
+2. PIPELINE TESTS
+================================================================================
+
+Файл: vitest.config.ts
+
+Тестовете се изпълняват с Vitest (vitest v4.0.16) чрез командата:
+  pnpm test:ci  =>  vitest run --coverage --reporter=verbose
+
+Конфигурация (vitest.config.ts):
+  - environment: node
+  - globals: true (describe, it, expect са глобални)
+  - setupFiles: ./src/__tests__/setup.ts
+  - coverage provider: v8
+  - coverage reporters: text, json, html, lcov
+
+Coverage include (само критичният service layer):
+  - src/lib/services/modelSelection.ts
+  - src/lib/services/usageTracking.ts
+  - src/lib/integrations/claude/rateLimiter.ts
+  - src/lib/integrations/e2b/utils/file-saver.ts
+
+Coverage thresholds (минимални прагове):
+  - lines: 90%
+  - functions: 90%
+  - branches: 90%
+  - statements: 90%
+
+Текущо покритие: ~97.67% (всички метрики)
+
+Тестови файлове (4 файла, 95 теста):
+  1. src/lib/services/modelSelection.test.ts - тестове за AI model selection logic
+  2. src/lib/services/usageTracking.test.ts - тестове за usage tracking и billing
+  3. src/lib/integrations/claude/rateLimiter.test.ts - тестове за API rate limiting
+  4. src/lib/integrations/e2b/utils/file-saver.test.ts - тестове за file saving utilities
+
+================================================================================
+3. PIPELINE LINTER
+================================================================================
+
+Файл: eslint.config.js
+
+Linter-ът се изпълнява чрез командата:
+  pnpm lint  =>  next lint
+
+ESLint конфигурация (eslint.config.js):
+  - Формат: ESLint flat config (нов формат)
+  - Extends: next/core-web-vitals (Next.js правила)
+  - TypeScript правила:
+    * tseslint.configs.recommended
+    * tseslint.configs.recommendedTypeChecked (type-aware linting)
+    * tseslint.configs.stylisticTypeChecked
+
+Допълнителни правила:
+  - @typescript-eslint/consistent-type-imports: warn (предпочитани type imports)
+  - @typescript-eslint/no-unused-vars: warn (неизползвани променливи, с изключение на _prefix)
+  - @typescript-eslint/require-await: off
+  - @typescript-eslint/no-misused-promises: error (предотвратява misuse на Promises)
+  - react-hooks/rules-of-hooks: error (правилно използване на React hooks)
+  - react-hooks/exhaustive-deps: warn (пълни dependency arrays)
+  - reportUnusedDisableDirectives: true (докладва ненужни eslint-disable коментари)
+
+Игнорирани директории:
+  - .next (build output)
+
+Забележка: Linter-ът използва type-checked правила (recommendedTypeChecked),
+което означава, че ESLint има достъп до TypeScript type информация и може да
+хваща по-сложни грешки като no-floating-promises и no-misused-promises.
+
+================================================================================
